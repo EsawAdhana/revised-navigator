@@ -6,7 +6,7 @@ import { X } from 'lucide-react'
 import { abbreviateGer, unitsLabel } from '@/lib/utils'
 import { formatMinutes } from '@/lib/schedule-utils'
 
-export function ActiveFilterChips () {
+export function ActiveFilterChips() {
   const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true))
   const [hideOnSchedule, setHideOnSchedule] = useQueryState('hideOnSchedule', parseAsBoolean.withDefault(true))
   const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]))
@@ -43,11 +43,11 @@ export function ActiveFilterChips () {
 
   const chips = useMemo(() => {
     const out: { id: string, label: string, onRemove: () => void }[] = []
-    if (hideConflicts) {
-      out.push({ id: 'hideConflicts', label: 'Hide conflicting', onRemove: () => setHideConflicts(false) })
+    if (!hideConflicts) {
+      out.push({ id: 'showConflicts', label: 'Show conflicting', onRemove: () => setHideConflicts(true) })
     }
-    if (hideOnSchedule) {
-      out.push({ id: 'hideOnSchedule', label: 'Hide existing planned', onRemove: () => setHideOnSchedule(false) })
+    if (!hideOnSchedule) {
+      out.push({ id: 'showOnSchedule', label: 'Show existing planned', onRemove: () => setHideOnSchedule(true) })
     }
     excludedWords.forEach(word => {
       out.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })
@@ -107,7 +107,7 @@ export function ActiveFilterChips () {
       {chips.map(({ id, label, onRemove }) => (
         <span
           key={id}
-          className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-md bg-background border border-border/60 text-xs font-medium text-foreground"
+          className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-md bg-primary/5 border border-primary/30 text-xs font-medium text-primary"
         >
           <span className="whitespace-nowrap">{label}</span>
           <button

@@ -6,27 +6,7 @@ import { Logo } from './logo'
 import { Loader2 } from 'lucide-react'
 import Link from 'next/link'
 
-const PHRASES = [
-  'Find courses.',
-  'Read syllabi.',
-  'Browse evaluations.',
-  'Build your schedule.',
-  'Filter by WAYS.',
-  'Detect time conflicts.',
-  'Compare sections.',
-  'Check enrollment.',
-  'Explore departments.',
-  'Read student reviews.',
-  'Find open seats.',
-  'Search by instructor.',
-  'Filter by units.',
-  'View meeting times.',
-]
 
-// Duplicate so the scroll loops seamlessly
-const ROW_1 = PHRASES.slice(0, 8)
-const ROW_2 = PHRASES.slice(5).concat(PHRASES.slice(0, 3))
-const ROW_3 = [...PHRASES].reverse().slice(0, 8)
 
 function MarqueeRow({ items, duration, reverse = false }: { items: string[], duration: string, reverse?: boolean }) {
   return (
@@ -91,14 +71,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   // Extended phrase list for variety
   const ALL_PHRASES = [
     'Find courses.', 'Read syllabi.', 'Browse evaluations.', 'Build your schedule.',
-    'Filter by WAYS.', 'Detect time conflicts.', 'Compare sections.', 'Check enrollment.',
+    'Filter by WAYS.', 'Organize your week.', 'Compare sections.', 'Check course status.',
     'Explore departments.', 'Read student reviews.', 'Find open seats.',
     'Search by instructor.', 'Filter by units.', 'View meeting times.', 'Export to calendar.',
     'Ace your quarter.', 'Plan in seconds.', 'Visualize your week.',
     'Discover gems.', 'Avoid 8am classes.', 'Simplifying Stanford.', 'Analyze trends.', 'Smart scheduling.',
-    'Search historically.', 'Review professors.', 'Mockup schedules.', 'Waitlist tracking.',
+    'Search historically.', 'Review professors.', 'Mockup schedules.', 'Explore majors.',
     'Unit planning.', 'Search efficiently.', 'Fast & responsive.', 'Mobile friendly.',
-    'Visualize workload.', 'Balance your life.',
+    'Visualize workload.', 'Balance your life.', 'Curate your classes.', 'Map your term.',
   ]
 
   // Create 15 rows of deterministic content to allow SSR consistency
@@ -145,7 +125,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
           <p className="text-lg sm:text-2xl text-muted-foreground/80 max-w-2xl leading-relaxed font-light mb-10">
             The ultimate tool for course discovery and scheduling.
-            Built by students, for students.
           </p>
 
           <div className="flex flex-col items-center gap-4 w-full max-w-xs">

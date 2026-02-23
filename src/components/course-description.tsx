@@ -3,47 +3,51 @@
 import React from 'react';
 import Link from 'next/link';
 import { useCourseStore } from '@/lib/store';
-import { cn } from '@/lib/utils';
 
 interface CourseDescriptionProps {
     description: string;
+    /** When set, bare course numbers (e.g. "30", "70", "112") in the text are resolved as this subject (e.g. CS 30, CS 70). */
+    contextSubject?: string;
     className?: string;
 }
 
-export function CourseDescription({ description, className }: CourseDescriptionProps) {
+export function CourseDescription({ description, contextSubject, className }: CourseDescriptionProps) {
     const { courses } = useCourseStore();
 
     if (!description) return null;
 
     // Helper to render description with clickable course links
     const renderDescriptionWithLinks = (text: string) => {
-        // Regex to find potential course codes (e.g. "CS 106A", "MATH 51")
-        // Matches: Word boundary, 2-4 uppercase letters, space, 1-3 digits, optional letter suffix, word boundary
-        const courseRegex = /\b([A-Z]{2,4})\s+(\d{1,3}[A-Z]?)\b/g;
+        // Match: "SUBJ CODE" or "SUBJCODE" (e.g. "CS 106A", "CS106B", "MATH 51") or bare code with context (e.g. "30" in a CS course).
+        const courseRegex = /\b(?:([A-Z]{2,4})\s*(\d{1,3}[A-Z]?)|(\d{2,3}[A-Z]?))\b/g;
 
         const parts = [];
         let lastIndex = 0;
         let match;
 
         while ((match = courseRegex.exec(text)) !== null) {
-            // Add text before match
             if (match.index > lastIndex) {
                 parts.push(text.substring(lastIndex, match.index));
             }
 
-            const subject = match[1];
-            const code = match[2];
-            const fullCode = `${subject} ${code}`;
+            const subject = match[1] ?? (contextSubject && match[3] ? contextSubject : null);
+            const code = match[2] ?? match[3];
+            const fullCode = subject ? `${subject} ${code}` : match[0];
 
-            // Find course in store
+            if (!subject) {
+                parts.push(match[0]);
+                lastIndex = match.index + match[0].length;
+                continue;
+            }
+
             const targetCourse = courses.find(c => c.subject === subject && c.code === code);
 
             if (targetCourse) {
                 parts.push(
                     <Link
                         key={`${match.index}-${fullCode}`}
-                        href={`/courses/${targetCourse.id}`}
-                        className="text-primary hover:underline font-medium"
+                        href={`/courses/${encodeURIComponent(targetCourse.id)}`}
+                        className="text-primary font-bold"
                         onClick={(e) => {
                             e.stopPropagation();
                         }}
@@ -58,7 +62,6 @@ export function CourseDescription({ description, className }: CourseDescriptionP
             lastIndex = match.index + match[0].length;
         }
 
-        // Add remaining text
         if (lastIndex < text.length) {
             parts.push(text.substring(lastIndex));
         }
