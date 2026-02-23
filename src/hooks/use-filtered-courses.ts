@@ -26,7 +26,6 @@ export function useFilteredCourses() {
     const [timeMin] = useQueryState('timeMin', parseAsInteger.withDefault(0));
     const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1440));
     const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true));
-    const [hideOnSchedule] = useQueryState('hideOnSchedule', parseAsBoolean.withDefault(true));
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
     const [sortBy, setSortBy] = useQueryState('sortBy', parseAsString.withDefault('az'));
     const [sortDir, setSortDir] = useQueryState('sortDir', parseAsString.withDefault('asc'));
@@ -37,12 +36,6 @@ export function useFilteredCourses() {
     const filteredResult = useMemo(() => {
         // Start with all courses
         let result = courses;
-
-        // Filter out courses already on schedule (in cart)
-        if (hideOnSchedule && cartItems.length > 0) {
-            const onScheduleIds = new Set(cartItems.map(c => c.id));
-            result = result.filter(c => !onScheduleIds.has(c.id));
-        }
 
         // Filter by Excluded Keywords
         if (excludedWords && excludedWords.length > 0) {
@@ -297,7 +290,7 @@ export function useFilteredCourses() {
 
         // All filtering is done; this is the set we will sort (sort is the last step)
         return result;
-    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideOnSchedule, cartItems, excludedWords, evaluations]);
+    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, cartItems, excludedWords, evaluations]);
 
     useEffect(() => {
         if ((sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit') && filteredResult.length > 0) {

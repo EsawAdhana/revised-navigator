@@ -64,9 +64,11 @@ export function SiteHeader() {
 
             {/* Center: Search */}
             <div className="flex-1 flex flex-col justify-center md:justify-start px-2 md:px-0 min-w-0">
-                <div className="w-full">
-                    <SearchBar />
-                </div>
+                {!pathname.startsWith('/courses/') && (
+                    <div className="w-full">
+                        <SearchBar />
+                    </div>
+                )}
             </div>
 
             {/* Right: Actions */}

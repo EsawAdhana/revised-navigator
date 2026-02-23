@@ -80,7 +80,6 @@ export function FilterSidebar() {
     const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([]));
     const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true));
-    const [hideOnSchedule, setHideOnSchedule] = useQueryState('hideOnSchedule', parseAsBoolean.withDefault(true));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
 
     // New Filters
@@ -137,11 +136,6 @@ export function FilterSidebar() {
     const getFilteredCoursesForFacets = (excludeFilter?: string) => {
         let filtered = courses;
 
-        // Filter out courses already on schedule
-        if (hideOnSchedule && cartItems.length > 0 && excludeFilter !== 'hideOnSchedule') {
-            const onScheduleIds = new Set(cartItems.map(c => c.id));
-            filtered = filtered.filter(c => !onScheduleIds.has(c.id));
-        }
 
         // Apply excluded words filter
         if (excludedWords && excludedWords.length > 0 && excludeFilter !== 'exclude') {
@@ -506,7 +500,7 @@ export function FilterSidebar() {
             gers: Array.from(gers.entries()).sort((a, b) => a[0].localeCompare(b[0])),
             schools,
         };
-    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, hideOnSchedule, cartItems, evaluations, getEvaluations]);
+    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, cartItems, evaluations, getEvaluations]);
 
     const filteredDepts = useMemo(() => {
         if (!deptQuery) return facets.depts;
@@ -559,27 +553,7 @@ export function FilterSidebar() {
 
             <SimpleScrollArea className="flex-1 px-4 py-3 space-y-3">
                 <div className="space-y-1">
-                    <div className="flex items-center gap-2 min-h-8">
-                        <input
-                            type="checkbox"
-                            id="showOnSchedule"
-                            checked={!hideOnSchedule}
-                            onChange={(e) => setHideOnSchedule(!e.target.checked)}
-                            className="h-4 w-4 shrink-0 rounded border-input text-primary focus:ring-primary accent-primary"
-                        />
-                        <TooltipProvider delayDuration={300}>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <label htmlFor="showOnSchedule" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
-                                        Show existing planned courses
-                                    </label>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" align="start" className="max-w-[240px]">
-                                    Include courses you&apos;ve already added to your schedule. By default, they&apos;re hidden.
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    </div>
+
                     <div className="flex items-center gap-2 min-h-8">
                         <input
                             type="checkbox"
