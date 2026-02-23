@@ -11,7 +11,7 @@ export function InstructorList({ instructors, limit = 5 }: InstructorListProps) 
     return (
       <div className="flex items-center gap-2" title="Unknown Instructor">
         <User size={14} className="shrink-0" />
-        <span className="truncate">Unknown Instructor</span>
+        <span className="text-xs break-words">Unknown Instructor</span>
       </div>
     );
   }
