@@ -147,6 +147,13 @@ async function fetchCourses() {
         // Merge Metadata
         if (hit.termOffered) course.terms.add(hit.termOffered);
 
+// Final exam: use any of the common Algolia/API field names if present
+        const finalExamDate = hit.finalExamDt || hit.finalExamDate || hit.finalExamTime || hit.examDate
+        const finalExamLocation = hit.finalExamDescr || hit.finalExamLocation || hit.finalExamFacility || hit.examLocation
+        const finalExam = (finalExamDate || finalExamLocation)
+            ? { date: finalExamDate || '', location: finalExamLocation || '' }
+            : undefined
+
         // Populate Section Data
         const sectionData = {
             term: hit.termOffered,
@@ -171,9 +178,10 @@ async function fetchCourses() {
                 time: (m.startTime && m.endTime) ? `${m.startTime} - ${m.endTime}` : 'TBA',
                 location: m.facilityDescr || 'TBA',
                 instructors: m.instructors ? m.instructors.map((i: any) => i.displayName) : []
-            }))
+            })),
+            ...(finalExam && { finalExam })
         };
-        
+
         course.sections.push(sectionData);
         
         // Merge Meetings (Legacy / for Calendar View)

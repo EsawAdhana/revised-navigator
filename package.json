@@ -7,11 +7,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --max-warnings 0",
     "split:courses": "node scripts/split-courses-by-quarter.js",
     "scrape:evals": "node scripts/scrape-evaluations.js",
     "upload:evals": "node scripts/upload-evaluations.js",
-    "upload:courses": "node scripts/upload-courses.js"
+    "upload:courses": "node scripts/upload-courses.js",
+    "scrape:final-exams": "node scripts/scrape-final-exams.js",
+    "update:exam-types": "node scripts/update-exam-types.js"
   },
   "keywords": [],
   "author": "",
