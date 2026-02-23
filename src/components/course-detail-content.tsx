@@ -18,6 +18,7 @@ import { CourseDescription } from './course-description';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { useMemo } from 'react';
 import { CalendarPreviewModal } from './calendar-preview-modal';
+import { isWimCourse } from '@/lib/wim-courses';
 
 const COLORS = {
     sky: 'bg-sky-500/15 border-sky-500/40 text-sky-950 dark:text-sky-50',
@@ -254,8 +255,11 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const gers = useMemo(() => {
         const set = new Set<string>()
         course.sections?.forEach(s => s.gers?.forEach(g => set.add(g)))
+        if (isWimCourse(course.subject, course.code)) {
+            set.add('WIM')
+        }
         return Array.from(set).sort()
-    }, [course.sections])
+    }, [course.sections, course.subject, course.code])
     const gerLabel = gers.length > 0 ? gers.map(abbreviateGer).join(', ') : '—'
 
     const [previewSection, setPreviewSection] = useState<Section | null>(null);
@@ -453,7 +457,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                 </div>
 
                 {/* Right Column: Persistent Sidebar (Sections) */}
-                <aside className="space-y-4 lg:sticky lg:top-24 lg:h-fit lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto pr-2 custom-scrollbar">
+                <aside className="space-y-4 lg:sticky lg:top-24 lg:h-fit lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto pr-2 scrollbar-hide">
                     {/* Instructor Summary */}
                     {(() => {
                         const activeSections = sectionsByTerm[activeTerm] || [];
@@ -517,7 +521,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                     ))}
                                                 </div>
 
-                                                <div className="pt-3 border-t border-border/30 flex justify-between items-center gap-2">
+                                                <div className="pt-3 border-t border-border/30 flex flex-wrap justify-between items-center gap-x-2 gap-y-3">
                                                     <div className="text-sm font-bold text-primary/80 flex items-center gap-2">
                                                         {hasVariableUnits(section.units) ? (() => {
                                                             const opts = parseUnitsOptions(section.units);
