@@ -7,7 +7,7 @@ import { abbreviateGer, unitsLabel } from '@/lib/utils'
 import { formatMinutes } from '@/lib/schedule-utils'
 
 export function ActiveFilterChips() {
-  const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true))
+  const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false))
   const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']))
   const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]))
@@ -43,8 +43,8 @@ export function ActiveFilterChips() {
 
   const chips = useMemo(() => {
     const out: { id: string, label: string, onRemove: () => void }[] = []
-    if (!hideConflicts) {
-      out.push({ id: 'showConflicts', label: 'Show conflicting', onRemove: () => setHideConflicts(true) })
+    if (hideConflicts) {
+      out.push({ id: 'showConflicts', label: 'Show conflicting', onRemove: () => setHideConflicts(false) })
     }
     excludedWords.forEach(word => {
       out.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })

@@ -25,7 +25,7 @@ export function useFilteredCourses() {
     const [unitMax] = useQueryState('unitMax', parseAsInteger.withDefault(5));
     const [timeMin] = useQueryState('timeMin', parseAsInteger.withDefault(0));
     const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1440));
-    const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true));
+    const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
     const [sortBy, setSortBy] = useQueryState('sortBy', parseAsString.withDefault('az'));
     const [sortDir, setSortDir] = useQueryState('sortDir', parseAsString.withDefault('asc'));
