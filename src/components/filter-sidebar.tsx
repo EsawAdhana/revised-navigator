@@ -570,7 +570,7 @@ export function FilterSidebar() {
                                     </label>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" align="start" className="max-w-[240px]">
-                                    Include courses that overlap in time with courses on your schedule. By default, they&apos;re hidden.
+                                    Include courses that overlap with courses on your schedule.
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>
