@@ -14,7 +14,7 @@ export function useFilteredCourses() {
 
     const [query] = useQueryState('q', { defaultValue: '' });
     const [selectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
-    const [selectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([]));
+    const [selectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']));
     const [selectedFormats] = useQueryState('formats', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedStatus] = useQueryState('status', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedLevels] = useQueryState('levels', parseAsArrayOf(parseAsString).withDefault([]));
