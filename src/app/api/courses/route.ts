@@ -50,15 +50,9 @@ function mergeRows(rows: any[]) {
   const merged = new Map<string, any>()
   for (const row of rows) {
     const existing = merged.get(row.course_id)
-    const quarter = row.quarter
-    const finalExamByQuarter =
-      existing?.final_exam != null && typeof existing.final_exam === 'object' && !Array.isArray(existing.final_exam)
-        ? { ...existing.final_exam }
-        : {}
-    if (quarter && row.final_exam != null) finalExamByQuarter[quarter] = row.final_exam
     if (!existing) {
       const { quarter: _q, ...rest } = row
-      merged.set(row.course_id, { ...rest, final_exam: Object.keys(finalExamByQuarter).length > 0 ? finalExamByQuarter : undefined })
+      merged.set(row.course_id, { ...rest })
       continue
     }
     const terms = Array.from(new Set([...(existing.terms || []), ...(row.terms || [])]))
@@ -67,7 +61,6 @@ function mergeRows(rows: any[]) {
       ...existing,
       terms,
       sections,
-      final_exam: Object.keys(finalExamByQuarter).length > 0 ? finalExamByQuarter : existing.final_exam
     })
   }
   return Array.from(merged.values())
@@ -87,7 +80,7 @@ export async function GET(request: Request) {
       }
 
       const rows = await fetchAllRows(
-        'course_id, quarter, subject, code, title, description, units, grading, instructors, terms, dept, sections, final_exam'
+        'course_id, quarter, subject, code, title, description, units, grading, instructors, terms, dept, sections'
       )
       const merged = mergeRows(rows)
       cachedFull = merged
@@ -106,7 +99,7 @@ export async function GET(request: Request) {
     }
 
     const rows = await fetchAllRows(
-      'course_id, quarter, subject, code, title, units, instructors, terms, final_exam'
+      'course_id, quarter, subject, code, title, units, instructors, terms'
     )
     const merged = mergeRows(rows)
     cachedLight = merged
