@@ -14,11 +14,11 @@ export default function CoursePage() {
     const router = useRouter();
     const rawCourseId = params.courseId as string;
     const courseId = (() => {
-      try {
-        return decodeURIComponent(rawCourseId);
-      } catch {
-        return rawCourseId;
-      }
+        try {
+            return decodeURIComponent(rawCourseId);
+        } catch {
+            return rawCourseId;
+        }
     })();
     const [mounted, setMounted] = useState(false);
 
@@ -35,20 +35,29 @@ export default function CoursePage() {
         fetchCourses();
     }, [fetchCourses]);
 
-    // When on a course page, searching for a different class should navigate to that course
-    const lastNavigatedQuery = useRef<string | null>(null);
+    // Only jump to a new course if the query changes *while* we are remaining on the same course page.
+    // This prevents spurious redirects on initial link load or back/forward navigation.
+    const prevQueryAndId = useRef({ query: (query || '').trim(), courseId });
+
     useEffect(() => {
-        lastNavigatedQuery.current = null;
-    }, [courseId]);
-    useEffect(() => {
-        const q = (query || '').trim();
-        if (!q || filteredCourses.length === 0) return;
-        if (lastNavigatedQuery.current === q) return;
+        const currentQuery = (query || '').trim();
+        const prev = prevQueryAndId.current;
+        prevQueryAndId.current = { query: currentQuery, courseId };
+
+        // If the query didn't change, do nothing.
+        if (currentQuery === prev.query) return;
+
+        // If the courseId changed at the same time as the query (e.g. Back button, or clicking a link),
+        // we shouldn't force a redirect because the user is already actively navigating.
+        if (courseId !== prev.courseId) return;
+
+        // Otherwise, it's a search keystroke while on this page! Jump to the first match.
+        if (!currentQuery || filteredCourses.length === 0) return;
         const firstMatch = filteredCourses[0];
+
         if (firstMatch.id !== courseId) {
-            lastNavigatedQuery.current = q;
             const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-            searchParams.set('q', q);
+            searchParams.set('q', currentQuery);
             const rest = searchParams.toString();
             router.push(rest ? `/courses/${encodeURIComponent(firstMatch.id)}?${rest}` : `/courses/${encodeURIComponent(firstMatch.id)}`);
         }
