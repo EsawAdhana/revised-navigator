@@ -24,15 +24,11 @@ function HomeContent() {
     <div className="flex flex-col h-screen overflow-hidden bg-background">
       <SiteHeader />
 
-      {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-[280px] border-r border-border/40 bg-background hidden md:block overflow-y-auto custom-scrollbar">
+        <aside className="w-[280px] border-r border-border/40 bg-background hidden md:block overflow-y-auto custom-scrollbar shrink-0">
           <FilterSidebar />
         </aside>
-
-        {/* Course List */}
-        <main className="flex-1 flex flex-col min-w-0 bg-secondary/20 relative">
+        <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-secondary/20 relative">
           <CourseList onCourseClick={handleCourseClick} />
         </main>
       </div>

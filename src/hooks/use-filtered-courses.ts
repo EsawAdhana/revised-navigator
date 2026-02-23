@@ -1,9 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
-import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean } from 'nuqs';
-import { parseMeetingTimes, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils';
-import { getSchoolFromSubject } from '@/lib/utils';
+import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
+import { parseMeetingTimes, timeToMinutes, isMeetingOptional, getWeeklyContactHours } from '@/lib/schedule-utils';
+import { getSchoolFromSubject, getCourseUnitsNumeric } from '@/lib/utils';
+import { useEvaluationStore } from '@/lib/evaluation-store';
+import { aggregateMetrics, getOverallEvalScore } from '@/components/course-evaluations';
+import type { Course } from '@/types/course';
 
 export function useFilteredCourses() {
     const { courses, isLoading } = useCourseStore();
@@ -18,14 +21,27 @@ export function useFilteredCourses() {
     const [selectedGers] = useQueryState('gers', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedSchools] = useQueryState('schools', parseAsArrayOf(parseAsString).withDefault([]));
 
-    const [unitRanges] = useQueryState('units', parseAsArrayOf(parseAsString).withDefault([]));
-    const [timeRanges] = useQueryState('times', parseAsArrayOf(parseAsString).withDefault([]));
-    const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
+    const [unitMin] = useQueryState('unitMin', parseAsInteger.withDefault(1));
+    const [unitMax] = useQueryState('unitMax', parseAsInteger.withDefault(5));
+    const [timeMin] = useQueryState('timeMin', parseAsInteger.withDefault(0));
+    const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1440));
+    const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true));
+    const [hideOnSchedule] = useQueryState('hideOnSchedule', parseAsBoolean.withDefault(true));
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
+    const [sortBy, setSortBy] = useQueryState('sortBy', parseAsString.withDefault('az'));
+    const [sortDir, setSortDir] = useQueryState('sortDir', parseAsString.withDefault('asc'));
+    const getEvaluations = useEvaluationStore(state => state.getEvaluations);
+    const fetchBulkEvaluations = useEvaluationStore(state => state.fetchBulkEvaluations);
 
-    const filteredCourses = useMemo(() => {
+    const filteredResult = useMemo(() => {
         // Start with all courses
         let result = courses;
+
+        // Filter out courses already on schedule (in cart)
+        if (hideOnSchedule && cartItems.length > 0) {
+            const onScheduleIds = new Set(cartItems.map(c => c.id));
+            result = result.filter(c => !onScheduleIds.has(c.id));
+        }
 
         // Filter by Excluded Keywords
         if (excludedWords && excludedWords.length > 0) {
@@ -90,25 +106,18 @@ export function useFilteredCourses() {
             });
         }
 
-        // Filter by Unit Range
-        if (unitRanges && unitRanges.length > 0) {
+        // Filter by unit range (slider: unitMin–unitMax)
+        const unitsFilterActive = unitMin > 1 || unitMax < 5;
+        if (unitsFilterActive) {
+            const min = Math.max(1, unitMin);
+            const max = Math.min(5, unitMax);
             result = result.filter(c => {
                 const checkUnits = (uStr: string | number) => {
                     if (!uStr) return false;
                     const u = typeof uStr === 'string' ? parseFloat(uStr) : uStr;
                     if (isNaN(u)) return false;
-
-                    // Check if it falls into ANY of the selected ranges
-                    return unitRanges.some(range => {
-                        if (range === '1') return u >= 1 && u < 2;
-                        if (range === '2') return u >= 2 && u < 3;
-                        if (range === '3') return u >= 3 && u < 4;
-                        if (range === '4') return u >= 4 && u < 5;
-                        if (range === '5+') return u >= 5;
-                        return false;
-                    });
+                    return u >= min && (max >= 5 ? true : u <= max);
                 };
-
                 if (c.sections && c.sections.length > 0) {
                     return c.sections.some(s => checkUnits(s.units));
                 }
@@ -118,31 +127,17 @@ export function useFilteredCourses() {
             });
         }
 
-        // Filter by Time Range
-        if (timeRanges && timeRanges.length > 0) {
-            const timeToHour = (timeStr: string) => {
-                if (!timeStr) return -1;
-                const [time, modifier] = timeStr.split(' ');
-                let [hours] = time.split(':').map(Number);
-                if (modifier === 'PM' && hours < 12) hours += 12;
-                if (modifier === 'AM' && hours === 12) hours = 0;
-                return hours;
-            };
-
+        // Filter by start time range (minutes from midnight, 0–1440)
+        const timeFilterActive = timeMin > 0 || timeMax < 1440;
+        if (timeFilterActive) {
+            const min = Math.max(0, timeMin);
+            const max = Math.min(1440, timeMax);
             result = result.filter(c => {
                 if (c.sections && c.sections.length > 0) {
                     return c.sections.some(s => s.meetings.some(m => {
-                        const startHour = timeToHour(m.time.split('-')[0].trim());
-                        if (startHour === -1) return false;
-
-                        return timeRanges.some(range => {
-                            if (range === 'early-morning') return startHour < 10;
-                            if (range === 'morning') return startHour >= 10 && startHour < 12;
-                            if (range === 'afternoon') return startHour >= 12 && startHour < 14;
-                            if (range === 'late-afternoon') return startHour >= 14 && startHour < 17;
-                            if (range === 'evening') return startHour >= 17;
-                            return false;
-                        });
+                        const startStr = m.time && m.time.includes('-') ? m.time.split('-')[0].trim() : m.time;
+                        const startMins = timeToMinutes(startStr || '');
+                        return startMins >= min && startMins <= max;
                     }));
                 }
                 return false;
@@ -298,17 +293,66 @@ export function useFilteredCourses() {
             }
         }
 
-        // Sort alphabetically by Subject then Code
-        const sortedResult = [...result].sort((a, b) => {
+        // All filtering is done; this is the set we will sort (sort is the last step)
+        return result;
+    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideOnSchedule, cartItems, excludedWords]);
+
+    useEffect(() => {
+        if ((sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit') && filteredResult.length > 0) {
+            fetchBulkEvaluations(filteredResult.map(c => c.id).slice(0, 500));
+        }
+    }, [sortBy, filteredResult, fetchBulkEvaluations]);
+
+    // Sort is the absolute last step: operate only on the fully filtered list (filteredResult)
+    const filteredCourses = useMemo(() => {
+        const listToSort = filteredResult;
+        const sortKey = sortBy === 'default' ? 'az' : sortBy;
+        const dir = sortDir === 'desc' ? 'desc' : 'asc';
+
+        const getSortValue = (c: Course): number | null => {
+            if (sortKey === 'units') return getCourseUnitsNumeric(c);
+            const units = getCourseUnitsNumeric(c);
+            const evals = getEvaluations(c.id);
+            const metrics = evals.length > 0 ? aggregateMetrics(evals) : null;
+            const quality = metrics?.quality;
+            // Hours/Wk: total median reported hours (from evaluations chart)
+            if (sortKey === 'hours') return evals.length > 0 && metrics?.hours != null ? metrics.hours : null;
+            // Difficulty: total median reported hours / unit count (from evaluations)
+            if (sortKey === 'hours_per_unit') return (evals.length > 0 && metrics?.hours != null && units > 0) ? metrics.hours / units : null;
+            const scheduleHours = getWeeklyContactHours(c);
+            // Course rating: average of instruction quality, learning, organization (the three chart ratings, 5-point scale)
+            if (sortKey === 'quality') return evals.length > 0 ? getOverallEvalScore(metrics) : null;
+            if (sortKey === 'quality_per_unit') return (quality != null && units > 0) ? quality / units : -1;
+            if (sortKey === 'efficiency') return (quality != null && scheduleHours > 0) ? quality / scheduleHours : -1;
+            return null;
+        };
+
+        const sortedResult = [...listToSort].sort((a, b) => {
+            if (sortKey === 'az' || !sortKey) {
+                const subjectCompare = a.subject.localeCompare(b.subject);
+                const codeCompare = a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
+                const cmp = subjectCompare !== 0 ? subjectCompare : codeCompare;
+                return dir === 'desc' ? -cmp : cmp;
+            }
+            const va = getSortValue(a);
+            const vb = getSortValue(b);
+            const mult = dir === 'desc' ? -1 : 1;
+            if (va == null && vb == null) {
+                const subjectCompare = a.subject.localeCompare(b.subject);
+                if (subjectCompare !== 0) return subjectCompare;
+                return a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
+            }
+            if (va == null) return 1;
+            if (vb == null) return -1;
+            if (va !== vb) return mult * (va > vb ? 1 : -1);
             const subjectCompare = a.subject.localeCompare(b.subject);
             if (subjectCompare !== 0) return subjectCompare;
-
             return a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
         });
 
         return sortedResult;
-    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitRanges, timeRanges, hideConflicts, cartItems, excludedWords]);
+    }, [filteredResult, sortBy, sortDir, getEvaluations]);
 
     const isEnriching = useCourseStore(state => state.isEnriching);
-    return { courses: filteredCourses, isLoading, isEnriching };
+    return { courses: filteredCourses, isLoading, isEnriching, sortBy, setSortBy, sortDir, setSortDir };
 }

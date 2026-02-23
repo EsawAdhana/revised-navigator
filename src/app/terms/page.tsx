@@ -43,7 +43,7 @@ export default function TermsPage() {
             <h2 className="text-lg font-semibold text-foreground mb-2">3. Description of Service</h2>
             <p>
               Stanford Root provides tools for browsing Stanford course catalogs, building schedules,
-              viewing course evaluations, and planning degree requirements. Course data is sourced
+              and viewing course evaluations. Course data is sourced
               from publicly available Stanford University resources.
             </p>
           </section>

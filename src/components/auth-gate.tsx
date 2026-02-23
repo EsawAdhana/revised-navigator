@@ -15,7 +15,6 @@ const PHRASES = [
   'Detect time conflicts.',
   'Compare sections.',
   'Check enrollment.',
-  'Plan your degree.',
   'Explore departments.',
   'Read student reviews.',
   'Find open seats.',
@@ -93,15 +92,13 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const ALL_PHRASES = [
     'Find courses.', 'Read syllabi.', 'Browse evaluations.', 'Build your schedule.',
     'Filter by WAYS.', 'Detect time conflicts.', 'Compare sections.', 'Check enrollment.',
-    'Plan your degree.', 'Explore departments.', 'Read student reviews.', 'Find open seats.',
+    'Explore departments.', 'Read student reviews.', 'Find open seats.',
     'Search by instructor.', 'Filter by units.', 'View meeting times.', 'Export to calendar.',
-    'Ace your quarter.', 'Plan in seconds.', 'Visualize your week.', 'Track requirements.',
-    'Discover gems.', 'Avoid 8am classes.', 'Optimize your path.', 'Graduate on time.',
-    'Master your major.', 'Simplifying Stanford.', 'Analyze trends.', 'Smart scheduling.',
+    'Ace your quarter.', 'Plan in seconds.', 'Visualize your week.',
+    'Discover gems.', 'Avoid 8am classes.', 'Simplifying Stanford.', 'Analyze trends.', 'Smart scheduling.',
     'Search historically.', 'Review professors.', 'Mockup schedules.', 'Waitlist tracking.',
     'Unit planning.', 'Search efficiently.', 'Fast & responsive.', 'Mobile friendly.',
-    'Degree progress.', 'Major requirements.', 'GER fulfillment.', 'Language requirements.',
-    'Writing requirements.', 'Visualize workload.', 'Balance your life.', 'Academic roadmap.',
+    'Visualize workload.', 'Balance your life.',
   ]
 
   // Create 15 rows of deterministic content to allow SSR consistency
@@ -147,7 +144,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </h1>
 
           <p className="text-lg sm:text-2xl text-muted-foreground/80 max-w-2xl leading-relaxed font-light mb-10">
-            The ultimate tool for course discovery, scheduling, and degree planning.
+            The ultimate tool for course discovery and scheduling.
             Built by students, for students.
           </p>
 

@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
-import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean } from 'nuqs';
-import { cn, getSchoolFromSubject } from '@/lib/utils';
-import { parseMeetingTimes, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils';
+import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
+import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, getEffectiveExamType, buildEvalText, toExamFilterOption } from '@/lib/utils';
+import { useEvaluationStore } from '@/lib/evaluation-store';
+import { parseMeetingTimes, timeToMinutes, formatMinutes, isMeetingOptional, parseTimeStringToMinutes } from '@/lib/schedule-utils';
 import { CheckboxItem, FilterGroup } from '@/components/ui/filter-components';
 import { Input } from '@/components/ui/input';
 import { Search, Plus, X, ChevronDown, ChevronRight } from 'lucide-react';
@@ -23,6 +24,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 
 // Manual ScrollArea since I didn't install shadcn ScrollArea
@@ -31,16 +33,6 @@ const SimpleScrollArea = ({ className, children }: { className?: string, childre
         {children}
     </div>
 );
-
-// Unit/time value -> display label for active filter chips
-const UNIT_LABELS: Record<string, string> = { '1': '1 Unit', '2': '2 Units', '3': '3 Units', '4': '4 Units', '5+': '5+ Units' };
-const TIME_LABELS: Record<string, string> = {
-  'early-morning': 'Early Morning',
-  morning: 'Morning',
-  afternoon: 'Afternoon',
-  'late-afternoon': 'Late Afternoon',
-  evening: 'Evening'
-}
 
 // Helper for collapsible sections
 const FilterSection = ({
@@ -64,10 +56,9 @@ const FilterSection = ({
                 >
                     <div className="flex items-center gap-2">
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pl-1">{title}</h3>
-                        {hasActive && (
+                        {hasActive && !isOpen && (
                             <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-hidden />
                         )}
-                        <span className="text-[10px] text-muted-foreground/60 italic font-normal hidden group-hover:block">None = All</span>
                     </div>
                     {isOpen ? <ChevronDown size={14} className="shrink-0 text-muted-foreground" /> : <ChevronRight size={14} className="shrink-0 text-muted-foreground" />}
                 </button>
@@ -88,7 +79,8 @@ export function FilterSidebar() {
     const [query] = useQueryState('q', { defaultValue: '' });
     const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([]));
-    const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
+    const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true));
+    const [hideOnSchedule, setHideOnSchedule] = useQueryState('hideOnSchedule', parseAsBoolean.withDefault(true));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
 
     // New Filters
@@ -97,19 +89,60 @@ export function FilterSidebar() {
     const [selectedLevels, setSelectedLevels] = useQueryState('levels', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedGers, setSelectedGers] = useQueryState('gers', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedSchools, setSelectedSchools] = useQueryState('schools', parseAsArrayOf(parseAsString).withDefault([]));
+    const [selectedExams, setSelectedExams] = useQueryState('exams', parseAsArrayOf(parseAsString).withDefault([]));
 
     // Single Selects (Dropdowns) -> Now Multi Selects (Checkboxes)
-    const [unitRanges, setUnitRanges] = useQueryState('units', parseAsArrayOf(parseAsString).withDefault([]));
-    const [timeRanges, setTimeRanges] = useQueryState('times', parseAsArrayOf(parseAsString).withDefault([]));
+    const [unitMin, setUnitMin] = useQueryState('unitMin', parseAsInteger.withDefault(1));
+    const [unitMax, setUnitMax] = useQueryState('unitMax', parseAsInteger.withDefault(5));
+    const [timeMin, setTimeMin] = useQueryState('timeMin', parseAsInteger.withDefault(0));
+    const [timeMax, setTimeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1440));
+    // Local state for time inputs (for explicit typing)
+    const [timeFromInput, setTimeFromInput] = useState('');
+    const [timeToInput, setTimeToInput] = useState('');
+    const [timeFieldFocused, setTimeFieldFocused] = useState<'from' | 'to' | null>(null);
+
+    // Debounced Local State for Sliders (fixes dragging lag)
+    const [localUnitMin, setLocalUnitMin] = useState(unitMin);
+    const [localUnitMax, setLocalUnitMax] = useState(unitMax);
+    const [localTimeMin, setLocalTimeMin] = useState(timeMin);
+    const [localTimeMax, setLocalTimeMax] = useState(timeMax);
+
+    // Sync global -> local when external clear/reset happens,
+    // but avoid overwriting local during active dragging.
+    // We achieve this safely by reacting to global changes:
+    React.useEffect(() => { setLocalUnitMin(unitMin); }, [unitMin]);
+    React.useEffect(() => { setLocalUnitMax(unitMax); }, [unitMax]);
+    React.useEffect(() => { setLocalTimeMin(timeMin); }, [timeMin]);
+    React.useEffect(() => { setLocalTimeMax(timeMax); }, [timeMax]);
+
+    // Debounce pushing Local -> Global
+    React.useEffect(() => {
+        const handler = setTimeout(() => {
+            if (localUnitMin !== unitMin) setUnitMin(localUnitMin);
+            if (localUnitMax !== unitMax) setUnitMax(localUnitMax);
+            if (localTimeMin !== timeMin) setTimeMin(localTimeMin);
+            if (localTimeMax !== timeMax) setTimeMax(localTimeMax);
+        }, 300); // 300ms debounce
+        return () => clearTimeout(handler);
+    }, [localUnitMin, localUnitMax, localTimeMin, localTimeMax, setUnitMin, setUnitMax, setTimeMin, setTimeMax, unitMin, unitMax, timeMin, timeMax]);
 
     const [deptQuery, setDeptQuery] = useState('');
     const [excludeInput, setExcludeInput] = useState('');
     const [isDialogOpen, setIsDialogOpen] = useState(false);
 
+    const getEvaluations = useEvaluationStore(state => state.getEvaluations);
+    const evaluations = useEvaluationStore(state => state.evaluations);
+
     // Helper to filter courses based on all active filters except a specific one
     // This ensures facet counts match the visible course list
     const getFilteredCoursesForFacets = (excludeFilter?: string) => {
         let filtered = courses;
+
+        // Filter out courses already on schedule
+        if (hideOnSchedule && cartItems.length > 0 && excludeFilter !== 'hideOnSchedule') {
+            const onScheduleIds = new Set(cartItems.map(c => c.id));
+            filtered = filtered.filter(c => !onScheduleIds.has(c.id));
+        }
 
         // Apply excluded words filter
         if (excludedWords && excludedWords.length > 0 && excludeFilter !== 'exclude') {
@@ -182,21 +215,27 @@ export function FilterSidebar() {
             });
         }
 
-        // Apply unit range filter
-        if (unitRanges && unitRanges.length > 0 && excludeFilter !== 'units') {
+        // Apply exam type filter (no exams vs has exams; take-home counts as has exams)
+        if (selectedExams && selectedExams.length > 0 && excludeFilter !== 'exams') {
+            filtered = filtered.filter(c => {
+                const evalText = buildEvalText(getEvaluations(c.id));
+                const examType = getEffectiveExamType(c, evalText);
+                const option = toExamFilterOption(examType);
+                return selectedExams.includes(option);
+            });
+        }
+
+        // Apply unit range filter (slider: unitMin–unitMax)
+        const unitsFilterActive = unitMin > 1 || unitMax < 5;
+        if (unitsFilterActive && excludeFilter !== 'units') {
+            const min = Math.max(1, unitMin);
+            const max = Math.min(5, unitMax);
             filtered = filtered.filter(c => {
                 const checkUnits = (uStr: string | number) => {
                     if (!uStr) return false;
                     const u = typeof uStr === 'string' ? parseFloat(uStr) : uStr;
                     if (isNaN(u)) return false;
-                    return unitRanges.some(range => {
-                        if (range === '1') return u >= 1 && u < 2;
-                        if (range === '2') return u >= 2 && u < 3;
-                        if (range === '3') return u >= 3 && u < 4;
-                        if (range === '4') return u >= 4 && u < 5;
-                        if (range === '5+') return u >= 5;
-                        return false;
-                    });
+                    return u >= min && (max >= 5 ? true : u <= max);
                 };
                 if (c.sections && c.sections.length > 0) {
                     return c.sections.some(s => checkUnits(s.units));
@@ -207,29 +246,17 @@ export function FilterSidebar() {
             });
         }
 
-        // Apply time range filter
-        if (timeRanges && timeRanges.length > 0 && excludeFilter !== 'times') {
-            const timeToHour = (timeStr: string) => {
-                if (!timeStr) return -1;
-                const [time, modifier] = timeStr.split(' ');
-                let [hours] = time.split(':').map(Number);
-                if (modifier === 'PM' && hours < 12) hours += 12;
-                if (modifier === 'AM' && hours === 12) hours = 0;
-                return hours;
-            };
+        // Apply start time range filter (minutes from midnight, 0–1440)
+        const timeFilterActive = timeMin > 0 || timeMax < 1440;
+        if (timeFilterActive && excludeFilter !== 'times') {
+            const min = Math.max(0, timeMin);
+            const max = Math.min(1440, timeMax);
             filtered = filtered.filter(c => {
                 if (c.sections && c.sections.length > 0) {
                     return c.sections.some(s => s.meetings.some(m => {
-                        const startHour = timeToHour(m.time.split('-')[0].trim());
-                        if (startHour === -1) return false;
-                        return timeRanges.some(range => {
-                            if (range === 'early-morning') return startHour < 10;
-                            if (range === 'morning') return startHour >= 10 && startHour < 12;
-                            if (range === 'afternoon') return startHour >= 12 && startHour < 14;
-                            if (range === 'late-afternoon') return startHour >= 14 && startHour < 17;
-                            if (range === 'evening') return startHour >= 17;
-                            return false;
-                        });
+                        const startStr = m.time && m.time.includes('-') ? m.time.split('-')[0].trim() : m.time;
+                        const startMins = timeToMinutes(startStr || '');
+                        return startMins >= min && startMins <= max;
                     }));
                 }
                 return false;
@@ -391,8 +418,6 @@ export function FilterSidebar() {
         const levels = new Map<string, number>();
         const gers = new Map<string, number>();
         const schools = new Map<string, number>();
-        const unitCounts = new Map<string, number>();
-        const timeCounts = new Map<string, number>();
 
         // Get filtered courses for each facet type (excluding that facet's filter)
         const coursesForDepts = getFilteredCoursesForFacets('depts');
@@ -402,8 +427,7 @@ export function FilterSidebar() {
         const coursesForLevels = getFilteredCoursesForFacets('levels');
         const coursesForGers = getFilteredCoursesForFacets('gers');
         const coursesForSchools = getFilteredCoursesForFacets('schools');
-        const coursesForUnits = getFilteredCoursesForFacets('units');
-        const coursesForTimes = getFilteredCoursesForFacets('times');
+        const coursesForExams = getFilteredCoursesForFacets('exams');
 
         // Compute dept facets
         coursesForDepts.forEach(c => {
@@ -421,39 +445,6 @@ export function FilterSidebar() {
                 terms.set(c.term, (terms.get(c.term) || 0) + 1);
             }
         });
-
-        // Helper parsing functions
-        const checkUnits = (uStr: string | number, range: string) => {
-            if (!uStr) return false;
-            const u = typeof uStr === 'string' ? parseFloat(uStr) : uStr;
-            if (isNaN(u)) return false;
-            if (range === '1') return u >= 1 && u < 2;
-            if (range === '2') return u >= 2 && u < 3;
-            if (range === '3') return u >= 3 && u < 4;
-            if (range === '4') return u >= 4 && u < 5;
-            if (range === '5+') return u >= 5;
-            return false;
-        };
-
-        const timeToHour = (timeStr: string) => {
-            if (!timeStr) return -1;
-            const [time, modifier] = timeStr.split(' ');
-            let [hours] = time.split(':').map(Number);
-            if (modifier === 'PM' && hours < 12) hours += 12;
-            if (modifier === 'AM' && hours === 12) hours = 0;
-            return hours;
-        };
-
-        const checkTime = (timeStr: string, range: string) => {
-            const startHour = timeToHour(timeStr.split('-')[0].trim());
-            if (startHour === -1) return false;
-            if (range === 'early-morning') return startHour < 10;
-            if (range === 'morning') return startHour >= 10 && startHour < 12;
-            if (range === 'afternoon') return startHour >= 12 && startHour < 14;
-            if (range === 'late-afternoon') return startHour >= 14 && startHour < 17;
-            if (range === 'evening') return startHour >= 17;
-            return false;
-        };
 
         // Compute format facets
         coursesForFormats.forEach(c => {
@@ -505,39 +496,13 @@ export function FilterSidebar() {
             if (school) schools.set(school, (schools.get(school) || 0) + 1);
         });
 
-        // Compute unit facets
-        coursesForUnits.forEach(c => {
-            const uniqueUnitRanges = new Set<string>();
-            if (c.sections && c.sections.length > 0) {
-                c.sections.forEach(s => {
-                    ['1', '2', '3', '4', '5+'].forEach(r => {
-                        if (checkUnits(s.units, r)) uniqueUnitRanges.add(r);
-                    });
-                });
-            } else {
-                const mainUnits = parseFloat(c.units);
-                if (!isNaN(mainUnits)) {
-                    ['1', '2', '3', '4', '5+'].forEach(r => {
-                        if (checkUnits(mainUnits, r)) uniqueUnitRanges.add(r);
-                    });
-                }
-            }
-            uniqueUnitRanges.forEach(r => unitCounts.set(r, (unitCounts.get(r) || 0) + 1));
-        });
-
-        // Compute time facets
-        coursesForTimes.forEach(c => {
-            const uniqueTimeRanges = new Set<string>();
-            if (c.sections && c.sections.length > 0) {
-                c.sections.forEach(s => {
-                    s.meetings.forEach(m => {
-                        ['early-morning', 'morning', 'afternoon', 'late-afternoon', 'evening'].forEach(r => {
-                            if (checkTime(m.time, r)) uniqueTimeRanges.add(r);
-                        });
-                    });
-                });
-            }
-            uniqueTimeRanges.forEach(r => timeCounts.set(r, (timeCounts.get(r) || 0) + 1));
+        // Compute exam type facets (no exams vs has exams; take-home counts as has exams)
+        const examCounts = new Map<string, number>();
+        coursesForExams.forEach(c => {
+            const evalText = buildEvalText(getEvaluations(c.id));
+            const examType = getEffectiveExamType(c, evalText);
+            const option = toExamFilterOption(examType);
+            examCounts.set(option, (examCounts.get(option) || 0) + 1);
         });
 
         return {
@@ -559,11 +524,13 @@ export function FilterSidebar() {
             statuses: Array.from(statuses.entries()).sort((a, b) => b[1] - a[1]),
             levels: Array.from(levels.entries()).sort((a, b) => b[1] - a[1]),
             gers: Array.from(gers.entries()).sort((a, b) => a[0].localeCompare(b[0])),
-            unitCounts,
-            timeCounts,
             schools,
+            exams: ([
+                ['no_exam', examCounts.get('no_exam') || 0],
+                ['has_exam', examCounts.get('has_exam') || 0],
+            ] as [string, number][]).filter(([, count]) => count > 0),
         };
-    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitRanges, timeRanges, query, hideConflicts, cartItems]);
+    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, selectedExams, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, hideOnSchedule, cartItems, evaluations, getEvaluations]);
 
     const filteredDepts = useMemo(() => {
         if (!deptQuery) return facets.depts;
@@ -608,96 +575,62 @@ export function FilterSidebar() {
         setExcludedWords(next.length ? next : null);
     };
 
-    // Active filter chips for the bar at top (label + remove handler)
-    const activeFilterChips = useMemo(() => {
-        const chips: { id: string, label: string, onRemove: () => void }[] = []
-        if (hideConflicts) {
-            chips.push({ id: 'hideConflicts', label: 'Hide conflicting', onRemove: () => setHideConflicts(false) })
-        }
-        excludedWords.forEach(word => {
-            chips.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })
-        })
-        selectedTerms.forEach(term => {
-            chips.push({ id: `term-${term}`, label: term, onRemove: () => toggleFilter(term, selectedTerms, setSelectedTerms) })
-        })
-        selectedDepts.forEach(dept => {
-            chips.push({ id: `dept-${dept}`, label: dept, onRemove: () => removeDept(dept) })
-        })
-        selectedFormats.forEach(fmt => {
-            chips.push({ id: `fmt-${fmt}`, label: fmt, onRemove: () => toggleFilter(fmt, selectedFormats, setSelectedFormats) })
-        })
-        selectedStatus.forEach(s => {
-            chips.push({ id: `status-${s}`, label: s, onRemove: () => toggleFilter(s, selectedStatus, setSelectedStatus) })
-        })
-        selectedLevels.forEach(lvl => {
-            chips.push({ id: `level-${lvl}`, label: lvl, onRemove: () => toggleFilter(lvl, selectedLevels, setSelectedLevels) })
-        })
-        unitRanges.forEach(r => {
-            chips.push({ id: `unit-${r}`, label: UNIT_LABELS[r] || r, onRemove: () => toggleFilter(r, unitRanges, setUnitRanges) })
-        })
-        timeRanges.forEach(r => {
-            chips.push({ id: `time-${r}`, label: TIME_LABELS[r] || r, onRemove: () => toggleFilter(r, timeRanges, setTimeRanges) })
-        })
-        selectedGers.forEach(ger => {
-            chips.push({ id: `ger-${ger}`, label: ger, onRemove: () => toggleFilter(ger, selectedGers, setSelectedGers) })
-        })
-        selectedSchools.forEach(school => {
-            chips.push({ id: `school-${school}`, label: school, onRemove: () => toggleFilter(school, selectedSchools, setSelectedSchools) })
-        })
-        return chips
-    }, [hideConflicts, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedStatus, selectedLevels, unitRanges, timeRanges, selectedGers, selectedSchools])
-
     return (
         <div className="flex flex-col h-full bg-background border-r border-border/40">
-            <div className="p-6 pb-4 border-b border-border/40">
-                <h2 className="text-sm font-semibold text-foreground/80 tracking-wide uppercase">Filters</h2>
+            <div className="px-4 py-3 border-b border-border/40 flex items-center min-w-0 w-full">
+                <h2 className="text-sm font-semibold text-foreground/80 tracking-wide uppercase shrink-0">Filters</h2>
             </div>
 
-            {/* Active filters bar: chips with X to remove */}
-            {activeFilterChips.length > 0 && (
-                <div className="px-4 py-3 border-b border-border/40 bg-muted/30">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Active</p>
-                    <div className="flex flex-wrap gap-1.5">
-                        {activeFilterChips.map(({ id, label, onRemove }) => (
-                            <span
-                                key={id}
-                                className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-md bg-background border border-border/60 text-xs font-medium text-foreground"
-                            >
-                                <span className="max-w-[120px] truncate" title={label}>{label}</span>
-                                <button
-                                    type="button"
-                                    onClick={onRemove}
-                                    className="shrink-0 rounded p-0.5 hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                                    aria-label={`Remove ${label}`}
-                                >
-                                    <X size={12} className="text-muted-foreground hover:text-foreground" />
-                                </button>
-                            </span>
-                        ))}
+            <SimpleScrollArea className="flex-1 px-4 py-3 space-y-3">
+                <div className="space-y-1">
+                    <div className="flex items-center gap-2 min-h-8">
+                        <input
+                            type="checkbox"
+                            id="showOnSchedule"
+                            checked={!hideOnSchedule}
+                            onChange={(e) => setHideOnSchedule(!e.target.checked)}
+                            className="h-4 w-4 shrink-0 rounded border-input text-primary focus:ring-primary accent-primary"
+                        />
+                        <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <label htmlFor="showOnSchedule" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
+                                        Show existing planned courses
+                                    </label>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" align="start" className="max-w-[240px]">
+                                    Include courses you&apos;ve already added to your schedule. By default, they&apos;re hidden.
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     </div>
-                </div>
-            )}
-
-            <SimpleScrollArea className="flex-1 px-4 py-4 space-y-6">
-                <div className="flex items-center space-x-2">
-                    <input
-                        type="checkbox"
-                        id="hideConflicts"
-                        checked={hideConflicts}
-                        onChange={(e) => setHideConflicts(e.target.checked)}
-                        className="h-4 w-4 rounded border-input text-primary focus:ring-primary accent-primary"
-                    />
-                    <label htmlFor="hideConflicts" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
-                        Hide Conflicting Classes
-                        {hideConflicts && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-hidden />}
-                    </label>
+                    <div className="flex items-center gap-2 min-h-8">
+                        <input
+                            type="checkbox"
+                            id="showConflicts"
+                            checked={!hideConflicts}
+                            onChange={(e) => setHideConflicts(!e.target.checked)}
+                            className="h-4 w-4 shrink-0 rounded border-input text-primary focus:ring-primary accent-primary"
+                        />
+                        <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <label htmlFor="showConflicts" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
+                                        Show conflicting classes
+                                    </label>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" align="start" className="max-w-[240px]">
+                                    Include courses that overlap in time with courses on your schedule. By default, they&apos;re hidden.
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </div>
                 </div>
 
                 {/* Exclude Keywords */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pl-1 flex items-center gap-1.5">
                         Exclude Keywords
-                        {excludedWords.length > 0 && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-hidden />}
                     </h3>
                     <div className="space-y-2">
                         <Input
@@ -729,7 +662,6 @@ export function FilterSidebar() {
                 <div className="space-y-3">
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pl-1 flex items-center gap-1.5">
                         Term
-                        {selectedTerms.length > 0 && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-hidden />}
                     </h3>
                     <div className="space-y-1">
                         {facets.terms.map(([term, count]) => (
@@ -749,7 +681,6 @@ export function FilterSidebar() {
                     <div className="flex items-center justify-between">
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pl-1 flex items-center gap-1.5">
                             Departments
-                            {selectedDepts.length > 0 && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-hidden />}
                         </h3>
                         {selectedDepts.length > 0 && (
                             <button
@@ -834,107 +765,256 @@ export function FilterSidebar() {
 
                 {/* Collapsible filter sections: no gap so entire strip is clickable */}
                 <div className="space-y-0">
-                <FilterSection title="Format" hasActive={selectedFormats.length > 0}>
-                    {facets.formats.map(([fmt, count]) => (
-                        <CheckboxItem
-                            key={fmt}
-                            label={fmt} // e.g. "Lecture", "Seminar"
-                            count={count}
-                            checked={selectedFormats.includes(fmt)}
-                            onChange={() => toggleFilter(fmt, selectedFormats, setSelectedFormats)}
-                        />
-                    ))}
-                </FilterSection>
+                    <FilterSection title="Format" hasActive={selectedFormats.length > 0}>
+                        {facets.formats.map(([fmt, count]) => (
+                            <CheckboxItem
+                                key={fmt}
+                                label={fmt} // e.g. "Lecture", "Seminar"
+                                count={count}
+                                checked={selectedFormats.includes(fmt)}
+                                onChange={() => toggleFilter(fmt, selectedFormats, setSelectedFormats)}
+                            />
+                        ))}
+                    </FilterSection>
 
-                {/* Class Status */}
-                <FilterSection title="Class Status" hasActive={selectedStatus.length > 0}>
-                    {facets.statuses.map(([status, count]) => (
-                        <CheckboxItem
-                            key={status}
-                            label={status}
-                            count={count}
-                            checked={selectedStatus.includes(status)}
-                            onChange={() => toggleFilter(status, selectedStatus, setSelectedStatus)}
-                        />
-                    ))}
-                </FilterSection>
+                    {/* Class Status */}
+                    <FilterSection title="Class Status" hasActive={selectedStatus.length > 0}>
+                        {facets.statuses.map(([status, count]) => (
+                            <CheckboxItem
+                                key={status}
+                                label={status}
+                                count={count}
+                                checked={selectedStatus.includes(status)}
+                                onChange={() => toggleFilter(status, selectedStatus, setSelectedStatus)}
+                            />
+                        ))}
+                    </FilterSection>
 
-                {/* Class Level */}
-                <FilterSection title="Class Level" hasActive={selectedLevels.length > 0}>
-                    {facets.levels.map(([lvl, count]) => (
-                        <CheckboxItem
-                            key={lvl}
-                            label={lvl}
-                            count={count}
-                            checked={selectedLevels.includes(lvl)}
-                            onChange={() => toggleFilter(lvl, selectedLevels, setSelectedLevels)}
-                        />
-                    ))}
-                </FilterSection>
+                    {/* Class Level */}
+                    <FilterSection title="Class Level" hasActive={selectedLevels.length > 0}>
+                        {facets.levels.map(([lvl, count]) => (
+                            <CheckboxItem
+                                key={lvl}
+                                label={lvl}
+                                count={count}
+                                checked={selectedLevels.includes(lvl)}
+                                onChange={() => toggleFilter(lvl, selectedLevels, setSelectedLevels)}
+                            />
+                        ))}
+                    </FilterSection>
 
-                {/* Units */}
-                <FilterSection title="Number of Units" hasActive={unitRanges.length > 0}>
-                    {[
-                        { val: '1', label: '1 Unit' },
-                        { val: '2', label: '2 Units' },
-                        { val: '3', label: '3 Units' },
-                        { val: '4', label: '4 Units' },
-                        { val: '5+', label: '5+ Units' }
-                    ].map(opt => (
-                        <CheckboxItem
-                            key={opt.val}
-                            label={opt.label}
-                            count={facets.unitCounts.get(opt.val) || 0}
-                            checked={unitRanges.includes(opt.val)}
-                            onChange={() => toggleFilter(opt.val, unitRanges, setUnitRanges)}
-                        />
-                    ))}
-                </FilterSection>
+                    {/* Exam type: no exams vs has exams (take-home counts as has exams) */}
+                    <FilterSection title="Exams" hasActive={selectedExams.length > 0}>
+                        {[
+                            { code: 'no_exam', label: 'No exams' },
+                            { code: 'has_exam', label: 'Has exams' },
+                        ].map(({ code, label }) => {
+                            const count = (facets.exams?.find(([c]) => c === code)?.[1] ?? 0) as number;
+                            return (
+                                <CheckboxItem
+                                    key={code}
+                                    label={label}
+                                    count={count}
+                                    checked={selectedExams.includes(code)}
+                                    onChange={() => toggleFilter(code, selectedExams, setSelectedExams)}
+                                />
+                            );
+                        })}
+                    </FilterSection>
 
-                {/* Start Time */}
-                <FilterSection title="Start Time" hasActive={timeRanges.length > 0}>
-                    {[
-                        { val: 'early-morning', label: 'Early Morning (< 10 AM)' },
-                        { val: 'morning', label: 'Late Morning (10-12 PM)' },
-                        { val: 'afternoon', label: 'Early Afternoon (12-2 PM)' },
-                        { val: 'late-afternoon', label: 'Late Afternoon (2-5 PM)' },
-                        { val: 'evening', label: 'Evening (5 PM+)' }
-                    ].map(opt => (
-                        <CheckboxItem
-                            key={opt.val}
-                            label={opt.label}
-                            count={facets.timeCounts.get(opt.val) || 0}
-                            checked={timeRanges.includes(opt.val)}
-                            onChange={() => toggleFilter(opt.val, timeRanges, setTimeRanges)}
-                        />
-                    ))}
-                </FilterSection>
+                    {/* Number of Units — Min and Max on separate tracks so both are easy to use */}
+                    <FilterSection title="Number of Units" hasActive={unitMin > 1 || unitMax < 5}>
+                        <div className="space-y-3 px-1">
+                            <div className="pt-1">
+                                <div className="flex items-center gap-2 text-xs">
+                                    <span className="w-8 shrink-0 text-muted-foreground">Min</span>
+                                    <input
+                                        type="range"
+                                        min={1}
+                                        max={5}
+                                        value={localUnitMin}
+                                        onChange={(e) => {
+                                            const v = Number(e.target.value)
+                                            setLocalUnitMin(v)
+                                            if (v > localUnitMax) setLocalUnitMax(v)
+                                        }}
+                                        className="flex-1 filter-range accent-primary"
+                                    />
+                                    <span className="w-6 text-right text-muted-foreground tabular-nums">{localUnitMin}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs mt-2">
+                                    <span className="w-8 shrink-0 text-muted-foreground">Max</span>
+                                    <input
+                                        type="range"
+                                        min={1}
+                                        max={5}
+                                        value={localUnitMax}
+                                        onChange={(e) => {
+                                            const v = Number(e.target.value)
+                                            setLocalUnitMax(v)
+                                            if (v < localUnitMin) setLocalUnitMin(v)
+                                        }}
+                                        className="flex-1 filter-range accent-primary"
+                                    />
+                                    <span className="w-6 text-right text-muted-foreground tabular-nums">{localUnitMax >= 5 ? '5+' : localUnitMax}</span>
+                                </div>
+                                <div className="flex justify-between mt-2 px-0.5 text-[10px] text-muted-foreground">
+                                    {[1, 2, 3, 4, 5].map((n) => (
+                                        <span key={n} className="tabular-nums">{n === 5 ? '5+' : n}</span>
+                                    ))}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1.5 tabular-nums">
+                                    {localUnitMin === localUnitMax ? (localUnitMax >= 5 ? `${localUnitMin}+` : `${localUnitMin}`) : `${localUnitMin}–${localUnitMax >= 5 ? '5+' : localUnitMax}`} {unitsLabel(localUnitMin)}
+                                </p>
+                            </div>
+                        </div>
+                    </FilterSection>
 
-                {/* GERs */}
-                <FilterSection title="General Education Requirements" hasActive={selectedGers.length > 0}>
-                    {facets.gers.map(([ger, count]) => (
-                        <CheckboxItem
-                            key={ger}
-                            label={ger}
-                            count={count}
-                            checked={selectedGers.includes(ger)}
-                            onChange={() => toggleFilter(ger, selectedGers, setSelectedGers)}
-                        />
-                    ))}
-                </FilterSection>
+                    {/* Start Time — From and To on separate tracks so both are easy to use */}
+                    <FilterSection title="Start Time" hasActive={timeMin > 0 || timeMax < 1440}>
+                        <div className="space-y-3 px-1">
+                            <div className="pt-1">
+                                <p className="text-xs text-muted-foreground mb-2 tabular-nums">
+                                    {localTimeMin === 0 && localTimeMax === 1440 ? 'Any time' : `${formatMinutes(localTimeMin)} – ${localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax)}`}
+                                </p>
+                                <div className="flex items-center gap-2 text-xs">
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={1440}
+                                        step={30}
+                                        value={localTimeMin}
+                                        onChange={(e) => {
+                                            const v = Number(e.target.value);
+                                            setLocalTimeMin(v);
+                                            if (v > localTimeMax) setLocalTimeMax(v);
+                                        }}
+                                        className="flex-1 filter-range accent-primary"
+                                    />
+                                    <Input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="9:00 AM"
+                                        className="w-[88px] h-7 text-right text-[11px] tabular-nums px-1.5"
+                                        value={timeFieldFocused === 'from' ? timeFromInput : formatMinutes(localTimeMin)}
+                                        onFocus={() => {
+                                            setTimeFromInput(formatMinutes(localTimeMin));
+                                            setTimeFieldFocused('from');
+                                        }}
+                                        onChange={(e) => setTimeFromInput(e.target.value)}
+                                        onBlur={() => {
+                                            const parsed = parseTimeStringToMinutes(timeFromInput);
+                                            if (parsed != null) {
+                                                setLocalTimeMin(parsed);
+                                                if (parsed > localTimeMax) setLocalTimeMax(parsed);
+                                                setTimeFromInput(formatMinutes(parsed));
+                                            } else {
+                                                setTimeFromInput(formatMinutes(localTimeMin));
+                                            }
+                                            setTimeFieldFocused(null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === 'Tab') {
+                                                e.preventDefault();
+                                                const parsed = parseTimeStringToMinutes(timeFromInput);
+                                                if (parsed != null) {
+                                                    setLocalTimeMin(parsed);
+                                                    if (parsed > localTimeMax) setLocalTimeMax(parsed);
+                                                    setTimeFromInput(formatMinutes(parsed));
+                                                } else {
+                                                    setTimeFromInput(formatMinutes(localTimeMin));
+                                                }
+                                                setTimeFieldFocused(null);
+                                                if (e.key === 'Tab') {
+                                                    const toEl = document.querySelector<HTMLInputElement>('[data-time-to-input]');
+                                                    toEl?.focus();
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2 text-xs mt-2">
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={1440}
+                                        step={30}
+                                        value={localTimeMax}
+                                        onChange={(e) => {
+                                            const v = Number(e.target.value);
+                                            setLocalTimeMax(v);
+                                            if (v < localTimeMin) setLocalTimeMin(v);
+                                        }}
+                                        className="flex-1 filter-range accent-primary"
+                                    />
+                                    <Input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="5:00 PM"
+                                        data-time-to-input
+                                        className="w-[88px] h-7 text-right text-[11px] tabular-nums px-1.5"
+                                        value={timeFieldFocused === 'to' ? timeToInput : (localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax))}
+                                        onFocus={() => {
+                                            setTimeToInput(localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax));
+                                            setTimeFieldFocused('to');
+                                        }}
+                                        onChange={(e) => setTimeToInput(e.target.value)}
+                                        onBlur={() => {
+                                            const parsed = parseTimeStringToMinutes(timeToInput, true);
+                                            if (parsed != null) {
+                                                setLocalTimeMax(parsed);
+                                                if (parsed < localTimeMin) setLocalTimeMin(parsed);
+                                                setTimeToInput(parsed >= 1440 ? '12:00 AM' : formatMinutes(parsed));
+                                            } else {
+                                                setTimeToInput(localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax));
+                                            }
+                                            setTimeFieldFocused(null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === 'Tab') {
+                                                e.preventDefault();
+                                                const parsed = parseTimeStringToMinutes(timeToInput, true);
+                                                if (parsed != null) {
+                                                    setLocalTimeMax(parsed);
+                                                    if (parsed < localTimeMin) setLocalTimeMin(parsed);
+                                                    setTimeToInput(parsed >= 1440 ? '12:00 AM' : formatMinutes(parsed));
+                                                } else {
+                                                    setTimeToInput(localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax));
+                                                }
+                                                setTimeFieldFocused(null);
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </FilterSection>
 
-                {/* School */}
-                <FilterSection title="School" hasActive={selectedSchools.length > 0}>
-                    {['Business', 'Education', 'Engineering', 'Humanities & Sciences', 'Law', 'Medicine', 'Sustainability'].map(school => (
-                        <CheckboxItem
-                            key={school}
-                            label={school}
-                            count={facets.schools.get(school) || 0}
-                            checked={selectedSchools.includes(school)}
-                            onChange={() => toggleFilter(school, selectedSchools, setSelectedSchools)}
-                        />
-                    ))}
-                </FilterSection>
+                    {/* GERs */}
+                    <FilterSection title="General Education Requirements" hasActive={selectedGers.length > 0}>
+                        {facets.gers.map(([ger, count]) => (
+                            <CheckboxItem
+                                key={ger}
+                                label={ger}
+                                count={count}
+                                checked={selectedGers.includes(ger)}
+                                onChange={() => toggleFilter(ger, selectedGers, setSelectedGers)}
+                            />
+                        ))}
+                    </FilterSection>
+
+                    {/* School */}
+                    <FilterSection title="School" hasActive={selectedSchools.length > 0}>
+                        {['Business', 'Education', 'Engineering', 'Humanities & Sciences', 'Law', 'Medicine', 'Sustainability'].map(school => (
+                            <CheckboxItem
+                                key={school}
+                                label={school}
+                                count={facets.schools.get(school) || 0}
+                                checked={selectedSchools.includes(school)}
+                                onChange={() => toggleFilter(school, selectedSchools, setSelectedSchools)}
+                            />
+                        ))}
+                    </FilterSection>
                 </div>
 
             </SimpleScrollArea>

@@ -80,52 +80,54 @@ function parseRespondentCount(respondents: string): number {
   return simpleMatch ? parseInt(simpleMatch[1], 10) : 1
 }
 
-// --- Aggregation ---
+function median(values: number[]): number | null {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+// --- Aggregation (all medians, never mean) ---
 
 export function aggregateMetrics(evals: CourseEvaluation[]) {
-  const sums: Record<QuestionCategory, { total: number, weight: number }> = {
-    quality: { total: 0, weight: 0 },
-    learning: { total: 0, weight: 0 },
-    organization: { total: 0, weight: 0 },
-    goals: { total: 0, weight: 0 },
-    hours: { total: 0, weight: 0 },
-    attendance_in_person: { total: 0, weight: 0 },
-    attendance_online: { total: 0, weight: 0 },
-    unknown: { total: 0, weight: 0 }
+  const byCat: Record<QuestionCategory, number[]> = {
+    quality: [], learning: [], organization: [], goals: [], hours: [],
+    attendance_in_person: [], attendance_online: [], unknown: []
   }
 
   for (const ev of evals) {
-    const w = parseRespondentCount(ev.respondents)
     for (const q of ev.questions) {
       const cat = categorizeQuestion(q.text)
-      sums[cat].total += q.mean * w
-      sums[cat].weight += w
+      byCat[cat].push(q.median)
     }
   }
 
   const result: Partial<Record<QuestionCategory, number>> = {}
-  for (const [cat, { total, weight }] of Object.entries(sums)) {
-    if (weight > 0) result[cat as QuestionCategory] = total / weight
+  for (const [cat, values] of Object.entries(byCat)) {
+    const m = median(values)
+    if (m != null) result[cat as QuestionCategory] = m
   }
   return result
 }
 
+/** Median of quality, learning, organization (the three chart ratings excluding hours). Used for sorting. */
+export function getOverallEvalScore(metrics: Partial<Record<QuestionCategory, number>> | null): number | null {
+  if (!metrics) return null
+  const vals = [metrics.quality, metrics.learning, metrics.organization].filter((v): v is number => v != null)
+  if (vals.length === 0) return null
+  return median(vals)
+}
+
 export function computeInstructorStats(evals: CourseEvaluation[]) {
-  const byInstructor: Record<string, { scores: Record<QuestionCategory, { total: number, weight: number }>, evalCount: number, terms: Set<string> }> = {}
+  const byInstructor: Record<string, { scores: Record<QuestionCategory, number[]>, evalCount: number, terms: Set<string> }> = {}
 
   for (const ev of evals) {
     const name = ev.instructor
     if (!byInstructor[name]) {
       byInstructor[name] = {
         scores: {
-          quality: { total: 0, weight: 0 },
-          learning: { total: 0, weight: 0 },
-          organization: { total: 0, weight: 0 },
-          goals: { total: 0, weight: 0 },
-          hours: { total: 0, weight: 0 },
-          attendance_in_person: { total: 0, weight: 0 },
-          attendance_online: { total: 0, weight: 0 },
-          unknown: { total: 0, weight: 0 }
+          quality: [], learning: [], organization: [], goals: [], hours: [],
+          attendance_in_person: [], attendance_online: [], unknown: []
         },
         evalCount: 0,
         terms: new Set()
@@ -133,18 +135,17 @@ export function computeInstructorStats(evals: CourseEvaluation[]) {
     }
     byInstructor[name].evalCount++
     byInstructor[name].terms.add(ev.term)
-    const w = parseRespondentCount(ev.respondents)
     for (const q of ev.questions) {
       const cat = categorizeQuestion(q.text)
-      byInstructor[name].scores[cat].total += q.mean * w
-      byInstructor[name].scores[cat].weight += w
+      byInstructor[name].scores[cat].push(q.median)
     }
   }
 
   return Object.entries(byInstructor).map(([name, data]) => {
     const scores: Partial<Record<QuestionCategory, number>> = {}
-    for (const [cat, { total, weight }] of Object.entries(data.scores)) {
-      if (weight > 0) scores[cat as QuestionCategory] = total / weight
+    for (const [cat, values] of Object.entries(data.scores)) {
+      const m = median(values)
+      if (m != null) scores[cat as QuestionCategory] = m
     }
     return { name, scores, evalCount: data.evalCount, terms: Array.from(data.terms) }
   }).sort((a, b) => (b.scores.quality || 0) - (a.scores.quality || 0))
@@ -312,12 +313,12 @@ function InlineEval({ evaluation, disableComments }: { evaluation: CourseEvaluat
         <span className="text-[10px] text-muted-foreground truncate">{evaluation.respondents}</span>
         <div className="flex items-center gap-1">
           {ratingQuestions.slice(0, 4).map((q, i) => (
-            <ScoreBadge key={i} score={q.mean} size="sm" />
+            <ScoreBadge key={i} score={q.median} size="sm" />
           ))}
         </div>
         {hoursQ ? (
           <span className="text-[10px] font-semibold text-foreground tabular-nums w-14 text-right">
-            {hoursQ.mean.toFixed(0)} hrs/wk
+            {hoursQ.median.toFixed(0)} hrs/wk
           </span>
         ) : (
           <span className="w-14" />
@@ -413,25 +414,35 @@ function CommentsPanel({ comments }: { comments: string[] }) {
       </div>
 
       <div className="space-y-2 pr-1">
-        {filtered.slice(0, visibleCount).map((comment, i) => (
-          <div
-            key={i}
-            className="text-sm text-muted-foreground bg-secondary/15 rounded-lg px-4 py-3 border border-border/20 leading-relaxed hover:bg-secondary/25 transition-colors"
-          >
-            &ldquo;{comment}&rdquo;
-          </div>
-        ))}
+        {(() => {
+          const remaining = filtered.length - visibleCount
+          const showAll = remaining <= 9 && remaining > 0
+          const displayCount = showAll ? filtered.length : visibleCount
+          return filtered.slice(0, displayCount).map((comment, i) => (
+            <div
+              key={i}
+              className="text-sm text-muted-foreground bg-secondary/15 rounded-lg px-4 py-3 border border-border/20 leading-relaxed hover:bg-secondary/25 transition-colors"
+            >
+              &ldquo;{comment}&rdquo;
+            </div>
+          ))
+        })()}
       </div>
 
-      {filtered.length > visibleCount && (
-        <button
-          type="button"
-          onClick={() => setVisibleCount(prev => prev + 20)}
-          className="w-full text-center text-xs text-primary hover:underline font-medium py-2 mt-4"
-        >
-          Show more ({filtered.length - visibleCount} remaining)
-        </button>
-      )}
+      {(() => {
+        const remaining = filtered.length - visibleCount
+        if (remaining <= 0) return null
+        if (remaining <= 9) return null
+        return (
+          <button
+            type="button"
+            onClick={() => setVisibleCount(prev => prev + 20)}
+            className="w-full text-center text-xs text-primary hover:underline font-medium py-2 mt-4"
+          >
+            Show more ({remaining} remaining)
+          </button>
+        )
+      })()}
     </div>
   )
 }
