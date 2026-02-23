@@ -14,7 +14,7 @@ import { aggregateMetrics } from '@/components/course-evaluations';
 import { AuthGate } from '@/components/auth-gate';
 import { Logo } from '@/components/logo';
 import { parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
-import { cn } from '@/lib/utils';
+import { cn, parseUnitsOptions } from '@/lib/utils';
 import {
   Popover,
   PopoverContent,
@@ -94,20 +94,20 @@ function ScheduleContent() {
       if (c.selectedSectionId && c.sections) {
         const section = c.sections.find(s => s.classId === c.selectedSectionId)
         if (section) {
-          const u = typeof section.units === 'string' ? parseFloat(section.units) : section.units
-          if (!isNaN(u)) {
-            totalUnitsMin += u
-            totalUnitsMax += u
+          const opts = parseUnitsOptions(section.units)
+          if (opts.length > 0) {
+            totalUnitsMin += opts[0]
+            totalUnitsMax += opts[opts.length - 1]
             return
           }
         }
       }
 
       if (c.units) {
-        const parts = c.units.split('-').map(s => parseFloat(s.trim()))
-        if (parts.length > 0 && !isNaN(parts[0])) {
-          totalUnitsMin += parts[0]
-          totalUnitsMax += parts.length > 1 && !isNaN(parts[1]) ? parts[1] : parts[0]
+        const opts = parseUnitsOptions(c.units)
+        if (opts.length > 0) {
+          totalUnitsMin += opts[0]
+          totalUnitsMax += opts[opts.length - 1]
         }
       }
     })
