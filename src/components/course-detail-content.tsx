@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
-import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader2, Palette } from 'lucide-react';
+import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader2, Palette, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCartStore } from '@/lib/cart-store';
 import { Section } from '@/types/course';
 import { cn, getSyllabusUrl, parseUnitsOptions, hasVariableUnits, formatLevel, abbreviateGer, unitsLabel } from '@/lib/utils';
@@ -138,7 +139,7 @@ function CourseMetricsSummary({ metrics, evalsCount, isLoading }: { metrics: Par
                             {cat === 'hours' ? (
                                 <div className="flex items-baseline gap-1">
                                     <span className="text-xl font-black tabular-nums text-foreground">{score.toFixed(1)}</span>
-                                    <span className="text-[9px] font-bold text-muted-foreground uppercase">hrs</span>
+                                    <span className="text-[9px] font-bold text-muted-foreground uppercase">hrs/wk</span>
                                 </div>
                             ) : (
                                 <>
@@ -340,7 +341,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                         <TabsContent value="overview" className="focus-visible:outline-none focus-visible:ring-0">
                             <div className="space-y-6">
                                 <div className="space-y-3">
-                                    <CourseDescription description={course.description} className="text-lg leading-relaxed" />
+                                    <CourseDescription description={course.description} contextSubject={course.subject} className="text-lg leading-relaxed" />
 
                                     {/* Syllabus */}
                                     <div className="pt-2 space-y-2 group/syllabus">
@@ -513,12 +514,29 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                 </div>
 
                                                 <div className="pt-3 border-t border-border/30 flex justify-between items-center gap-2">
-                                                    <div className="text-sm font-bold text-primary/80">
+                                                    <div className="text-sm font-bold text-primary/80 flex items-center gap-2">
                                                         {hasVariableUnits(section.units) ? (() => {
                                                             const opts = parseUnitsOptions(section.units);
                                                             const label = unitsLabel(section.units);
                                                             return opts.length > 1 ? (
-                                                                <span className="bg-primary/5 px-1.5 rounded">{opts[0]}-{opts[opts.length - 1]} {label}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <Select
+                                                                        value={selectedUnits.toString()}
+                                                                        onValueChange={handleUnitsChange}
+                                                                        disabled={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm}
+                                                                    >
+                                                                        <SelectTrigger className="h-8 w-[80px] text-xs font-semibold">
+                                                                            <SelectValue placeholder="Units" />
+                                                                        </SelectTrigger>
+                                                                        <SelectContent>
+                                                                            {opts.map((u) => (
+                                                                                <SelectItem key={u} value={u.toString()} className="text-xs">
+                                                                                    {u} {label}
+                                                                                </SelectItem>
+                                                                            ))}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                </div>
                                                             ) : (
                                                                 <span>{section.units} {label.charAt(0).toUpperCase() + label.slice(1)}</span>
                                                             );
