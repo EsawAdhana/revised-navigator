@@ -200,6 +200,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         if (cartItem?.selectedTerm && terms.includes(cartItem.selectedTerm)) {
             return cartItem.selectedTerm;
         }
+        if (terms.includes('Spring 2026')) return 'Spring 2026';
         return terms[0] || '';
     });
 
@@ -240,7 +241,8 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         if (cartItem?.selectedTerm && terms.includes(cartItem.selectedTerm)) {
             setActiveTerm(cartItem.selectedTerm);
         } else if (terms.length > 0 && !terms.includes(activeTerm)) {
-            setActiveTerm(terms[0]);
+            if (terms.includes('Spring 2026')) setActiveTerm('Spring 2026');
+            else setActiveTerm(terms[0]);
         }
     }, [course.id, cartItem?.selectedTerm, terms.length]); // eslint-disable-line
 
