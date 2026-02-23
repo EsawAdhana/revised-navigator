@@ -213,6 +213,9 @@ export function useFilteredCourses() {
                     if (sectionMeetings.length === 0) return true;
 
                     const isOverlapping = cartItemsForTerm.some(cartItem => {
+                        // Do not conflict a course with itself
+                        if (cartItem.id === c.id) return false;
+
                         const cartMeetings = parseMeetingTimes(cartItem, cartItem.selectedTerm);
                         // Check conflicts, but pass cartItem to hasOverlap to exclude optional days
                         return cartMeetings.some(cm =>
