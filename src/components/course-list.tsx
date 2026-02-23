@@ -119,11 +119,11 @@ function AlphabetScrubber({ letters, onSelect }: { letters: string[], onSelect: 
 
 // One option per criterion; direction toggled by the button (Quality defaults to high first)
 const SORT_OPTIONS: { value: string; label: string }[] = [
-  { value: 'az', label: 'A-Z' },
+  { value: 'az', label: 'A-Z (Default)' },
   { value: 'units', label: 'Units' },
   { value: 'hours', label: 'Hours/Wk' },
-  { value: 'hours_per_unit', label: 'Difficulty (Hours/Unit)' },
   { value: 'quality', label: 'Course Rating' },
+  { value: 'hours_per_unit', label: 'Difficulty (Hours/Unit)' },
 ]
 
 const DEFAULT_SORT_DIR: Record<string, 'asc' | 'desc'> = {
@@ -135,13 +135,13 @@ const DEFAULT_SORT_DIR: Record<string, 'asc' | 'desc'> = {
 }
 
 function getDirectionLabel(sortBy: string, sortDir: string): string {
-  if (sortBy === 'az') return sortDir === 'asc' ? 'A-Z' : 'Z-A'
-  return sortDir === 'asc' ? 'Low first' : 'High first'
+  if (sortBy === 'az') return sortDir === 'asc' ? 'A to Z' : 'Z to A'
+  return sortDir === 'asc' ? 'Low to high' : 'High to low'
 }
 
 export function CourseList({ onCourseClick }: CourseListProps) {
   const { fetchCourses } = useCourseStore();
-  const { courses, isLoading, sortBy, setSortBy, sortDir, setSortDir } = useFilteredCourses();
+  const { courses, isLoading, sortBy, setSortBy, sortDir, setSortDir, getSortDisplayValue } = useFilteredCourses();
   const vListRef = useRef<VListHandle>(null)
 
   const isValidSortBy = SORT_OPTIONS.some((o) => o.value === sortBy)
@@ -150,10 +150,6 @@ export function CourseList({ onCourseClick }: CourseListProps) {
   const handleSortChange = (value: string) => {
     setSortBy(value)
     setSortDir(DEFAULT_SORT_DIR[value] ?? 'asc')
-  }
-
-  const handleReverse = () => {
-    setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
   }
 
   useEffect(() => {
@@ -189,9 +185,10 @@ export function CourseList({ onCourseClick }: CourseListProps) {
   return (
     <div className="flex-1 h-full w-full overflow-hidden flex flex-col relative">
       {/* Results bar: right padding aligns class count with course list edge (px-2 + pr-6/3) */}
-      <div className="min-h-10 py-2 pl-4 pr-8 md:pr-3 text-xs font-medium text-muted-foreground border-b border-border/30 bg-background/80 backdrop-blur-sm z-10 flex items-center gap-2 flex-wrap min-w-0">
+      <div className="min-h-9 py-1.5 pl-2 pr-12 md:pr-10 text-xs font-medium text-muted-foreground border-b border-border/30 bg-background/80 backdrop-blur-sm z-10 flex items-center gap-1 flex-wrap min-w-0">
+        <span className="shrink-0 text-muted-foreground">Sort by</span>
         <Select value={displaySortValue} onValueChange={handleSortChange}>
-          <SelectTrigger className="h-7 min-w-[130px] w-[170px] shrink-0 text-xs border-border/60 bg-muted/30" aria-label="Sort by">
+          <SelectTrigger className="h-6 w-[182px] shrink-0 text-xs border-border/60 bg-white dark:bg-background text-primary font-medium px-2 py-1" aria-label="Sort by">
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>
           <SelectContent>
@@ -202,19 +199,22 @@ export function CourseList({ onCourseClick }: CourseListProps) {
             ))}
           </SelectContent>
         </Select>
-        <button
-          type="button"
-          onClick={handleReverse}
-          className="shrink-0 flex items-center justify-center px-2.5 h-7 rounded-md border border-border/60 bg-muted/30 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors"
-          aria-label={`${getDirectionLabel(sortBy, sortDir)} — click to reverse`}
-          title={`${getDirectionLabel(sortBy, sortDir)} — click to reverse`}
-        >
-          {getDirectionLabel(sortBy, sortDir)}
-        </button>
+        <Select value={sortDir} onValueChange={(v) => setSortDir(v === 'desc' ? 'desc' : 'asc')}>
+          <SelectTrigger className="h-6 w-fit min-w-[5rem] shrink-0 text-xs border-border/60 bg-white dark:bg-background text-primary font-medium px-2 py-1" aria-label="Sort direction">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="asc" className="text-xs">{getDirectionLabel(sortBy, 'asc')}</SelectItem>
+            <SelectItem value="desc" className="text-xs">{getDirectionLabel(sortBy, 'desc')}</SelectItem>
+          </SelectContent>
+        </Select>
         <ActiveFilterChips />
-        <span className="ml-auto shrink-0 tabular-nums font-semibold text-foreground/70">
-          {courses.length.toLocaleString()} classes
-        </span>
+        {/* Right-align count; bar pr-8 md:pr-6 matches list right inset so count aligns with card column */}
+        <div className="ml-auto shrink-0 text-right">
+          <span className="tabular-nums font-semibold text-foreground/70">
+            {courses.length.toLocaleString()} classes
+          </span>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 relative group">
@@ -226,11 +226,12 @@ export function CourseList({ onCourseClick }: CourseListProps) {
           </div>
         ) : (
           <>
-            <VList ref={vListRef} className="h-full w-full scrollbar-hide pb-8 px-2 md:px-0">
+            <VList ref={vListRef} className="h-full w-full scrollbar-hide pb-8 pl-0 pr-2 md:pr-3">
               {courses.map((course) => (
                 <div key={course.id} className="pr-6 md:pr-3">
                   <CourseCard
                     course={course}
+                    sortDisplayValue={getSortDisplayValue(course)}
                     onClick={() => onCourseClick(course)}
                   />
                 </div>

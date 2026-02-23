@@ -17,7 +17,7 @@ function HomeContent() {
   }, []);
 
   const handleCourseClick = (course: Course) => {
-    router.push(`/courses/${course.id}`);
+    router.push(`/courses/${encodeURIComponent(course.id)}`);
   };
 
   return (

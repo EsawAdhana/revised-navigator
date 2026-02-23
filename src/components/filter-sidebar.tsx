@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
-import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, getEffectiveExamType, buildEvalText, toExamFilterOption } from '@/lib/utils';
+import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel } from '@/lib/utils';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { parseMeetingTimes, timeToMinutes, formatMinutes, isMeetingOptional, parseTimeStringToMinutes } from '@/lib/schedule-utils';
 import { CheckboxItem, FilterGroup } from '@/components/ui/filter-components';
@@ -89,7 +89,6 @@ export function FilterSidebar() {
     const [selectedLevels, setSelectedLevels] = useQueryState('levels', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedGers, setSelectedGers] = useQueryState('gers', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedSchools, setSelectedSchools] = useQueryState('schools', parseAsArrayOf(parseAsString).withDefault([]));
-    const [selectedExams, setSelectedExams] = useQueryState('exams', parseAsArrayOf(parseAsString).withDefault([]));
 
     // Single Selects (Dropdowns) -> Now Multi Selects (Checkboxes)
     const [unitMin, setUnitMin] = useQueryState('unitMin', parseAsInteger.withDefault(1));
@@ -212,16 +211,6 @@ export function FilterSidebar() {
             filtered = filtered.filter(c => {
                 const school = getSchoolFromSubject(c.subject);
                 return selectedSchools.includes(school);
-            });
-        }
-
-        // Apply exam type filter (no exams vs has exams; take-home counts as has exams)
-        if (selectedExams && selectedExams.length > 0 && excludeFilter !== 'exams') {
-            filtered = filtered.filter(c => {
-                const evalText = buildEvalText(getEvaluations(c.id));
-                const examType = getEffectiveExamType(c, evalText);
-                const option = toExamFilterOption(examType);
-                return selectedExams.includes(option);
             });
         }
 
@@ -496,15 +485,6 @@ export function FilterSidebar() {
             if (school) schools.set(school, (schools.get(school) || 0) + 1);
         });
 
-        // Compute exam type facets (no exams vs has exams; take-home counts as has exams)
-        const examCounts = new Map<string, number>();
-        coursesForExams.forEach(c => {
-            const evalText = buildEvalText(getEvaluations(c.id));
-            const examType = getEffectiveExamType(c, evalText);
-            const option = toExamFilterOption(examType);
-            examCounts.set(option, (examCounts.get(option) || 0) + 1);
-        });
-
         return {
             depts: Array.from(depts.entries())
                 .map(([code, count]) => ({
@@ -525,12 +505,8 @@ export function FilterSidebar() {
             levels: Array.from(levels.entries()).sort((a, b) => b[1] - a[1]),
             gers: Array.from(gers.entries()).sort((a, b) => a[0].localeCompare(b[0])),
             schools,
-            exams: ([
-                ['no_exam', examCounts.get('no_exam') || 0],
-                ['has_exam', examCounts.get('has_exam') || 0],
-            ] as [string, number][]).filter(([, count]) => count > 0),
         };
-    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, selectedExams, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, hideOnSchedule, cartItems, evaluations, getEvaluations]);
+    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, hideOnSchedule, cartItems, evaluations, getEvaluations]);
 
     const filteredDepts = useMemo(() => {
         if (!deptQuery) return facets.depts;
@@ -801,25 +777,6 @@ export function FilterSidebar() {
                                 onChange={() => toggleFilter(lvl, selectedLevels, setSelectedLevels)}
                             />
                         ))}
-                    </FilterSection>
-
-                    {/* Exam type: no exams vs has exams (take-home counts as has exams) */}
-                    <FilterSection title="Exams" hasActive={selectedExams.length > 0}>
-                        {[
-                            { code: 'no_exam', label: 'No exams' },
-                            { code: 'has_exam', label: 'Has exams' },
-                        ].map(({ code, label }) => {
-                            const count = (facets.exams?.find(([c]) => c === code)?.[1] ?? 0) as number;
-                            return (
-                                <CheckboxItem
-                                    key={code}
-                                    label={label}
-                                    count={count}
-                                    checked={selectedExams.includes(code)}
-                                    onChange={() => toggleFilter(code, selectedExams, setSelectedExams)}
-                                />
-                            );
-                        })}
                     </FilterSection>
 
                     {/* Number of Units — Min and Max on separate tracks so both are easy to use */}

@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useCallback } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
@@ -32,6 +32,7 @@ export function useFilteredCourses() {
     const [sortDir, setSortDir] = useQueryState('sortDir', parseAsString.withDefault('asc'));
     const getEvaluations = useEvaluationStore(state => state.getEvaluations);
     const fetchBulkEvaluations = useEvaluationStore(state => state.fetchBulkEvaluations);
+    const evaluations = useEvaluationStore(state => state.evaluations);
 
     const filteredResult = useMemo(() => {
         // Start with all courses
@@ -105,6 +106,7 @@ export function useFilteredCourses() {
                 return false;
             });
         }
+
 
         // Filter by unit range (slider: unitMin–unitMax)
         const unitsFilterActive = unitMin > 1 || unitMax < 5;
@@ -295,7 +297,7 @@ export function useFilteredCourses() {
 
         // All filtering is done; this is the set we will sort (sort is the last step)
         return result;
-    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideOnSchedule, cartItems, excludedWords]);
+    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideOnSchedule, cartItems, excludedWords, evaluations]);
 
     useEffect(() => {
         if ((sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit') && filteredResult.length > 0) {
@@ -327,6 +329,9 @@ export function useFilteredCourses() {
             return null;
         };
 
+        // Treat 0 as null so missing/no data sorts to the end
+        const sortVal = (v: number | null): number | null => (v === 0 ? null : v);
+
         const sortedResult = [...listToSort].sort((a, b) => {
             if (sortKey === 'az' || !sortKey) {
                 const subjectCompare = a.subject.localeCompare(b.subject);
@@ -334,8 +339,8 @@ export function useFilteredCourses() {
                 const cmp = subjectCompare !== 0 ? subjectCompare : codeCompare;
                 return dir === 'desc' ? -cmp : cmp;
             }
-            const va = getSortValue(a);
-            const vb = getSortValue(b);
+            const va = sortVal(getSortValue(a));
+            const vb = sortVal(getSortValue(b));
             const mult = dir === 'desc' ? -1 : 1;
             if (va == null && vb == null) {
                 const subjectCompare = a.subject.localeCompare(b.subject);
@@ -353,6 +358,35 @@ export function useFilteredCourses() {
         return sortedResult;
     }, [filteredResult, sortBy, sortDir, getEvaluations]);
 
+    /** Display string for the current sort criterion (e.g. "4.5/5.0" for quality). Null only for A-Z or Units; show "—" when sort is set but no value. */
+    const getSortDisplayValue = useCallback((course: Course): string | null => {
+        const sortKey = sortBy === 'default' ? 'az' : sortBy;
+        if (sortKey === 'az' || !sortKey) return null;
+        if (sortKey === 'units') return null;
+        const evals = getEvaluations(course.id);
+        const metrics = evals.length > 0 ? aggregateMetrics(evals) : null;
+        const units = getCourseUnitsNumeric(course);
+        const empty = '—';
+        if (sortKey === 'quality') {
+            const score = metrics ? getOverallEvalScore(metrics) : null;
+            if (score == null || score === 0) return empty;
+            return `${score.toFixed(1)}/5.0`;
+        }
+        if (sortKey === 'hours') {
+            const hours = metrics?.hours;
+            if (hours == null || hours === 0) return empty;
+            return `${hours.toFixed(1)} hrs/wk`;
+        }
+        if (sortKey === 'hours_per_unit') {
+            const hours = metrics?.hours;
+            if (hours == null || units <= 0) return empty;
+            const val = hours / units;
+            if (val === 0) return empty;
+            return `${val.toFixed(1)} hrs/unit`;
+        }
+        return null;
+    }, [sortBy, getEvaluations]);
+
     const isEnriching = useCourseStore(state => state.isEnriching);
-    return { courses: filteredCourses, isLoading, isEnriching, sortBy, setSortBy, sortDir, setSortDir };
+    return { courses: filteredCourses, isLoading, isEnriching, sortBy, setSortBy, sortDir, setSortDir, getSortDisplayValue };
 }

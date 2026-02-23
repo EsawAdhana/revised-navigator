@@ -725,7 +725,7 @@ export function CourseEvaluations({ courseId, subject, code, forcedTab }: Course
                           Hours / Week
                         </span>
                         <span className="text-sm font-bold text-foreground tabular-nums">
-                          {metrics.hours!.toFixed(1)} hrs
+                          {metrics.hours!.toFixed(1)} hrs/wk
                         </span>
                       </div>
 
@@ -734,7 +734,7 @@ export function CourseEvaluations({ courseId, subject, code, forcedTab }: Course
                         {questions[0] && (
                           <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-2 pt-1 border-t border-border/30">
                             <span>{questions[0].responseRate}</span>
-                            <span className="tabular-nums">med {questions[0].median.toFixed(1)} / sd {questions[0].std.toFixed(2)}</span>
+                            <span className="tabular-nums">med {metrics.hours!.toFixed(1)} hrs/wk</span>
                           </div>
                         )}
                       </div>

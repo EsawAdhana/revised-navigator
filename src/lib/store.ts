@@ -11,7 +11,7 @@ type CourseStore = {
 }
 
 const CACHE_KEY = 'root-courses-cache'
-const CACHE_VERSION = 5
+const CACHE_VERSION = 8
 const CACHE_TTL = 1000 * 60 * 30 // 30 minutes
 
 function readCache(): Course[] | null {
@@ -51,7 +51,8 @@ function rowToCourse(row: any): Course {
     instructors: row.instructors || [],
     terms: row.terms || [],
     dept: row.dept || undefined,
-    sections: row.sections || []
+    sections: row.sections || [],
+    final_exam: row.final_exam
   }
 }
 

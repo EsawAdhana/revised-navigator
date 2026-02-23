@@ -213,7 +213,7 @@ const GER_ABBREV: Record<string, string> = {
   'Civic, Liberal, and Global Education': 'COLLEGE'
 }
 
-export function abbreviateGer (ger: string): string {
+export function abbreviateGer(ger: string): string {
   const match = ger.match(/\s*\(([A-Za-z0-9+]+)\)\s*$/)
   if (match) return match[1]
   return GER_ABBREV[ger] ?? ger

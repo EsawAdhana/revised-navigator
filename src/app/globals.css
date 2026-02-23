@@ -81,6 +81,33 @@
   background: hsl(var(--muted-foreground) / 0.3);
 }
 
+/* Filter sidebar range sliders: track + thumb */
+input[type="range"].filter-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: hsl(var(--secondary));
+}
+input[type="range"].filter-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  cursor: pointer;
+}
+input[type="range"].filter-range::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+  border: 0;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  cursor: pointer;
+}
+
 /* ── Animations ── */
 @keyframes fade-in {
   from {

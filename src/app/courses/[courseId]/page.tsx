@@ -12,7 +12,14 @@ import { useFilteredCourses } from '@/hooks/use-filtered-courses';
 export default function CoursePage() {
     const params = useParams();
     const router = useRouter();
-    const courseId = params.courseId as string;
+    const rawCourseId = params.courseId as string;
+    const courseId = (() => {
+      try {
+        return decodeURIComponent(rawCourseId);
+      } catch {
+        return rawCourseId;
+      }
+    })();
     const [mounted, setMounted] = useState(false);
 
     const [query] = useQueryState('q', { defaultValue: '' });
@@ -43,7 +50,7 @@ export default function CoursePage() {
             const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
             searchParams.set('q', q);
             const rest = searchParams.toString();
-            router.push(rest ? `/courses/${firstMatch.id}?${rest}` : `/courses/${firstMatch.id}`);
+            router.push(rest ? `/courses/${encodeURIComponent(firstMatch.id)}?${rest}` : `/courses/${encodeURIComponent(firstMatch.id)}`);
         }
     }, [query, courseId, filteredCourses, router]);
 
