@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader2, Palette, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCartStore } from '@/lib/cart-store';
 import { Section } from '@/types/course';
 import { cn, getSyllabusUrl, parseUnitsOptions, hasVariableUnits, formatLevel, abbreviateGer, unitsLabel } from '@/lib/utils';
@@ -212,17 +211,15 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     })()
     const unitOptions = course ? parseUnitsOptions(unitsSource ?? course.units) : []
     const hasVariable = unitOptions.length > 1
-    const [selectedUnits, setSelectedUnits] = useState<number>(() => {
+    const [selectedUnits, setSelectedUnits] = useState<number | undefined>(() => {
         if (cartItem?.selectedUnits !== undefined && unitOptions.includes(cartItem.selectedUnits)) return cartItem.selectedUnits
-        return unitOptions[0] ?? 0
+        return undefined
     })
 
-    // Sync selectedUnits when cart item or unit options change
+    // Sync selectedUnits when cart item changes
     useEffect(() => {
         if (cartItem?.selectedUnits !== undefined && unitOptions.includes(cartItem.selectedUnits)) {
             setSelectedUnits(cartItem.selectedUnits)
-        } else if (unitOptions.length > 0 && !unitOptions.includes(selectedUnits)) {
-            setSelectedUnits(unitOptions[0])
         }
     }, [cartItem?.selectedUnits, unitOptions.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -265,14 +262,12 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         }
     };
 
-    const handleUnitsChange = (value: string) => {
-        const u = parseInt(value, 10);
-        if (!isNaN(u)) {
-            setSelectedUnits(u);
-            if (cartItem?.selectedTerm === activeTerm) {
-                const sectionId = cartItem?.selectedSectionId ?? sectionsByTerm[activeTerm]?.[0]?.classId;
-                addItem(course, activeTerm, sectionId, u);
-            }
+    const handleUnitsChange = (u: number) => {
+        const newValue = selectedUnits === u ? undefined : u;
+        setSelectedUnits(newValue);
+        if (cartItem?.selectedTerm === activeTerm) {
+            const sectionId = cartItem?.selectedSectionId ?? sectionsByTerm[activeTerm]?.[0]?.classId;
+            addItem(course, activeTerm, sectionId, newValue);
         }
     };
 
@@ -519,23 +514,23 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                             const opts = parseUnitsOptions(section.units);
                                                             const label = unitsLabel(section.units);
                                                             return opts.length > 1 ? (
-                                                                <div className="flex items-center gap-2">
-                                                                    <Select
-                                                                        value={selectedUnits.toString()}
-                                                                        onValueChange={handleUnitsChange}
-                                                                        disabled={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm}
-                                                                    >
-                                                                        <SelectTrigger className="h-8 w-[80px] text-xs font-semibold">
-                                                                            <SelectValue placeholder="Units" />
-                                                                        </SelectTrigger>
-                                                                        <SelectContent>
-                                                                            {opts.map((u) => (
-                                                                                <SelectItem key={u} value={u.toString()} className="text-xs">
-                                                                                    {u} {label}
-                                                                                </SelectItem>
-                                                                            ))}
-                                                                        </SelectContent>
-                                                                    </Select>
+                                                                <div className="flex items-center gap-1.5 bg-secondary/30 p-1 rounded-lg">
+                                                                    {opts.map((u) => (
+                                                                        <button
+                                                                            key={u}
+                                                                            onClick={(e) => { e.stopPropagation(); handleUnitsChange(u); }}
+                                                                            disabled={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm}
+                                                                            className={cn(
+                                                                                "w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold transition-all disabled:opacity-50",
+                                                                                selectedUnits === u
+                                                                                    ? "bg-primary text-primary-foreground shadow-sm"
+                                                                                    : "text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                                                            )}
+                                                                        >
+                                                                            {u}
+                                                                        </button>
+                                                                    ))}
+                                                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold ml-1 mr-2">{label}</span>
                                                                 </div>
                                                             ) : (
                                                                 <span>{section.units} {label.charAt(0).toUpperCase() + label.slice(1)}</span>
