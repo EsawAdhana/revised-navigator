@@ -72,7 +72,7 @@ function AlphabetScrubber({ letters, onSelect }: { letters: string[], onSelect: 
 
   return (
     <div
-      className="absolute right-0 top-1/2 -translate-y-1/2 z-20 flex flex-col select-none touch-none"
+      className="absolute right-0 inset-y-0 pt-4 pb-40 md:pb-4 z-20 flex flex-col justify-center select-none touch-none"
       ref={containerRef}
       onTouchStart={(e) => { touchActive.current = true; handleMove(e.touches[0].clientY); }}
       onTouchMove={onTouchMove}
@@ -184,8 +184,8 @@ export function CourseList({ onCourseClick }: CourseListProps) {
 
   return (
     <div className="flex-1 h-full w-full overflow-hidden flex flex-col relative">
-      {/* Results bar: right padding aligns class count with course list edge (px-2 + pr-6/3) */}
-      <div className="min-h-9 py-1.5 pl-2 pr-12 md:pr-10 text-xs font-medium text-muted-foreground border-b border-border/30 bg-background/80 backdrop-blur-sm z-10 flex items-center gap-1 flex-wrap min-w-0">
+      {/* Results bar: static padding so it stays centered regardless of scrubber */}
+      <div className="min-h-9 py-1.5 pl-2 pr-4 text-xs font-medium text-muted-foreground border-b border-border/30 bg-background/80 backdrop-blur-sm z-10 flex items-center gap-1 flex-wrap min-w-0 transition-all duration-300">
         <span className="shrink-0 text-muted-foreground">Sort by</span>
         <Select value={displaySortValue} onValueChange={handleSortChange}>
           <SelectTrigger className="h-6 w-[182px] shrink-0 text-xs border-border/60 bg-white dark:bg-background text-primary font-medium px-2 py-1" aria-label="Sort by">
@@ -209,7 +209,6 @@ export function CourseList({ onCourseClick }: CourseListProps) {
           </SelectContent>
         </Select>
         <ActiveFilterChips />
-        {/* Right-align count; bar pr-8 md:pr-6 matches list right inset so count aligns with card column */}
         <div className="ml-auto shrink-0 text-right">
           <span className="tabular-nums font-semibold text-foreground/70">
             {courses.length.toLocaleString()} classes
@@ -228,7 +227,7 @@ export function CourseList({ onCourseClick }: CourseListProps) {
           <>
             <VList ref={vListRef} className="h-full w-full scrollbar-hide pb-8 pl-0 pr-0">
               {courses.map((course) => (
-                <div key={course.id} className="pr-7">
+                <div key={course.id} className="pr-0 transition-all duration-300">
                   <CourseCard
                     course={course}
                     sortDisplayValue={getSortDisplayValue(course)}

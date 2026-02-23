@@ -43,7 +43,7 @@ function FeatureCard({ icon: Icon, title, description }: { icon: any, title: str
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, isLoading, initialize, signInWithGoogle } = useAuthStore()
+  const { user, isLoading, initialize, signInWithGoogle, signInAsGuest } = useAuthStore()
   // We remove the timedOut state and logic to allow immediate rendering of the landing page
   // for better SEO and perceived performance.
 
@@ -134,16 +134,30 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 <span>Checking session...</span>
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={signInWithGoogle}
-                className="w-full relative group flex items-center justify-center gap-3 rounded-xl bg-foreground text-background px-8 py-3.5 sm:py-4 font-semibold text-[15px] shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98]"
-              >
-                <span>Log in with Stanford</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={signInWithGoogle}
+                  className="w-full relative group flex items-center justify-center gap-3 rounded-xl bg-foreground text-background px-8 py-3.5 sm:py-4 font-semibold text-[15px] shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98]"
+                >
+                  <span>Log in with Stanford</span>
+                </button>
+                <div className="flex items-center w-full gap-2 my-1">
+                  <div className="h-px bg-border/40 flex-1" />
+                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">or</span>
+                  <div className="h-px bg-border/40 flex-1" />
+                </div>
+                <button
+                  type="button"
+                  onClick={signInAsGuest}
+                  className="w-full relative group flex items-center justify-center gap-3 rounded-xl bg-secondary/50 hover:bg-secondary/80 text-foreground px-8 py-3 border border-border/40 font-medium text-[14px] transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <span>Continue as Guest</span>
+                </button>
+              </>
             )}
-            <p className="text-xs text-muted-foreground mt-2">
-              Valid @stanford.edu email required.
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              Stanford login unlocks premium features like evaluating and viewing evaluations.
             </p>
           </div>
         </div>
