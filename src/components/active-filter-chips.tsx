@@ -47,7 +47,7 @@ export function ActiveFilterChips() {
       out.push({ id: 'showConflicts', label: 'Show conflicting', onRemove: () => setHideConflicts(false) })
     }
     if (wimOnly) {
-      out.push({ id: 'wim', label: 'WIM only', onRemove: () => setWimOnly(null) })
+      out.push({ id: 'wim', label: 'WIM', onRemove: () => setWimOnly(null) })
     }
     excludedWords.forEach(word => {
       out.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })
