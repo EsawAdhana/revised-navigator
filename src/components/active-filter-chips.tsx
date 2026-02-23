@@ -9,7 +9,7 @@ import { formatMinutes } from '@/lib/schedule-utils'
 export function ActiveFilterChips() {
   const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true))
   const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]))
-  const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([]))
+  const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']))
   const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedFormats, setSelectedFormats] = useQueryState('formats', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedStatus, setSelectedStatus] = useQueryState('status', parseAsArrayOf(parseAsString).withDefault([]))
