@@ -181,6 +181,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
     // Group sections by term, deduplicating by classId so the same section never appears twice
     const sectionsByTerm = (course?.sections || []).reduce((acc, section) => {
+        if (section.status !== 'Open') return acc;
         if (!acc[section.term]) acc[section.term] = [];
         const already = acc[section.term].some(s => s.classId === section.classId);
         if (!already) acc[section.term].push(section);
@@ -496,12 +497,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                         </div>
                                                         <div className="text-xs text-muted-foreground mt-0.5 font-medium tracking-tight">ID: {section.classId}</div>
                                                     </div>
-                                                    <div className={cn(
-                                                        "text-xs font-bold px-2 py-0.5 rounded-full uppercase tracking-wider",
-                                                        section.status === 'Open' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-                                                    )}>
-                                                        {section.status}
-                                                    </div>
                                                 </div>
 
                                                 <div className="space-y-2.5 text-sm text-foreground/80 mb-4">
@@ -516,9 +511,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                                 <span className="truncate">{m.location}</span>
                                                             </div>
                                                             {m.instructors && m.instructors.length > 0 && (
-                                                                <div className="pl-5">
-                                                                    <InstructorList instructors={m.instructors} />
-                                                                </div>
+                                                                <InstructorList instructors={m.instructors} />
                                                             )}
                                                         </div>
                                                     ))}
@@ -531,14 +524,18 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                             const label = unitsLabel(section.units);
                                                             return opts.length > 1 ? (
                                                                 <div className="flex items-center gap-2">
-                                                                    <div className="inline-flex items-center p-0.5 bg-secondary/40 border border-border/60 rounded-lg">
+                                                                    <div className={cn(
+                                                                        "inline-flex items-center p-0.5 bg-secondary/40 border border-border/60 rounded-lg",
+                                                                        opts.length > 6 ? "flex-wrap gap-0.5 max-w-[200px]" : ""
+                                                                    )}>
                                                                         {opts.map((u) => (
                                                                             <button
                                                                                 key={u}
                                                                                 onClick={(e) => { e.stopPropagation(); handleUnitsChange(u); }}
                                                                                 disabled={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm}
                                                                                 className={cn(
-                                                                                    "w-7 h-6 flex items-center justify-center text-xs font-bold rounded-md transition-all disabled:opacity-50",
+                                                                                    "flex items-center justify-center font-bold rounded-md transition-all disabled:opacity-50",
+                                                                                    opts.length > 6 ? "w-6 h-5 text-[10px]" : "w-7 h-6 text-xs",
                                                                                     selectedUnits === u
                                                                                         ? "bg-primary text-primary-foreground shadow-sm"
                                                                                         : "text-muted-foreground hover:bg-secondary hover:text-foreground"

@@ -92,7 +92,7 @@ function AlphabetScrubber({ letters, onSelect }: { letters: string[], onSelect: 
         return (
           <div
             key={letter}
-            className="relative flex items-center justify-center w-6 h-[18px] md:h-6" // Increased touch target height slightly
+            className="relative flex items-center justify-center w-8 h-[18px] md:h-6"
           >
             <span
               className={cn(
@@ -226,9 +226,9 @@ export function CourseList({ onCourseClick }: CourseListProps) {
           </div>
         ) : (
           <>
-            <VList ref={vListRef} className="h-full w-full scrollbar-hide pb-8 pl-0 pr-2 md:pr-3">
+            <VList ref={vListRef} className="h-full w-full scrollbar-hide pb-8 pl-0 pr-0">
               {courses.map((course) => (
-                <div key={course.id} className="pr-6 md:pr-3">
+                <div key={course.id} className="pr-7">
                   <CourseCard
                     course={course}
                     sortDisplayValue={getSortDisplayValue(course)}
