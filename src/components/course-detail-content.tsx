@@ -6,7 +6,7 @@ import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { Section } from '@/types/course';
-import { cn, getSyllabusUrl, parseUnitsOptions, hasVariableUnits, formatLevel } from '@/lib/utils';
+import { cn, getSyllabusUrl, parseUnitsOptions, hasVariableUnits, formatLevel, abbreviateGer, unitsLabel } from '@/lib/utils';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSyllabusValidity } from '@/hooks/use-syllabus-validity';
@@ -178,10 +178,11 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
     const cartItem = getItem(course.id);
 
-    // Group sections by term
+    // Group sections by term, deduplicating by classId so the same section never appears twice
     const sectionsByTerm = (course?.sections || []).reduce((acc, section) => {
         if (!acc[section.term]) acc[section.term] = [];
-        acc[section.term].push(section);
+        const already = acc[section.term].some(s => s.classId === section.classId);
+        if (!already) acc[section.term].push(section);
         return acc;
     }, {} as Record<string, Section[]>);
 
@@ -253,7 +254,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         course.sections?.forEach(s => s.gers?.forEach(g => set.add(g)))
         return Array.from(set).sort()
     }, [course.sections])
-    const gerLabel = gers.length > 0 ? gers.join(', ') : '—'
+    const gerLabel = gers.length > 0 ? gers.map(abbreviateGer).join(', ') : '—'
 
     const handleSelectSection = (sectionId: number) => {
         if (cartItem?.selectedSectionId === sectionId && cartItem?.selectedTerm === activeTerm) {
@@ -279,33 +280,33 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
             {/* Header Area */}
             <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-bold text-destructive tracking-tight">
+                    <h1 className="text-2xl font-bold text-destructive tracking-tight font-[family-name:var(--font-outfit)]">
                         {course.subject} {course.code}
                     </h1>
                 </div>
                 <h2 className="text-3xl md:text-4xl font-extrabold leading-tight text-foreground tracking-tight">{course.title}</h2>
 
-                {/* Quick Info - continuous strip, no unselectable gaps */}
-                <div className="inline-flex flex-wrap items-stretch overflow-hidden rounded-full border border-border/40 bg-secondary/20">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0">
+                {/* Quick Info - continuous strip; flex-wrap so dept/GER are never cut off */}
+                <div className="inline-flex flex-wrap items-stretch rounded-xl border border-border/40 bg-secondary/20 min-w-0">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
                         <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight">Units:</span>
                         <span className="text-sm font-semibold text-foreground">{course.units}</span>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
                         <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight">Level:</span>
                         <span className="text-sm font-semibold text-foreground">{formatLevel(course.sections?.[0]?.classLevel || course.code)}</span>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
                         <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight">Grading:</span>
                         <span className="text-sm font-semibold text-foreground">{course.grading || 'Letter (ABC/NC)'}</span>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0">
-                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight">Dept:</span>
-                        <span className="text-sm font-semibold text-foreground" title={course.dept}>{course.dept || 'N/A'}</span>
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0 min-w-0">
+                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight shrink-0">Dept:</span>
+                        <span className="text-sm font-semibold text-foreground break-words" title={course.dept}>{course.dept || 'N/A'}</span>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5" title={gers.length > 0 ? gers.join(', ') : undefined}>
-                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight">GER:</span>
-                        <span className="text-sm font-semibold text-foreground max-w-[12rem] truncate">{gerLabel}</span>
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 min-w-0" title={gers.length > 0 ? gers.join(', ') : undefined}>
+                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight shrink-0">GER:</span>
+                        <span className="text-sm font-semibold text-foreground break-words">{gerLabel}</span>
                     </div>
                 </div>
             </div>
@@ -393,7 +394,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                     </a>
                                                 </Button>
                                                 {isSpring2026 && (
-                                                    <p className="text-xs text-muted-foreground opacity-0 group-hover/syllabus:opacity-100 transition-opacity">
+                                                    <p className="text-xs text-muted-foreground opacity-0 group-hover/syllabus:opacity-100 transition-opacity duration-150 delay-500">
                                                         Syllabi for Spring 2026 are not yet available on syllabus.stanford.edu.
                                                     </p>
                                                 )}
@@ -474,8 +475,8 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
                                 {terms.map(term => (
                                     <TabsContent key={term} value={term} className="space-y-3 focus-visible:outline-none focus-visible:ring-0">
-                                        {sectionsByTerm[term].map((section, idx) => (
-                                            <div key={idx} className="border border-border/60 rounded-xl p-4 bg-card/50 hover:bg-card hover:shadow-md transition-all duration-200 group/section">
+                                        {sectionsByTerm[term].map((section) => (
+                                            <div key={section.classId} className="border border-border/60 rounded-xl p-4 bg-card/50 hover:bg-card hover:shadow-md transition-all duration-200 group/section">
                                                 <div className="flex justify-between items-start mb-3">
                                                     <div>
                                                         <div className="font-bold text-sm text-foreground">
@@ -513,14 +514,16 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
                                                 <div className="pt-3 border-t border-border/30 flex justify-between items-center gap-2">
                                                     <div className="text-sm font-bold text-primary/80">
-                                                        {hasVariableUnits(section.units) ? (
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {unitOptions.slice(0, 3).map(u => (
-                                                                    <span key={u} className="bg-primary/5 px-1.5 rounded">{u} {u === 1 ? 'Unit' : 'Units'}</span>
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <span>{section.units} {section.units === '1' || section.units === 1 ? 'Unit' : 'Units'}</span>
+                                                        {hasVariableUnits(section.units) ? (() => {
+                                                            const opts = parseUnitsOptions(section.units);
+                                                            const label = unitsLabel(section.units);
+                                                            return opts.length > 1 ? (
+                                                                <span className="bg-primary/5 px-1.5 rounded">{opts[0]}-{opts[opts.length - 1]} {label}</span>
+                                                            ) : (
+                                                                <span>{section.units} {label.charAt(0).toUpperCase() + label.slice(1)}</span>
+                                                            );
+                                                        })() : (
+                                                            <span>{section.units} {unitsLabel(section.units).charAt(0).toUpperCase() + unitsLabel(section.units).slice(1)}</span>
                                                         )}
                                                     </div>
 

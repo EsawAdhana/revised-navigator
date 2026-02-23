@@ -4,8 +4,10 @@ import { Input } from '@/components/ui/input';
 import { useQueryState } from 'nuqs';
 import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 
 export function SearchBar() {
+  const pathname = usePathname();
   const [query, setQuery] = useQueryState('q', { defaultValue: '', shallow: true })
   const [localValue, setLocalValue] = useState(query);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -28,9 +30,11 @@ export function SearchBar() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName);
       if (
-        (e.key === '/' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) ||
-        (e.key === 'k' && (e.metaKey || e.ctrlKey))
+        (e.key === '/' && !isInput) ||
+        (e.key === 'k' && (e.metaKey || e.ctrlKey)) ||
+        (pathname === '/' && e.key === 'f' && (e.ctrlKey || e.metaKey))
       ) {
         e.preventDefault();
         inputRef.current?.focus();
@@ -39,7 +43,7 @@ export function SearchBar() {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [pathname]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setLocalValue(e.target.value);

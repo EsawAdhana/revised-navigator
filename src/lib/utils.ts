@@ -167,6 +167,21 @@ export function hasVariableUnits(units: string | number): boolean {
   const opts = parseUnitsOptions(units)
   return opts.length > 1
 }
+
+/** Use "unit" only when value is exactly 1; otherwise "units". Never use "Units" without this check. */
+export function unitsLabel(value: number | string | null | undefined): 'unit' | 'units' {
+  if (value === 1 || value === '1') return 'unit'
+  return 'units'
+}
+
+/** Single numeric units value for a course (for sorting/display). Uses max of range or first section/course units. */
+export function getCourseUnitsNumeric(course: { units?: string; sections?: { units: string | number }[] }): number {
+  const unitsStr = course.sections?.[0]?.units ?? course.units
+  if (unitsStr == null || unitsStr === '') return 0
+  const opts = parseUnitsOptions(unitsStr)
+  if (opts.length === 0) return 0
+  return Math.max(...opts)
+}
 /** Normalize a level string (e.g. "UG", "Graduate", "UNDERGRAD") to "Undergrad" or "Graduate". */
 export function formatLevel(level: string): string {
   if (!level) return 'N/A';
@@ -181,4 +196,25 @@ export function formatLevel(level: string): string {
     return 'Graduate';
   }
   return level;
+}
+
+/** GER display: show only acronym (e.g. "Applied Quantitative Reasoning (AQR)" -> "AQR"). */
+const GER_ABBREV: Record<string, string> = {
+  'Aesthetic and Interpretive Inquiry': 'AII',
+  'Applied Quantitative Reasoning': 'AQR',
+  'Creative Expression': 'CE',
+  'Exploring Difference and Power': 'EDP',
+  'Ethical Reasoning': 'ER',
+  'Formal Reasoning': 'FR',
+  'Scientific Method and Analysis': 'SMA',
+  'Social Inquiry': 'SI',
+  'Engaging Diversity': 'ED',
+  'Writing and Rhetoric': 'PWR',
+  'Civic, Liberal, and Global Education': 'COLLEGE'
+}
+
+export function abbreviateGer (ger: string): string {
+  const match = ger.match(/\s*\(([A-Za-z0-9+]+)\)\s*$/)
+  if (match) return match[1]
+  return GER_ABBREV[ger] ?? ger
 }

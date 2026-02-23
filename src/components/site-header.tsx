@@ -8,11 +8,12 @@ import { useAuthStore } from '@/lib/auth-store';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { CalendarDays, LogOut, Menu } from 'lucide-react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader, SheetDescription } from '@/components/ui/sheet';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 export function SiteHeader() {
+    const pathname = usePathname();
     const searchParams = useSearchParams();
     const { user, signOut } = useAuthStore();
 
@@ -23,17 +24,26 @@ export function SiteHeader() {
         return qs ? `/schedule?${qs}` : '/schedule';
     }, [searchParams]);
 
+    // Logo: from another page → home with search preserved; already on home → home with search cleared
+    const homeHref = useMemo(() => {
+        if (pathname === '/') return '/';
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('courseId');
+        const qs = params.toString();
+        return qs ? `/?${qs}` : '/';
+    }, [pathname, searchParams]);
+
     return (
         <header className="flex-none h-16 md:h-16 h-auto md:py-0 py-2 border-b border-border/50 flex items-center gap-2 md:gap-4 bg-background/90 backdrop-blur-xl sticky top-0 z-30 transition-all duration-300 justify-between">
-            {/* Left: Logo */}
+            {/* Left: Logo + Filters (sheet) */}
             <div className="flex items-center gap-2 md:gap-4 shrink-0 md:w-[270px] pl-4 md:pl-0 md:justify-center">
                 <Sheet>
                     <SheetTrigger asChild>
-                        <Button variant="ghost" size="icon" className="md:hidden -ml-2">
+                        <Button variant="ghost" size="icon" className="md:hidden -ml-2" aria-label="Open menu">
                             <Menu className="h-5 w-5" />
                         </Button>
                     </SheetTrigger>
-                    <SheetContent side="left" className="p-0 w-[300px]">
+                    <SheetContent side="left" className="p-0 w-[300px] sm:max-w-[320px]">
                         <SheetHeader>
                             <SheetTitle className="sr-only">Filters</SheetTitle>
                             <SheetDescription className="sr-only">
@@ -44,7 +54,7 @@ export function SiteHeader() {
                     </SheetContent>
                 </Sheet>
 
-                <Link href="/" className="flex items-center gap-2.5 md:min-w-[120px] group py-1 px-2 -ml-2 rounded-lg hover:bg-secondary/50 transition-colors">
+                <Link href={homeHref} className="flex items-center gap-2.5 md:min-w-[120px] group py-1 px-2 -ml-2 rounded-lg hover:bg-secondary/50 transition-colors">
                     <Logo className="h-10 w-10" />
                     <h1 className="text-2xl tracking-tight font-[family-name:var(--font-outfit)] font-bold text-primary select-none hidden sm:block transition-colors duration-300 group-hover:text-cardinal-red">
                         Stanford Root
@@ -53,7 +63,7 @@ export function SiteHeader() {
             </div>
 
             {/* Center: Search */}
-            <div className="flex-1 flex justify-center md:justify-start px-2 md:px-0 min-w-0">
+            <div className="flex-1 flex flex-col justify-center md:justify-start px-2 md:px-0 min-w-0">
                 <div className="w-full">
                     <SearchBar />
                 </div>

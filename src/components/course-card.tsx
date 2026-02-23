@@ -1,6 +1,6 @@
 import React from 'react';
 import { Course } from '@/types/course';
-import { getDepartmentUrl } from '@/lib/utils';
+import { getDepartmentUrl, unitsLabel } from '@/lib/utils';
 import { Calendar, Users } from 'lucide-react';
 import { InstructorList } from './instructor-list';
 
@@ -17,20 +17,23 @@ export const CourseCard = React.memo(({ course, style, onClick }: CourseCardProp
         className="group relative w-full rounded-xl bg-card text-card-foreground border border-border/40 hover:border-primary/25 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(140,21,21,0.06)] transition-all duration-300 cursor-pointer p-5 hover:-translate-y-[1px]"
         onClick={onClick}
       >
-        {/* Top row: code */}
-        <div className="mb-2.5">
-          <span className="text-sm font-bold tracking-wider uppercase text-primary/80 group-hover:text-primary transition-colors">
+        {/* Top row: class code (left) + unit count (right) on same line */}
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <span className="text-sm font-bold tabular-nums text-primary/80 group-hover:text-primary transition-colors font-[family-name:var(--font-outfit)]">
             <a
               href={getDepartmentUrl(course.subject)}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="hover:underline underline-offset-2"
+              className="text-inherit font-inherit hover:underline underline-offset-2"
               title={`Visit ${course.subject} Department Website`}
             >
               {course.subject}
             </a>
             {' '}{course.code}
+          </span>
+          <span className="text-sm font-bold tabular-nums text-primary/80 group-hover:text-primary transition-colors shrink-0 font-[family-name:var(--font-outfit)]" title="Units">
+            {course.units ?? '—'} {unitsLabel(course.units)}
           </span>
         </div>
 
@@ -44,7 +47,6 @@ export const CourseCard = React.memo(({ course, style, onClick }: CourseCardProp
           <div className="flex-1 min-w-0">
             <InstructorList instructors={course.instructors} />
           </div>
-
           {(course.terms && course.terms.length > 0) ? (
             <div className="flex items-center gap-1.5 font-medium text-muted-foreground/70 shrink-0">
               <Calendar size={12} className="shrink-0" />
@@ -61,7 +63,6 @@ export const CourseCard = React.memo(({ course, style, onClick }: CourseCardProp
             </div>
           ) : null}
         </div>
-
       </div>
     </div>
   );

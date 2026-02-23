@@ -8,6 +8,14 @@ import { cn } from '@/lib/utils';
 import { CourseCard } from './course-card';
 import { Course } from '@/types/course';
 import { SearchX } from 'lucide-react';
+import { ActiveFilterChips } from './active-filter-chips';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 
 interface CourseListProps {
@@ -109,10 +117,44 @@ function AlphabetScrubber({ letters, onSelect }: { letters: string[], onSelect: 
 }
 
 
+// One option per criterion; direction toggled by the button (Quality defaults to high first)
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'az', label: 'A-Z' },
+  { value: 'units', label: 'Units' },
+  { value: 'hours', label: 'Hours/Wk' },
+  { value: 'hours_per_unit', label: 'Difficulty (Hours/Unit)' },
+  { value: 'quality', label: 'Course Rating' },
+]
+
+const DEFAULT_SORT_DIR: Record<string, 'asc' | 'desc'> = {
+  quality: 'desc', // high first (best first)
+  az: 'asc',
+  units: 'asc',
+  hours: 'asc',
+  hours_per_unit: 'asc',
+}
+
+function getDirectionLabel(sortBy: string, sortDir: string): string {
+  if (sortBy === 'az') return sortDir === 'asc' ? 'A-Z' : 'Z-A'
+  return sortDir === 'asc' ? 'Low first' : 'High first'
+}
+
 export function CourseList({ onCourseClick }: CourseListProps) {
   const { fetchCourses } = useCourseStore();
-  const { courses, isLoading } = useFilteredCourses();
-  const vListRef = useRef<VListHandle>(null);
+  const { courses, isLoading, sortBy, setSortBy, sortDir, setSortDir } = useFilteredCourses();
+  const vListRef = useRef<VListHandle>(null)
+
+  const isValidSortBy = SORT_OPTIONS.some((o) => o.value === sortBy)
+  const displaySortValue = isValidSortBy ? sortBy : 'az'
+
+  const handleSortChange = (value: string) => {
+    setSortBy(value)
+    setSortDir(DEFAULT_SORT_DIR[value] ?? 'asc')
+  }
+
+  const handleReverse = () => {
+    setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+  }
 
   useEffect(() => {
     fetchCourses();
@@ -146,11 +188,32 @@ export function CourseList({ onCourseClick }: CourseListProps) {
 
   return (
     <div className="flex-1 h-full w-full overflow-hidden flex flex-col relative">
-      {/* Results bar */}
-      <div className="px-4 py-2.5 text-xs font-medium text-muted-foreground border-b border-border/30 bg-background/80 backdrop-blur-sm z-10 flex items-center gap-2">
-        <span>
-          <span className="tabular-nums font-semibold text-foreground/70">{courses.length.toLocaleString()}</span>
-          {' '}classes
+      {/* Results bar: right padding aligns class count with course list edge (px-2 + pr-6/3) */}
+      <div className="min-h-10 py-2 pl-4 pr-8 md:pr-3 text-xs font-medium text-muted-foreground border-b border-border/30 bg-background/80 backdrop-blur-sm z-10 flex items-center gap-2 flex-wrap min-w-0">
+        <Select value={displaySortValue} onValueChange={handleSortChange}>
+          <SelectTrigger className="h-7 min-w-[130px] w-[170px] shrink-0 text-xs border-border/60 bg-muted/30" aria-label="Sort by">
+            <SelectValue placeholder="Sort by" />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <button
+          type="button"
+          onClick={handleReverse}
+          className="shrink-0 flex items-center justify-center px-2.5 h-7 rounded-md border border-border/60 bg-muted/30 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors"
+          aria-label={`${getDirectionLabel(sortBy, sortDir)} — click to reverse`}
+          title={`${getDirectionLabel(sortBy, sortDir)} — click to reverse`}
+        >
+          {getDirectionLabel(sortBy, sortDir)}
+        </button>
+        <ActiveFilterChips />
+        <span className="ml-auto shrink-0 tabular-nums font-semibold text-foreground/70">
+          {courses.length.toLocaleString()} classes
         </span>
       </div>
 
@@ -174,8 +237,8 @@ export function CourseList({ onCourseClick }: CourseListProps) {
               ))}
             </VList>
 
-            {/* Alphabet Scrubber */}
-            {sortedLetters.length > 1 && (
+            {/* Alphabet Scrubber: only when sorted A-Z */}
+            {sortBy === 'az' && sortedLetters.length > 1 && (
               <AlphabetScrubber
                 letters={sortedLetters}
                 onSelect={handleScrollToLetter}

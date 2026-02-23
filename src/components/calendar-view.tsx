@@ -3,9 +3,10 @@
 import React, { useMemo, useState } from 'react';
 import { useCartStore } from '@/lib/cart-store';
 import { isMeetingOptional, parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
-import { cn } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, AlertCircle, Calendar } from 'lucide-react';
+import { cn, unitsLabel } from '@/lib/utils';
+import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRouter } from 'next/navigation';
 
 const COLORS = {
@@ -49,6 +50,8 @@ type CalendarViewProps = {
   totalUnitsMax: number
   isOverload: boolean
   onIgnoreOverload: () => void
+  expectedHoursPerWeek?: number | null
+  expectedHoursLoading?: boolean
 }
 
 const DAYS: Array<{ key: CalendarEvent['day'], label: string }> = [
@@ -61,8 +64,8 @@ const DAYS: Array<{ key: CalendarEvent['day'], label: string }> = [
 
 const HOUR_HEIGHT = 52
 const MOBILE_HOUR_HEIGHT = 42
-const DEFAULT_START_MINUTES = 9 * 60
-const DEFAULT_END_MINUTES = 17 * 60
+const DEFAULT_START_MINUTES = 9 * 60   // 9 AM
+const DEFAULT_END_MINUTES = 18 * 60   // 6 PM
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -118,7 +121,7 @@ function layoutDayEvents(events: CalendarEvent[]) {
   return laidOut
 }
 
-export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMin, totalUnitsMax, isOverload, onIgnoreOverload }: CalendarViewProps) {
+export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMin, totalUnitsMax, isOverload, onIgnoreOverload, expectedHoursPerWeek, expectedHoursLoading }: CalendarViewProps) {
   const { items, removeItem, toggleOptionalMeeting } = useCartStore()
   const router = useRouter()
 
@@ -169,14 +172,13 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
   }, [currentTermCourses, currentTerm])
 
   const suggestedRange = useMemo(() => {
-    let startMinutes = DEFAULT_START_MINUTES
-    let endMinutes = DEFAULT_END_MINUTES
-    if (calendarEvents.length > 0) {
-      const minStart = calendarEvents.reduce((m, e) => Math.min(m, e.start), Infinity)
-      const maxEnd = calendarEvents.reduce((m, e) => Math.max(m, e.end), 0)
-      if (minStart < startMinutes) startMinutes = Math.floor(minStart / 60) * 60
-      if (maxEnd > endMinutes) endMinutes = Math.ceil(maxEnd / 60) * 60
+    if (calendarEvents.length === 0) {
+      return { startMinutes: DEFAULT_START_MINUTES, endMinutes: DEFAULT_END_MINUTES }
     }
+    const minStart = calendarEvents.reduce((m, e) => Math.min(m, e.start), Infinity)
+    const maxEnd = calendarEvents.reduce((m, e) => Math.max(m, e.end), 0)
+    let startMinutes = Math.floor(minStart / 60) * 60
+    let endMinutes = Math.ceil(maxEnd / 60) * 60
     startMinutes = clamp(startMinutes, 0, 23 * 60)
     endMinutes = clamp(endMinutes, startMinutes + 60, 24 * 60)
     return { startMinutes, endMinutes }
@@ -201,25 +203,44 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
   }, [calendarEvents])
 
   return (
+    <TooltipProvider delayDuration={150}>
     <div className="flex flex-col min-h-0 relative">
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 min-h-0">
-        <div className="flex flex-col min-h-0 gap-2">
-          <div className="flex items-center justify-center mb-2 h-9 px-1">
-            <h3 className="font-semibold text-base">Calendar</h3>
-          </div>
-          <div className="rounded-xl border bg-card overflow-hidden flex flex-col flex-1">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 min-h-0 items-start">
+        <div className="flex flex-col min-h-0 gap-2 w-full min-w-0">
+          <div className="rounded-xl border bg-card overflow-hidden flex flex-col shrink-0">
             <div className="grid grid-cols-[40px_1fr_40px] items-center border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 px-2 py-2">
               <Button variant="ghost" size="icon" onClick={onPrevTerm} aria-label="Previous term">
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <div className="text-center font-semibold text-base">
-                {currentTerm}
+              <div className="text-center">
+                <div className="font-semibold text-base">{currentTerm}</div>
+                <div className={cn(
+                  'text-[11px] text-muted-foreground mt-0.5',
+                  isOverload && 'text-destructive'
+                )}>
+                  {currentTermCourses.length === 0 || (totalUnitsMin === 0 && totalUnitsMax === 0)
+                    ? 'No classes'
+                    : totalUnitsMin === totalUnitsMax
+                      ? `${totalUnitsMin} ${unitsLabel(totalUnitsMin)}`
+                      : `${totalUnitsMin}-${totalUnitsMax} units`}
+                  {expectedHoursPerWeek != null && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="ml-1.5 cursor-default">· ~{expectedHoursPerWeek.toFixed(0)} hrs/wk</span>
+                      </TooltipTrigger>
+                      <TooltipContent>Expected hours per week from course evaluations</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {expectedHoursLoading && currentTermCourses.length > 0 && expectedHoursPerWeek == null && (
+                    <span className="ml-1.5 animate-pulse">· … hrs/wk</span>
+                  )}
+                </div>
               </div>
               <Button variant="ghost" size="icon" onClick={onNextTerm} aria-label="Next term">
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-            <div className="flex-1 w-full overflow-x-auto scrollbar-hide">
+            <div className="w-full overflow-x-auto scrollbar-hide shrink-0">
               <div className="min-w-0 sm:min-w-[700px]">
                 <div className="grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 sticky top-0 z-30">
                   <div className="p-1 px-2 sm:p-3 text-xs font-semibold text-muted-foreground border-r" />
@@ -248,7 +269,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                   }
                 `}</style>
 
-                  {/* Time rail */}
+                  {/* Time rail - left column, labels right-justified in box */}
                   <div className="relative border-r bg-background/50">
                     {hours.map((h, idx) => (
                       <div
@@ -258,7 +279,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                       >
                         {idx !== hours.length - 1 && (
                           <div className={cn(
-                            'absolute left-0 top-0 px-1 sm:px-2 text-[9px] sm:text-[10px] text-muted-foreground bg-background/50 whitespace-nowrap',
+                            'absolute right-0 top-0 pr-1 sm:pr-2 text-right text-[9px] sm:text-[10px] text-muted-foreground bg-background/50 whitespace-nowrap',
                             'translate-y-0 mt-1'
                           )}>
                             {`${((h + 11) % 12) + 1}${h >= 12 ? 'p' : 'a'}`}
@@ -268,7 +289,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                     ))}
                   </div>
 
-                  {/* Columns */}
+                  {/* Day columns */}
                   {DAYS.map(({ key }) => (
                     <div key={key} className="relative border-r last:border-r-0 bg-background/30">
                       {eventsByDay[key].map(ev => {
@@ -294,18 +315,27 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                               minHeight: '18px'
                             }}
                           >
-                            <button
-                              type="button"
-                              className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 z-20"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                toggleOptionalMeeting(ev.courseId, ev.day, ev.startTime, ev.endTime)
-                              }}
-                            >
-                              {ev.isOptional ? <Eye className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : <EyeOff className="h-3 w-3 sm:h-3.5 sm:w-3.5" />}
-                            </button>
+                            <TooltipProvider delayDuration={500}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 z-20"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      toggleOptionalMeeting(ev.courseId, ev.day, ev.startTime, ev.endTime)
+                                    }}
+                                  >
+                                    {ev.isOptional ? <Eye className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : <EyeOff className="h-3 w-3 sm:h-3.5 sm:w-3.5" />}
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  {ev.isOptional ? 'Show on schedule — will count as a conflict when "Hide conflicting" is on' : 'Hide from schedule — won\'t count as a conflict when "Hide conflicting" is on'}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             <div className="pl-0.5">
-                              <div className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate">
+                              <div className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate font-[family-name:var(--font-outfit)]">
                                 {ev.courseCode}
                               </div>
                               <div className="text-[9px] sm:text-[10px] opacity-80 truncate hidden sm:block">
@@ -334,18 +364,9 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
           </div>
         </div>
 
-        <div className="flex flex-col min-h-0 gap-2">
-          <div className="flex items-center justify-between gap-2 mb-2 h-9">
-            <h3 className="font-semibold text-base">Classes {currentTermCourses.length > 0 ? `in ${currentTerm}` : ''}</h3>
-            <div className={cn(
-              'px-3 py-1.5 rounded-full text-sm font-medium border',
-              isOverload ? 'bg-destructive/10 text-destructive border-destructive/20' : 'bg-background text-foreground border-border'
-            )}>
-              {totalUnitsMin === totalUnitsMax ? totalUnitsMin : `${totalUnitsMin}-${totalUnitsMax}`} Units
-            </div>
-          </div>
+        <div className="flex flex-col min-h-0 gap-2 w-full max-h-[calc(100vh-10rem)] overflow-hidden">
           {currentTermCourses.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center py-12 text-center text-muted-foreground border-2 border-dashed rounded-xl bg-muted/20">
+            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground border-2 border-dashed rounded-xl bg-muted/20">
               <Calendar className="h-10 w-10 mb-3 opacity-20" />
               <p className="font-medium text-sm">No classes yet</p>
               <p className="text-xs mt-1 max-w-[200px]">
@@ -353,7 +374,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
               </p>
             </div>
           ) : (
-            <div className="space-y-2 overflow-auto">
+            <div className="space-y-2 overflow-y-auto min-h-0">
               {currentTermCourses.map(course => {
                 const meetings = parseMeetingTimes(course, currentTerm);
                 const lines = meetings.map(formatMeetingLine).filter(Boolean) as string[];
@@ -365,7 +386,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{course.subject} {course.code}</div>
+                        <div className="font-medium truncate font-[family-name:var(--font-outfit)]">{course.subject} {course.code}</div>
                         <div className="text-xs text-muted-foreground truncate">{course.title}</div>
                       </div>
                       <Button
@@ -387,5 +408,6 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
         </div>
       </div>
     </div>
+    </TooltipProvider>
   );
 }

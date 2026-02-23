@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { CalendarView } from '@/components/calendar-view';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Download, Upload } from 'lucide-react';
@@ -9,6 +9,8 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCartStore } from '@/lib/cart-store';
 import { useCourseStore } from '@/lib/store';
+import { useEvaluationStore } from '@/lib/evaluation-store';
+import { aggregateMetrics } from '@/components/course-evaluations';
 import { AuthGate } from '@/components/auth-gate';
 import { Logo } from '@/components/logo';
 import { parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
@@ -115,6 +117,30 @@ function ScheduleContent() {
 
   const isOverload = totalUnitsMax > 20
   const isIgnored = ignoredOverloads[currentTerm]
+
+  const { fetchCourseEvaluations, getEvaluations, loadingCourses, evaluations } = useEvaluationStore()
+  useEffect(() => {
+    currentTermCourses.forEach(c => fetchCourseEvaluations(c.id))
+  }, [currentTermCourses, fetchCourseEvaluations])
+
+  const { expectedHoursPerWeek, expectedHoursLoading } = useMemo(() => {
+    let total = 0
+    let withData = 0
+    let loading = false
+    for (const c of currentTermCourses) {
+      if (loadingCourses[c.id]) loading = true
+      const evals = getEvaluations(c.id)
+      const metrics = aggregateMetrics(evals)
+      if (metrics.hours !== undefined && !Number.isNaN(metrics.hours)) {
+        total += metrics.hours
+        withData++
+      }
+    }
+    return {
+      expectedHoursPerWeek: withData > 0 ? total : null,
+      expectedHoursLoading: loading
+    }
+  }, [currentTermCourses, loadingCourses, evaluations, getEvaluations])
 
   const handleExportICS = () => {
     const exportEvents = currentTermCourses.flatMap(course => {
@@ -399,6 +425,8 @@ END:VEVENT
             totalUnitsMax={totalUnitsMax}
             isOverload={isOverload && !isIgnored}
             onIgnoreOverload={() => setIgnoredOverloads(prev => ({ ...prev, [currentTerm]: true }))}
+            expectedHoursPerWeek={expectedHoursPerWeek}
+            expectedHoursLoading={expectedHoursLoading}
           />
         </div>
       </main>
