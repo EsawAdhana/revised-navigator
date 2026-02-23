@@ -64,8 +64,8 @@ const DAYS: Array<{ key: CalendarEvent['day'], label: string }> = [
 
 const HOUR_HEIGHT = 52
 const MOBILE_HOUR_HEIGHT = 42
-const DEFAULT_START_MINUTES = 9 * 60   // 9 AM
-const DEFAULT_END_MINUTES = 18 * 60   // 6 PM
+const DEFAULT_START_MINUTES = 8 * 60   // 8 AM
+const DEFAULT_END_MINUTES = 20 * 60    // 8 PM
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -177,8 +177,10 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
     }
     const minStart = calendarEvents.reduce((m, e) => Math.min(m, e.start), Infinity)
     const maxEnd = calendarEvents.reduce((m, e) => Math.max(m, e.end), 0)
-    let startMinutes = Math.floor(minStart / 60) * 60
-    let endMinutes = Math.ceil(maxEnd / 60) * 60
+
+    // Expand the calendar if classes fall outside 8am-8pm, but never shrink smaller than it
+    let startMinutes = Math.min(DEFAULT_START_MINUTES, Math.floor(minStart / 60) * 60)
+    let endMinutes = Math.max(DEFAULT_END_MINUTES, Math.ceil(maxEnd / 60) * 60)
     startMinutes = clamp(startMinutes, 0, 23 * 60)
     endMinutes = clamp(endMinutes, startMinutes + 60, 24 * 60)
     return { startMinutes, endMinutes }
@@ -204,60 +206,39 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
 
   return (
     <TooltipProvider delayDuration={150}>
-    <div className="flex flex-col min-h-0 relative">
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 min-h-0 items-start">
-        <div className="flex flex-col min-h-0 gap-2 w-full min-w-0">
-          <div className="rounded-xl border bg-card overflow-hidden flex flex-col shrink-0">
-            <div className="grid grid-cols-[40px_1fr_40px] items-center border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 px-2 py-2">
-              <Button variant="ghost" size="icon" onClick={onPrevTerm} aria-label="Previous term">
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <div className="text-center">
-                <div className="font-semibold text-base">{currentTerm}</div>
-                <div className={cn(
-                  'text-[11px] text-muted-foreground mt-0.5',
-                  isOverload && 'text-destructive'
-                )}>
-                  {currentTermCourses.length === 0 || (totalUnitsMin === 0 && totalUnitsMax === 0)
-                    ? 'No classes'
-                    : totalUnitsMin === totalUnitsMax
-                      ? `${totalUnitsMin} ${unitsLabel(totalUnitsMin)}`
-                      : `${totalUnitsMin}-${totalUnitsMax} units`}
-                  {expectedHoursPerWeek != null && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="ml-1.5 cursor-default">· ~{expectedHoursPerWeek.toFixed(0)} hrs/wk</span>
-                      </TooltipTrigger>
-                      <TooltipContent>Expected hours per week from course evaluations</TooltipContent>
-                    </Tooltip>
-                  )}
-                  {expectedHoursLoading && currentTermCourses.length > 0 && expectedHoursPerWeek == null && (
-                    <span className="ml-1.5 animate-pulse">· … hrs/wk</span>
-                  )}
+      <div className="flex flex-col min-h-0 relative">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 min-h-0 items-start">
+          <div className="flex flex-col min-h-0 gap-2 w-full min-w-0">
+            <div className="rounded-xl border bg-card overflow-hidden flex flex-col shrink-0">
+              <div className="grid grid-cols-[40px_1fr_40px] items-center border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 px-2 py-2">
+                <Button variant="ghost" size="icon" onClick={onPrevTerm} aria-label="Previous term">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="text-center">
+                  <div className="font-semibold text-base">{currentTerm}</div>
                 </div>
+                <Button variant="ghost" size="icon" onClick={onNextTerm} aria-label="Next term">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
-              <Button variant="ghost" size="icon" onClick={onNextTerm} aria-label="Next term">
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="w-full overflow-x-auto scrollbar-hide shrink-0">
-              <div className="min-w-0 sm:min-w-[700px]">
-                <div className="grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 sticky top-0 z-30">
-                  <div className="p-1 px-2 sm:p-3 text-xs font-semibold text-muted-foreground border-r" />
-                  {DAYS.map(d => (
-                    <div key={d.key} className="p-1.5 sm:p-3 text-[10px] sm:text-xs font-semibold text-muted-foreground border-r last:border-r-0 text-center truncate px-0.5">
-                      {d.label}
-                    </div>
-                  ))}
-                </div>
-                <div
-                  className="calendar-grid grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] relative"
-                  style={{
-                    '--hour-height': `${HOUR_HEIGHT}px`,
-                    '--start-minutes': startMinutes,
-                  } as any}
-                >
-                  <style jsx>{`
+              <div className="w-full overflow-x-auto scrollbar-hide shrink-0">
+                <div className="min-w-0 sm:min-w-[700px]">
+                  <div className="grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 sticky top-0 z-30">
+                    <div className="p-1 px-2 sm:p-3 text-xs font-semibold text-muted-foreground border-r" />
+                    {DAYS.map(d => (
+                      <div key={d.key} className="p-1.5 sm:p-3 text-[10px] sm:text-xs font-semibold text-muted-foreground border-r last:border-r-0 text-center truncate px-0.5">
+                        {d.label}
+                      </div>
+                    ))}
+                  </div>
+                  <div
+                    className="calendar-grid grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] relative"
+                    style={{
+                      '--hour-height': `${HOUR_HEIGHT}px`,
+                      '--start-minutes': startMinutes,
+                    } as any}
+                  >
+                    <style jsx>{`
                   .calendar-grid {
                     --current-hour-height: ${HOUR_HEIGHT}px;
                     height: calc(((${endMinutes} - ${startMinutes}) / 60) * var(--current-hour-height));
@@ -269,145 +250,170 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                   }
                 `}</style>
 
-                  {/* Time rail - left column, labels right-justified in box */}
-                  <div className="relative border-r bg-background/50">
-                    {hours.map((h, idx) => (
-                      <div
-                        key={h}
-                        className="absolute left-0 right-0"
-                        style={{ top: `calc(${idx} * var(--current-hour-height))` }}
-                      >
-                        {idx !== hours.length - 1 && (
-                          <div className={cn(
-                            'absolute right-0 top-0 pr-1 sm:pr-2 text-right text-[9px] sm:text-[10px] text-muted-foreground bg-background/50 whitespace-nowrap',
-                            'translate-y-0 mt-1'
-                          )}>
-                            {`${((h + 11) % 12) + 1}${h >= 12 ? 'p' : 'a'}`}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                    {/* Time rail - left column, labels right-justified in box */}
+                    <div className="relative border-r bg-background/50">
+                      {hours.map((h, idx) => (
+                        <div
+                          key={h}
+                          className="absolute left-0 right-0"
+                          style={{ top: `calc(${idx} * var(--current-hour-height))` }}
+                        >
+                          {idx !== hours.length - 1 && (
+                            <div className={cn(
+                              'absolute right-0 top-0 pr-1 sm:pr-2 text-right text-[9px] sm:text-[10px] text-muted-foreground bg-background/50 whitespace-nowrap',
+                              'translate-y-0 mt-1'
+                            )}>
+                              {`${((h + 11) % 12) + 1}${h >= 12 ? 'p' : 'a'}`}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
 
-                  {/* Day columns */}
-                  {DAYS.map(({ key }) => (
-                    <div key={key} className="relative border-r last:border-r-0 bg-background/30">
-                      {eventsByDay[key].map(ev => {
-                        const colWidth = 100 / ev.colCount
-                        const leftPct = ev.colIndex * colWidth
-                        const gutter = 2
-                        const colorClasses = getEventColorClasses(ev.courseId, ev.color)
+                    {/* Day columns */}
+                    {DAYS.map(({ key }) => (
+                      <div key={key} className="relative border-r last:border-r-0 bg-background/30">
+                        {eventsByDay[key].map(ev => {
+                          const colWidth = 100 / ev.colCount
+                          const leftPct = ev.colIndex * colWidth
+                          const gutter = 2
+                          const colorClasses = getEventColorClasses(ev.courseId, ev.color)
 
-                        return (
-                          <div
-                            key={ev.id}
-                            onClick={() => router.push(`/courses/${ev.courseId}`)}
-                            className={cn(
-                              'group absolute rounded-md border px-1 sm:px-2 py-0.5 sm:py-1 text-left shadow-sm hover:shadow transition-shadow overflow-hidden cursor-pointer z-20',
-                              colorClasses,
-                              ev.isOptional && 'opacity-55 border-dashed grayscale'
-                            )}
-                            style={{
-                              top: `calc((${ev.start} - var(--start-minutes)) / 60 * var(--current-hour-height))`,
-                              height: `calc((${ev.end} - ${ev.start}) / 60 * var(--current-hour-height))`,
-                              left: `calc(${leftPct}% + ${gutter}px)`,
-                              width: `calc(${colWidth}% - ${gutter * 2}px)`,
-                              minHeight: '18px'
-                            }}
-                          >
-                            <TooltipProvider delayDuration={500}>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    type="button"
-                                    className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 z-20"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      toggleOptionalMeeting(ev.courseId, ev.day, ev.startTime, ev.endTime)
-                                    }}
-                                  >
-                                    {ev.isOptional ? <Eye className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : <EyeOff className="h-3 w-3 sm:h-3.5 sm:w-3.5" />}
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  {ev.isOptional ? 'Show on schedule — will count as a conflict when "Hide conflicting" is on' : 'Hide from schedule — won\'t count as a conflict when "Hide conflicting" is on'}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                            <div className="pl-0.5">
-                              <div className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate font-[family-name:var(--font-outfit)]">
-                                {ev.courseCode}
-                              </div>
-                              <div className="text-[9px] sm:text-[10px] opacity-80 truncate hidden sm:block">
-                                {ev.location || 'TBA'}
+                          return (
+                            <div
+                              key={ev.id}
+                              onClick={() => router.push(`/courses/${encodeURIComponent(ev.courseId)}`)}
+                              className={cn(
+                                'group absolute rounded-md border px-1 sm:px-2 py-0.5 sm:py-1 text-left shadow-sm hover:shadow transition-shadow overflow-hidden cursor-pointer z-20',
+                                colorClasses,
+                                ev.isOptional && 'opacity-55 border-dashed grayscale'
+                              )}
+                              style={{
+                                top: `calc((${ev.start} - var(--start-minutes)) / 60 * var(--current-hour-height))`,
+                                height: `calc((${ev.end} - ${ev.start}) / 60 * var(--current-hour-height))`,
+                                left: `calc(${leftPct}% + ${gutter}px)`,
+                                width: `calc(${colWidth}% - ${gutter * 2}px)`,
+                                minHeight: '18px'
+                              }}
+                            >
+                              <TooltipProvider delayDuration={500}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 z-20"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        toggleOptionalMeeting(ev.courseId, ev.day, ev.startTime, ev.endTime)
+                                      }}
+                                    >
+                                      {ev.isOptional ? <Eye className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : <EyeOff className="h-3 w-3 sm:h-3.5 sm:w-3.5" />}
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    {ev.isOptional ? 'Show on schedule — will count as a conflict when "Show conflicting" is off' : 'Hide from schedule — won\'t count as a conflict when "Show conflicting" is off'}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                              <div className="pl-0.5">
+                                <div className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate font-[family-name:var(--font-outfit)]">
+                                  {ev.courseCode}
+                                </div>
+                                <div className="text-[9px] sm:text-[10px] opacity-80 truncate hidden sm:block">
+                                  {ev.location || 'TBA'}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ))}
-
-                  {/* Horizontal Lines Layer - Rendered last to be on top of column backgrounds but below events (events are z-20) */}
-                  <div className="absolute inset-0 pointer-events-none">
-                    {hours.map((_, idx) => (
-                      <div
-                        key={idx}
-                        className="absolute left-0 right-0 border-t border-border/40"
-                        style={{ top: `calc(${idx} * var(--current-hour-height))` }}
-                      />
+                          )
+                        })}
+                      </div>
                     ))}
+
+                    {/* Horizontal Lines Layer - Rendered last to be on top of column backgrounds but below events (events are z-20) */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      {hours.map((_, idx) => (
+                        <div
+                          key={idx}
+                          className="absolute left-0 right-0 border-t border-border/40"
+                          style={{ top: `calc(${idx} * var(--current-hour-height))` }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="flex flex-col min-h-0 gap-2 w-full max-h-[calc(100vh-10rem)] overflow-hidden">
-          {currentTermCourses.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground border-2 border-dashed rounded-xl bg-muted/20">
-              <Calendar className="h-10 w-10 mb-3 opacity-20" />
-              <p className="font-medium text-sm">No classes yet</p>
-              <p className="text-xs mt-1 max-w-[200px]">
-                Search for courses to add them to your {currentTerm} schedule.
-              </p>
+          <div className="flex flex-col min-h-0 gap-3 w-full max-h-[calc(100vh-10rem)] overflow-hidden">
+
+            {/* Metrics Layout */}
+            <div className="grid grid-cols-2 gap-3 shrink-0">
+              <div className={cn(
+                "p-3 rounded-xl border bg-card flex flex-col items-center justify-center transition-colors",
+                isOverload ? "border-destructive/50 bg-destructive/5 text-destructive" : ""
+              )}>
+                <span className="text-2xl font-semibold leading-none mb-1">
+                  {currentTermCourses.length === 0 || (totalUnitsMin === 0 && totalUnitsMax === 0) ? '0' : totalUnitsMin === totalUnitsMax ? totalUnitsMin : `${totalUnitsMin}-${totalUnitsMax}`}
+                </span>
+                <span className="text-[10px] uppercase font-semibold tracking-wider opacity-60">Units</span>
+              </div>
+              <div className="p-3 rounded-xl border bg-card flex flex-col items-center justify-center">
+                <span className="text-2xl font-semibold leading-none mb-1">
+                  {expectedHoursLoading && currentTermCourses.length > 0 && expectedHoursPerWeek == null ? (
+                    <span className="animate-pulse">…</span>
+                  ) : expectedHoursPerWeek != null ? (
+                    `~${expectedHoursPerWeek.toFixed(0)}`
+                  ) : (
+                    '0'
+                  )}
+                </span>
+                <span className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">Hrs / Wk</span>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-2 overflow-y-auto min-h-0">
-              {currentTermCourses.map(course => {
-                const meetings = parseMeetingTimes(course, currentTerm);
-                const lines = meetings.map(formatMeetingLine).filter(Boolean) as string[];
-                return (
-                  <div
-                    key={course.id}
-                    className="p-3 border rounded-lg bg-card hover:bg-accent/50 transition-colors group cursor-pointer"
-                    onClick={() => router.push(`/courses/${course.id}`)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate font-[family-name:var(--font-outfit)]">{course.subject} {course.code}</div>
-                        <div className="text-xs text-muted-foreground truncate">{course.title}</div>
+            {currentTermCourses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground border-2 border-dashed rounded-xl bg-muted/20">
+                <Calendar className="h-10 w-10 mb-3 opacity-20" />
+                <p className="font-medium text-sm">No classes yet</p>
+                <p className="text-xs mt-1 max-w-[200px]">
+                  Search for courses to add them to your {currentTerm} schedule.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 overflow-y-auto min-h-0">
+                {currentTermCourses.map(course => {
+                  const meetings = parseMeetingTimes(course, currentTerm);
+                  const lines = meetings.map(formatMeetingLine).filter(Boolean) as string[];
+                  return (
+                    <div
+                      key={course.id}
+                      className="p-3 border rounded-lg bg-card hover:bg-accent/50 transition-colors group cursor-pointer"
+                      onClick={() => router.push(`/courses/${encodeURIComponent(course.id)}`)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate font-[family-name:var(--font-outfit)]">{course.subject} {course.code}</div>
+                          <div className="text-xs text-muted-foreground truncate">{course.title}</div>
+                        </div>
+                        <Button
+                          variant="ghost" size="icon"
+                          className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => { e.stopPropagation(); removeItem(course.id); }}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost" size="icon"
-                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => { e.stopPropagation(); removeItem(course.id); }}
-                      >
-                        <Trash2 size={14} />
-                      </Button>
+                      <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                        {lines.length === 0 ? <div>Time TBA</div> : lines.map((line, i) => <div key={i}>{line}</div>)}
+                      </div>
                     </div>
-                    <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                      {lines.length === 0 ? <div>Time TBA</div> : lines.map((line, i) => <div key={i}>{line}</div>)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
     </TooltipProvider>
   );
 }
