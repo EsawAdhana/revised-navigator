@@ -151,7 +151,7 @@ export function FilterSidebar() {
         }
 
         // Apply term filter
-        if (selectedTerms && selectedTerms.length > 0 && excludeFilter !== 'terms') {
+        if (selectedTerms && selectedTerms.length > 0 && excludeFilter !== 'terms' && !selectedTerms.includes('any')) {
             filtered = filtered.filter(c => {
                 if (c.terms) {
                     return c.terms.some(t => selectedTerms.includes(t));
@@ -620,7 +620,15 @@ export function FilterSidebar() {
                                 label={term}
                                 count={count}
                                 checked={selectedTerms.includes(term)}
-                                onChange={() => toggleFilter(term, selectedTerms, setSelectedTerms)}
+                                onChange={() => {
+                                    if (selectedTerms.includes(term)) {
+                                        const next = selectedTerms.filter(t => t !== term);
+                                        setSelectedTerms(next.length ? next : ['any']);
+                                    } else {
+                                        const next = selectedTerms.filter(t => t !== 'any');
+                                        setSelectedTerms([...next, term]);
+                                    }
+                                }}
                             />
                         ))}
                     </div>

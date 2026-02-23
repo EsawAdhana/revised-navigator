@@ -51,7 +51,7 @@ export function useFilteredCourses() {
         }
 
         // Filter by Term
-        if (selectedTerms && selectedTerms.length > 0) {
+        if (selectedTerms && selectedTerms.length > 0 && !selectedTerms.includes('any')) {
             result = result.filter(c => {
                 if (c.terms) {
                     return c.terms.some(t => selectedTerms.includes(t));

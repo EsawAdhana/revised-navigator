@@ -21,12 +21,13 @@ export function ActiveFilterChips() {
   const [selectedGers, setSelectedGers] = useQueryState('gers', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedSchools, setSelectedSchools] = useQueryState('schools', parseAsArrayOf(parseAsString).withDefault([]))
 
-  const toggleFilter = (item: string, current: string[], setFn: (val: string[] | null) => void) => {
+  const toggleFilter = (item: string, current: string[], setFn: (val: string[] | null) => void, isTerm = false) => {
     if (current.includes(item)) {
       const next = current.filter(i => i !== item)
-      setFn(next.length ? next : null)
+      setFn(next.length ? next : (isTerm ? ['any'] : null))
     } else {
-      setFn([...current, item])
+      const next = current.filter(i => i !== 'any')
+      setFn([...next, item])
     }
   }
 
@@ -49,7 +50,9 @@ export function ActiveFilterChips() {
       out.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })
     })
     selectedTerms.forEach(term => {
-      out.push({ id: `term-${term}`, label: term, onRemove: () => toggleFilter(term, selectedTerms, setSelectedTerms) })
+      if (term !== 'any') {
+        out.push({ id: `term-${term}`, label: term, onRemove: () => toggleFilter(term, selectedTerms, setSelectedTerms, true) })
+      }
     })
     selectedDepts.forEach(dept => {
       out.push({ id: `dept-${dept}`, label: dept, onRemove: () => removeDept(dept) })
