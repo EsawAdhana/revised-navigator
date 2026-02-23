@@ -8,7 +8,6 @@ import { formatMinutes } from '@/lib/schedule-utils'
 
 export function ActiveFilterChips() {
   const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true))
-  const [hideOnSchedule, setHideOnSchedule] = useQueryState('hideOnSchedule', parseAsBoolean.withDefault(true))
   const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]))
@@ -45,9 +44,6 @@ export function ActiveFilterChips() {
     const out: { id: string, label: string, onRemove: () => void }[] = []
     if (!hideConflicts) {
       out.push({ id: 'showConflicts', label: 'Show conflicting', onRemove: () => setHideConflicts(true) })
-    }
-    if (!hideOnSchedule) {
-      out.push({ id: 'showOnSchedule', label: 'Show existing planned', onRemove: () => setHideOnSchedule(true) })
     }
     excludedWords.forEach(word => {
       out.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })
@@ -98,7 +94,7 @@ export function ActiveFilterChips() {
       out.push({ id: `school-${school}`, label: school, onRemove: () => toggleFilter(school, selectedSchools, setSelectedSchools) })
     })
     return out
-  }, [hideConflicts, hideOnSchedule, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedStatus, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
+  }, [hideConflicts, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedStatus, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
 
   if (chips.length === 0) return null
 

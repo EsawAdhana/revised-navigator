@@ -4,12 +4,10 @@ import { Input } from '@/components/ui/input';
 import { useQueryState } from 'nuqs';
 import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 export function SearchBar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const isHomePage = pathname === '/';
   const [query, setQuery] = useQueryState('q', { defaultValue: '', shallow: true })
   const [localValue, setLocalValue] = useState(query);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -21,16 +19,14 @@ export function SearchBar() {
 
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current)
-    if (isHomePage) {
-      debounceRef.current = window.setTimeout(() => {
-        setQuery(localValue.trim() ? localValue : null)
-      }, 250)
-    }
+    debounceRef.current = window.setTimeout(() => {
+      setQuery(localValue.trim() ? localValue : null)
+    }, 250)
 
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
     }
-  }, [localValue, setQuery, isHomePage])
+  }, [localValue, setQuery])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -65,24 +61,13 @@ export function SearchBar() {
         value={localValue}
         onChange={handleChange}
         onKeyDown={(e) => {
-          if (e.key !== 'Enter') return;
-          if (debounceRef.current) window.clearTimeout(debounceRef.current);
-
-          const trimmed = localValue.trim();
-
-          if (isHomePage) {
-            setQuery(trimmed ? trimmed : null);
-          } else if (trimmed) {
-            // Strip spaces, uppercase, and navigate directly
-            const courseCode = trimmed.replace(/\s+/g, '').toUpperCase();
-            router.push(`/courses/${courseCode}`);
-          }
+          if (e.key !== 'Enter') return
+          if (debounceRef.current) window.clearTimeout(debounceRef.current)
+          setQuery(localValue.trim() ? localValue : null)
         }}
         onBlur={() => {
-          if (isHomePage) {
-            if (debounceRef.current) window.clearTimeout(debounceRef.current);
-            setQuery(localValue.trim() ? localValue : null);
-          }
+          if (debounceRef.current) window.clearTimeout(debounceRef.current)
+          setQuery(localValue.trim() ? localValue : null)
         }}
       />
       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
