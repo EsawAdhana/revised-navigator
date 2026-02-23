@@ -38,20 +38,7 @@ function ScheduleContent() {
 
   const QUARTERS = ['Winter', 'Spring', 'Summer', 'Autumn']
 
-  const [currentTerm, setCurrentTerm] = useState(() => {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = now.getMonth()
-    const day = now.getDate()
-
-    // > Feb 24 (Spring Planning): Show Spring {year}
-    // > Nov 25 (Winter Planning): Show Winter {year+1}
-    // Else: Autumn {year}
-    if (month > 1 || (month === 1 && day >= 25)) return `Spring ${year}`
-    if (month > 10 || (month === 10 && day >= 25)) return `Winter ${year + 1}`
-    if (month < 1 || (month === 1 && day < 25)) return `Winter ${year}`
-    return `Autumn ${year}`
-  })
+  const [currentTerm, setCurrentTerm] = useState('Spring 2026')
 
   const nextTerm = () => {
     setCurrentTerm(prev => {
