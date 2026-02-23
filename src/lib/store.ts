@@ -51,8 +51,7 @@ function rowToCourse(row: any): Course {
     instructors: row.instructors || [],
     terms: row.terms || [],
     dept: row.dept || undefined,
-    sections: row.sections || [],
-    final_exam: row.final_exam
+    sections: row.sections || []
   }
 }
 

@@ -41,8 +41,6 @@ export interface Course {
   terms?: string[];
   dept?: string;
   sections?: Section[];
-  /** Final exam info from Explore Courses, keyed by quarter (fall/winter/spring/summer) */
-  final_exam?: Record<string, { date?: string; time?: string; location?: string }>;
   selectedTerm?: string; // The term selected by the user for their schedule
   selectedSectionId?: number; // The specific section (classId) selected
   selectedUnits?: number; // When course/section has variable units (e.g. 3-4), the user's choice
