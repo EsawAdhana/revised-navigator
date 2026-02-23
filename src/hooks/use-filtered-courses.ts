@@ -4,7 +4,7 @@ import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
 import { parseMeetingTimes, timeToMinutes, isMeetingOptional, getWeeklyContactHours } from '@/lib/schedule-utils';
 import { getSchoolFromSubject, getCourseUnitsNumeric } from '@/lib/utils';
-import { isWimCourse } from '@/lib/wim-courses';
+// Removing isWimCourse import as WIM is now handled as a standard GER
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { aggregateMetrics, getOverallEvalScore } from '@/components/course-evaluations';
 import type { Course } from '@/types/course';
@@ -26,7 +26,7 @@ export function useFilteredCourses() {
     const [timeMin] = useQueryState('timeMin', parseAsInteger.withDefault(420));
     const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320));
     const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
-    const [wimOnly] = useQueryState('wim', parseAsBoolean.withDefault(false));
+    // WIM is now handled as a standard GER, so we no longer need a separate wimOnly query state.
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
     const [sortBy, setSortBy] = useQueryState('sortBy', parseAsString.withDefault('az'));
     const [sortDir, setSortDir] = useQueryState('sortDir', parseAsString.withDefault('asc'));
@@ -131,10 +131,7 @@ export function useFilteredCourses() {
             });
         }
 
-        // Filter by WIM
-        if (wimOnly) {
-            result = result.filter(c => isWimCourse(c.subject, c.code));
-        }
+        // WIM filter is now handled by standard GER filtering
 
         // Filter by Conflicts
         if (hideConflicts) {
@@ -290,7 +287,7 @@ export function useFilteredCourses() {
 
         // All filtering is done; this is the set we will sort (sort is the last step)
         return result;
-    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, wimOnly, cartItems, excludedWords, evaluations]);
+    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, cartItems, excludedWords, evaluations]);
 
     useEffect(() => {
         if ((sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit') && filteredResult.length > 0) {

@@ -81,7 +81,6 @@ export function FilterSidebar() {
     const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']));
     const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
-    const [wimOnly, setWimOnly] = useQueryState('wim', parseAsBoolean.withDefault(false));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
 
     // New Filters
@@ -238,11 +237,7 @@ export function FilterSidebar() {
                 return false;
             });
         }
-
-        // Apply WIM filter
-        if (wimOnly && excludeFilter !== 'wim') {
-            filtered = filtered.filter(c => isWimCourse(c.subject, c.code));
-        }
+        // WIM filter is now handled as part of standard GER filtering.
 
         // Apply conflict hiding filter (always applied, not excluded)
         if (hideConflicts) {
@@ -485,7 +480,7 @@ export function FilterSidebar() {
             gers: Array.from(gers.entries()).sort((a, b) => a[0].localeCompare(b[0])),
             schools,
         };
-    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, wimOnly, cartItems, evaluations, getEvaluations]);
+    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, cartItems, evaluations, getEvaluations]);
 
     const filteredDepts = useMemo(() => {
         if (!deptQuery) return facets.depts;
@@ -911,11 +906,6 @@ export function FilterSidebar() {
                                             onChange={() => toggleFilter(ger, selectedGers, setSelectedGers)}
                                         />
                                     ))}
-                                    <CheckboxItem
-                                        label="Writing in the Major (WIM)"
-                                        checked={wimOnly}
-                                        onChange={() => setWimOnly(!wimOnly || null)}
-                                    />
                                 </>
                             );
                         })()}

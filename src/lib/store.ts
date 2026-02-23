@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Course } from '@/types/course'
+import { isWimCourse } from '@/lib/wim-courses'
 
 type CourseStore = {
   courses: Course[]
@@ -40,6 +41,19 @@ function writeCache(courses: Course[]) {
 }
 
 function rowToCourse(row: any): Course {
+  const isWim = isWimCourse(row.subject, row.code)
+  const sections = row.sections || []
+
+  // Inject WIM GER if applicable
+  if (isWim) {
+    sections.forEach((s: any) => {
+      if (!s.gers) s.gers = []
+      if (!s.gers.includes('Writing in the Major (WIM)')) {
+        s.gers.push('Writing in the Major (WIM)')
+      }
+    })
+  }
+
   return {
     id: row.course_id,
     subject: row.subject,
@@ -51,7 +65,7 @@ function rowToCourse(row: any): Course {
     instructors: row.instructors || [],
     terms: row.terms || [],
     dept: row.dept || undefined,
-    sections: row.sections || []
+    sections: sections
   }
 }
 
