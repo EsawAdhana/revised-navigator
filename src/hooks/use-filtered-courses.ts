@@ -4,6 +4,7 @@ import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
 import { parseMeetingTimes, timeToMinutes, isMeetingOptional, getWeeklyContactHours } from '@/lib/schedule-utils';
 import { getSchoolFromSubject, getCourseUnitsNumeric } from '@/lib/utils';
+import { isWimCourse } from '@/lib/wim-courses';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { aggregateMetrics, getOverallEvalScore } from '@/components/course-evaluations';
 import type { Course } from '@/types/course';
@@ -16,16 +17,16 @@ export function useFilteredCourses() {
     const [selectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']));
     const [selectedFormats] = useQueryState('formats', parseAsArrayOf(parseAsString).withDefault([]));
-    const [selectedStatus] = useQueryState('status', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedLevels] = useQueryState('levels', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedGers] = useQueryState('gers', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedSchools] = useQueryState('schools', parseAsArrayOf(parseAsString).withDefault([]));
 
     const [unitMin] = useQueryState('unitMin', parseAsInteger.withDefault(1));
     const [unitMax] = useQueryState('unitMax', parseAsInteger.withDefault(5));
-    const [timeMin] = useQueryState('timeMin', parseAsInteger.withDefault(0));
-    const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1440));
+    const [timeMin] = useQueryState('timeMin', parseAsInteger.withDefault(420));
+    const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320));
     const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
+    const [wimOnly] = useQueryState('wim', parseAsBoolean.withDefault(false));
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
     const [sortBy, setSortBy] = useQueryState('sortBy', parseAsString.withDefault('az'));
     const [sortDir, setSortDir] = useQueryState('sortDir', parseAsString.withDefault('asc'));
@@ -70,15 +71,6 @@ export function useFilteredCourses() {
             });
         }
 
-        // Filter by Status (Open/Waitlist)
-        if (selectedStatus && selectedStatus.length > 0) {
-            result = result.filter(c => {
-                if (c.sections && c.sections.length > 0) {
-                    return c.sections.some(s => s.status && selectedStatus.includes(s.status));
-                }
-                return false;
-            });
-        }
 
         // Filter by Level (Undergrad/Grad etc)
         if (selectedLevels && selectedLevels.length > 0) {
@@ -123,10 +115,10 @@ export function useFilteredCourses() {
         }
 
         // Filter by start time range (minutes from midnight, 0–1440)
-        const timeFilterActive = timeMin > 0 || timeMax < 1440;
+        const timeFilterActive = timeMin > 420 || timeMax < 1320;
         if (timeFilterActive) {
-            const min = Math.max(0, timeMin);
-            const max = Math.min(1440, timeMax);
+            const min = Math.max(420, timeMin);
+            const max = Math.min(1320, timeMax);
             result = result.filter(c => {
                 if (c.sections && c.sections.length > 0) {
                     return c.sections.some(s => s.meetings.some(m => {
@@ -137,6 +129,11 @@ export function useFilteredCourses() {
                 }
                 return false;
             });
+        }
+
+        // Filter by WIM
+        if (wimOnly) {
+            result = result.filter(c => isWimCourse(c.subject, c.code));
         }
 
         // Filter by Conflicts
@@ -293,7 +290,7 @@ export function useFilteredCourses() {
 
         // All filtering is done; this is the set we will sort (sort is the last step)
         return result;
-    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, cartItems, excludedWords, evaluations]);
+    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, wimOnly, cartItems, excludedWords, evaluations]);
 
     useEffect(() => {
         if ((sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit') && filteredResult.length > 0) {

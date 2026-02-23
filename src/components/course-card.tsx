@@ -14,9 +14,9 @@ interface CourseCardProps {
 
 export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick }: CourseCardProps) => {
   return (
-    <div style={style} className="pl-1 pr-3 py-1.5">
+    <div style={style} className="pl-1 pr-1 py-1.5">
       <div
-        className="group relative w-full rounded-xl bg-card text-card-foreground border border-border/40 hover:border-primary/25 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(140,21,21,0.06)] transition-all duration-300 cursor-pointer pl-4 pr-5 py-5 hover:-translate-y-[1px]"
+        className="group relative w-full rounded-xl bg-card text-card-foreground border border-border/40 hover:border-primary/25 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(140,21,21,0.06)] transition-all duration-300 cursor-pointer pl-4 pr-4 py-5 hover:-translate-y-[1px]"
         onClick={onClick}
       >
         {/* Top row: class code (left) + unit count (right); under unit count, show sort value when applicable */}

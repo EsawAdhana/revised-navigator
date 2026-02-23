@@ -8,16 +8,16 @@ import { formatMinutes } from '@/lib/schedule-utils'
 
 export function ActiveFilterChips() {
   const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false))
+  const [wimOnly, setWimOnly] = useQueryState('wim', parseAsBoolean.withDefault(false))
   const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']))
   const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedFormats, setSelectedFormats] = useQueryState('formats', parseAsArrayOf(parseAsString).withDefault([]))
-  const [selectedStatus, setSelectedStatus] = useQueryState('status', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedLevels, setSelectedLevels] = useQueryState('levels', parseAsArrayOf(parseAsString).withDefault([]))
   const [unitMin, setUnitMin] = useQueryState('unitMin', parseAsInteger.withDefault(1))
   const [unitMax, setUnitMax] = useQueryState('unitMax', parseAsInteger.withDefault(5))
-  const [timeMin, setTimeMin] = useQueryState('timeMin', parseAsInteger.withDefault(0))
-  const [timeMax, setTimeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1440))
+  const [timeMin, setTimeMin] = useQueryState('timeMin', parseAsInteger.withDefault(420))
+  const [timeMax, setTimeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320))
   const [selectedGers, setSelectedGers] = useQueryState('gers', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedSchools, setSelectedSchools] = useQueryState('schools', parseAsArrayOf(parseAsString).withDefault([]))
 
@@ -46,6 +46,9 @@ export function ActiveFilterChips() {
     if (hideConflicts) {
       out.push({ id: 'showConflicts', label: 'Show conflicting', onRemove: () => setHideConflicts(false) })
     }
+    if (wimOnly) {
+      out.push({ id: 'wim', label: 'WIM only', onRemove: () => setWimOnly(null) })
+    }
     excludedWords.forEach(word => {
       out.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })
     })
@@ -59,9 +62,6 @@ export function ActiveFilterChips() {
     })
     selectedFormats.forEach(fmt => {
       out.push({ id: `fmt-${fmt}`, label: fmt, onRemove: () => toggleFilter(fmt, selectedFormats, setSelectedFormats) })
-    })
-    selectedStatus.forEach(s => {
-      out.push({ id: `status-${s}`, label: s, onRemove: () => toggleFilter(s, selectedStatus, setSelectedStatus) })
     })
     selectedLevels.forEach(lvl => {
       out.push({ id: `level-${lvl}`, label: lvl, onRemove: () => toggleFilter(lvl, selectedLevels, setSelectedLevels) })
@@ -79,14 +79,14 @@ export function ActiveFilterChips() {
         }
       })
     }
-    if (timeMin > 0 || timeMax < 1440) {
-      const label = `${formatMinutes(timeMin)} – ${timeMax >= 1440 ? '12:00 AM' : formatMinutes(timeMax)}`
+    if (timeMin > 420 || timeMax < 1320) {
+      const label = `${formatMinutes(timeMin)} – ${formatMinutes(timeMax)}`
       out.push({
         id: 'time-range',
         label,
         onRemove: () => {
-          setTimeMin(0)
-          setTimeMax(1440)
+          setTimeMin(420)
+          setTimeMax(1320)
         }
       })
     }
@@ -97,7 +97,7 @@ export function ActiveFilterChips() {
       out.push({ id: `school-${school}`, label: school, onRemove: () => toggleFilter(school, selectedSchools, setSelectedSchools) })
     })
     return out
-  }, [hideConflicts, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedStatus, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
+  }, [hideConflicts, wimOnly, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
 
   if (chips.length === 0) return null
 

@@ -3,11 +3,12 @@ import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
 import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel } from '@/lib/utils';
+import { isWimCourse } from '@/lib/wim-courses';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { parseMeetingTimes, timeToMinutes, formatMinutes, isMeetingOptional, parseTimeStringToMinutes } from '@/lib/schedule-utils';
 import { CheckboxItem, FilterGroup } from '@/components/ui/filter-components';
 import { Input } from '@/components/ui/input';
-import { Search, Plus, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Search, Plus, X, ChevronDown, ChevronRight, Check, Minus } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -80,11 +81,11 @@ export function FilterSidebar() {
     const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']));
     const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
+    const [wimOnly, setWimOnly] = useQueryState('wim', parseAsBoolean.withDefault(false));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
 
     // New Filters
     const [selectedFormats, setSelectedFormats] = useQueryState('formats', parseAsArrayOf(parseAsString).withDefault([]));
-    const [selectedStatus, setSelectedStatus] = useQueryState('status', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedLevels, setSelectedLevels] = useQueryState('levels', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedGers, setSelectedGers] = useQueryState('gers', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedSchools, setSelectedSchools] = useQueryState('schools', parseAsArrayOf(parseAsString).withDefault([]));
@@ -92,8 +93,8 @@ export function FilterSidebar() {
     // Single Selects (Dropdowns) -> Now Multi Selects (Checkboxes)
     const [unitMin, setUnitMin] = useQueryState('unitMin', parseAsInteger.withDefault(1));
     const [unitMax, setUnitMax] = useQueryState('unitMax', parseAsInteger.withDefault(5));
-    const [timeMin, setTimeMin] = useQueryState('timeMin', parseAsInteger.withDefault(0));
-    const [timeMax, setTimeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1440));
+    const [timeMin, setTimeMin] = useQueryState('timeMin', parseAsInteger.withDefault(420));
+    const [timeMax, setTimeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320));
     // Local state for time inputs (for explicit typing)
     const [timeFromInput, setTimeFromInput] = useState('');
     const [timeToInput, setTimeToInput] = useState('');
@@ -127,6 +128,7 @@ export function FilterSidebar() {
     const [deptQuery, setDeptQuery] = useState('');
     const [excludeInput, setExcludeInput] = useState('');
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [waysExpanded, setWaysExpanded] = useState(false);
 
     const getEvaluations = useEvaluationStore(state => state.getEvaluations);
     const evaluations = useEvaluationStore(state => state.evaluations);
@@ -170,15 +172,6 @@ export function FilterSidebar() {
             });
         }
 
-        // Apply status filter
-        if (selectedStatus && selectedStatus.length > 0 && excludeFilter !== 'status') {
-            filtered = filtered.filter(c => {
-                if (c.sections && c.sections.length > 0) {
-                    return c.sections.some(s => s.status && selectedStatus.includes(s.status));
-                }
-                return false;
-            });
-        }
 
         // Apply level filter
         if (selectedLevels && selectedLevels.length > 0 && excludeFilter !== 'levels') {
@@ -230,10 +223,10 @@ export function FilterSidebar() {
         }
 
         // Apply start time range filter (minutes from midnight, 0–1440)
-        const timeFilterActive = timeMin > 0 || timeMax < 1440;
+        const timeFilterActive = timeMin > 420 || timeMax < 1320;
         if (timeFilterActive && excludeFilter !== 'times') {
-            const min = Math.max(0, timeMin);
-            const max = Math.min(1440, timeMax);
+            const min = Math.max(420, timeMin);
+            const max = Math.min(1320, timeMax);
             filtered = filtered.filter(c => {
                 if (c.sections && c.sections.length > 0) {
                     return c.sections.some(s => s.meetings.some(m => {
@@ -244,6 +237,11 @@ export function FilterSidebar() {
                 }
                 return false;
             });
+        }
+
+        // Apply WIM filter
+        if (wimOnly && excludeFilter !== 'wim') {
+            filtered = filtered.filter(c => isWimCourse(c.subject, c.code));
         }
 
         // Apply conflict hiding filter (always applied, not excluded)
@@ -397,7 +395,6 @@ export function FilterSidebar() {
 
         // New Facets
         const formats = new Map<string, number>();
-        const statuses = new Map<string, number>();
         const levels = new Map<string, number>();
         const gers = new Map<string, number>();
         const schools = new Map<string, number>();
@@ -406,7 +403,6 @@ export function FilterSidebar() {
         const coursesForDepts = getFilteredCoursesForFacets('depts');
         const coursesForTerms = getFilteredCoursesForFacets('terms');
         const coursesForFormats = getFilteredCoursesForFacets('formats');
-        const coursesForStatus = getFilteredCoursesForFacets('status');
         const coursesForLevels = getFilteredCoursesForFacets('levels');
         const coursesForGers = getFilteredCoursesForFacets('gers');
         const coursesForSchools = getFilteredCoursesForFacets('schools');
@@ -440,16 +436,6 @@ export function FilterSidebar() {
             uniqueComponents.forEach(comp => formats.set(comp, (formats.get(comp) || 0) + 1));
         });
 
-        // Compute status facets
-        coursesForStatus.forEach(c => {
-            const uniqueStatus = new Set<string>();
-            if (c.sections && c.sections.length > 0) {
-                c.sections.forEach(s => {
-                    if (s.status) uniqueStatus.add(s.status);
-                });
-            }
-            uniqueStatus.forEach(stat => statuses.set(stat, (statuses.get(stat) || 0) + 1));
-        });
 
         // Compute level facets
         coursesForLevels.forEach(c => {
@@ -495,12 +481,11 @@ export function FilterSidebar() {
                 return order.indexOf(semA) - order.indexOf(semB);
             }),
             formats: Array.from(formats.entries()).sort((a, b) => b[1] - a[1]), // Sort by count desc
-            statuses: Array.from(statuses.entries()).sort((a, b) => b[1] - a[1]),
             levels: Array.from(levels.entries()).sort((a, b) => b[1] - a[1]),
             gers: Array.from(gers.entries()).sort((a, b) => a[0].localeCompare(b[0])),
             schools,
         };
-    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedStatus, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, cartItems, evaluations, getEvaluations]);
+    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, wimOnly, cartItems, evaluations, getEvaluations]);
 
     const filteredDepts = useMemo(() => {
         if (!deptQuery) return facets.depts;
@@ -553,14 +538,13 @@ export function FilterSidebar() {
 
             <SimpleScrollArea className="flex-1 px-4 py-3 space-y-3">
                 <div className="space-y-1">
-
                     <div className="flex items-center gap-2 min-h-8">
                         <input
                             type="checkbox"
                             id="showConflicts"
                             checked={!hideConflicts}
                             onChange={(e) => setHideConflicts(!e.target.checked)}
-                            className="h-4 w-4 shrink-0 rounded border-input text-primary focus:ring-primary accent-primary"
+                            className="h-4 w-4 shrink-0 rounded border-input text-primary accent-primary outline-none"
                         />
                         <TooltipProvider delayDuration={300}>
                             <Tooltip>
@@ -576,7 +560,6 @@ export function FilterSidebar() {
                         </TooltipProvider>
                     </div>
                 </div>
-
                 {/* Exclude Keywords */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pl-1 flex items-center gap-1.5">
@@ -735,18 +718,6 @@ export function FilterSidebar() {
                         ))}
                     </FilterSection>
 
-                    {/* Class Status */}
-                    <FilterSection title="Class Status" hasActive={selectedStatus.length > 0}>
-                        {facets.statuses.map(([status, count]) => (
-                            <CheckboxItem
-                                key={status}
-                                label={status}
-                                count={count}
-                                checked={selectedStatus.includes(status)}
-                                onChange={() => toggleFilter(status, selectedStatus, setSelectedStatus)}
-                            />
-                        ))}
-                    </FilterSection>
 
                     {/* Class Level */}
                     <FilterSection title="Class Level" hasActive={selectedLevels.length > 0}>
@@ -763,10 +734,9 @@ export function FilterSidebar() {
 
                     {/* Number of Units — Min and Max on separate tracks so both are easy to use */}
                     <FilterSection title="Number of Units" hasActive={unitMin > 1 || unitMax < 5}>
-                        <div className="space-y-3 px-1">
-                            <div className="pt-1">
-                                <div className="flex items-center gap-2 text-xs">
-                                    <span className="w-8 shrink-0 text-muted-foreground">Min</span>
+                        <div className="space-y-1 px-1">
+                            <div className="space-y-2">
+                                <div>
                                     <input
                                         type="range"
                                         min={1}
@@ -777,12 +747,11 @@ export function FilterSidebar() {
                                             setLocalUnitMin(v)
                                             if (v > localUnitMax) setLocalUnitMax(v)
                                         }}
-                                        className="flex-1 filter-range accent-primary"
+                                        className="w-full filter-range accent-primary"
                                     />
-                                    <span className="w-6 text-right text-muted-foreground tabular-nums">{localUnitMin}</span>
+                                    <p className="text-xs text-muted-foreground tabular-nums mt-0.5">Min: {localUnitMin}</p>
                                 </div>
-                                <div className="flex items-center gap-2 text-xs mt-2">
-                                    <span className="w-8 shrink-0 text-muted-foreground">Max</span>
+                                <div>
                                     <input
                                         type="range"
                                         min={1}
@@ -793,34 +762,27 @@ export function FilterSidebar() {
                                             setLocalUnitMax(v)
                                             if (v < localUnitMin) setLocalUnitMin(v)
                                         }}
-                                        className="flex-1 filter-range accent-primary"
+                                        className="w-full filter-range accent-primary"
                                     />
-                                    <span className="w-6 text-right text-muted-foreground tabular-nums">{localUnitMax >= 5 ? '5+' : localUnitMax}</span>
+                                    <p className="text-xs text-muted-foreground tabular-nums mt-0.5">Max: {localUnitMax >= 5 ? '5+' : localUnitMax}</p>
                                 </div>
-                                <div className="flex justify-between mt-2 px-0.5 text-[10px] text-muted-foreground">
+                                <div className="flex justify-between px-0.5 text-[10px] text-muted-foreground">
                                     {[1, 2, 3, 4, 5].map((n) => (
                                         <span key={n} className="tabular-nums">{n === 5 ? '5+' : n}</span>
                                     ))}
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-1.5 tabular-nums">
-                                    {localUnitMin === localUnitMax ? (localUnitMax >= 5 ? `${localUnitMin}+` : `${localUnitMin}`) : `${localUnitMin}–${localUnitMax >= 5 ? '5+' : localUnitMax}`} {unitsLabel(localUnitMin)}
-                                </p>
                             </div>
                         </div>
                     </FilterSection>
 
-                    {/* Start Time — From and To on separate tracks so both are easy to use */}
-                    <FilterSection title="Start Time" hasActive={timeMin > 0 || timeMax < 1440}>
-                        <div className="space-y-3 px-1">
-                            <div className="pt-1">
-                                <p className="text-xs text-muted-foreground mb-2 tabular-nums">
-                                    {localTimeMin === 0 && localTimeMax === 1440 ? 'Any time' : `${formatMinutes(localTimeMin)} – ${localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax)}`}
-                                </p>
-                                <div className="flex items-center gap-2 text-xs">
+                    <FilterSection title="Start Time" hasActive={timeMin > 420 || timeMax < 1320}>
+                        <div className="space-y-1 px-1">
+                            <div className="space-y-2">
+                                <div>
                                     <input
                                         type="range"
-                                        min={0}
-                                        max={1440}
+                                        min={420}
+                                        max={1320}
                                         step={30}
                                         value={localTimeMin}
                                         onChange={(e) => {
@@ -828,55 +790,15 @@ export function FilterSidebar() {
                                             setLocalTimeMin(v);
                                             if (v > localTimeMax) setLocalTimeMax(v);
                                         }}
-                                        className="flex-1 filter-range accent-primary"
+                                        className="w-full filter-range accent-primary"
                                     />
-                                    <Input
-                                        type="text"
-                                        inputMode="numeric"
-                                        placeholder="9:00 AM"
-                                        className="w-[88px] h-7 text-right text-[11px] tabular-nums px-1.5"
-                                        value={timeFieldFocused === 'from' ? timeFromInput : formatMinutes(localTimeMin)}
-                                        onFocus={() => {
-                                            setTimeFromInput(formatMinutes(localTimeMin));
-                                            setTimeFieldFocused('from');
-                                        }}
-                                        onChange={(e) => setTimeFromInput(e.target.value)}
-                                        onBlur={() => {
-                                            const parsed = parseTimeStringToMinutes(timeFromInput);
-                                            if (parsed != null) {
-                                                setLocalTimeMin(parsed);
-                                                if (parsed > localTimeMax) setLocalTimeMax(parsed);
-                                                setTimeFromInput(formatMinutes(parsed));
-                                            } else {
-                                                setTimeFromInput(formatMinutes(localTimeMin));
-                                            }
-                                            setTimeFieldFocused(null);
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === 'Tab') {
-                                                e.preventDefault();
-                                                const parsed = parseTimeStringToMinutes(timeFromInput);
-                                                if (parsed != null) {
-                                                    setLocalTimeMin(parsed);
-                                                    if (parsed > localTimeMax) setLocalTimeMax(parsed);
-                                                    setTimeFromInput(formatMinutes(parsed));
-                                                } else {
-                                                    setTimeFromInput(formatMinutes(localTimeMin));
-                                                }
-                                                setTimeFieldFocused(null);
-                                                if (e.key === 'Tab') {
-                                                    const toEl = document.querySelector<HTMLInputElement>('[data-time-to-input]');
-                                                    toEl?.focus();
-                                                }
-                                            }
-                                        }}
-                                    />
+                                    <p className="text-xs text-muted-foreground tabular-nums mt-0.5">From: {formatMinutes(localTimeMin)}</p>
                                 </div>
-                                <div className="flex items-center gap-2 text-xs mt-2">
+                                <div>
                                     <input
                                         type="range"
-                                        min={0}
-                                        max={1440}
+                                        min={420}
+                                        max={1320}
                                         step={30}
                                         value={localTimeMax}
                                         onChange={(e) => {
@@ -884,46 +806,9 @@ export function FilterSidebar() {
                                             setLocalTimeMax(v);
                                             if (v < localTimeMin) setLocalTimeMin(v);
                                         }}
-                                        className="flex-1 filter-range accent-primary"
+                                        className="w-full filter-range accent-primary"
                                     />
-                                    <Input
-                                        type="text"
-                                        inputMode="numeric"
-                                        placeholder="5:00 PM"
-                                        data-time-to-input
-                                        className="w-[88px] h-7 text-right text-[11px] tabular-nums px-1.5"
-                                        value={timeFieldFocused === 'to' ? timeToInput : (localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax))}
-                                        onFocus={() => {
-                                            setTimeToInput(localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax));
-                                            setTimeFieldFocused('to');
-                                        }}
-                                        onChange={(e) => setTimeToInput(e.target.value)}
-                                        onBlur={() => {
-                                            const parsed = parseTimeStringToMinutes(timeToInput, true);
-                                            if (parsed != null) {
-                                                setLocalTimeMax(parsed);
-                                                if (parsed < localTimeMin) setLocalTimeMin(parsed);
-                                                setTimeToInput(parsed >= 1440 ? '12:00 AM' : formatMinutes(parsed));
-                                            } else {
-                                                setTimeToInput(localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax));
-                                            }
-                                            setTimeFieldFocused(null);
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === 'Tab') {
-                                                e.preventDefault();
-                                                const parsed = parseTimeStringToMinutes(timeToInput, true);
-                                                if (parsed != null) {
-                                                    setLocalTimeMax(parsed);
-                                                    if (parsed < localTimeMin) setLocalTimeMin(parsed);
-                                                    setTimeToInput(parsed >= 1440 ? '12:00 AM' : formatMinutes(parsed));
-                                                } else {
-                                                    setTimeToInput(localTimeMax >= 1440 ? '12:00 AM' : formatMinutes(localTimeMax));
-                                                }
-                                                setTimeFieldFocused(null);
-                                            }
-                                        }}
-                                    />
+                                    <p className="text-xs text-muted-foreground tabular-nums mt-0.5">To: {formatMinutes(localTimeMax)}</p>
                                 </div>
                             </div>
                         </div>
@@ -931,15 +816,109 @@ export function FilterSidebar() {
 
                     {/* GERs */}
                     <FilterSection title="General Education Requirements" hasActive={selectedGers.length > 0}>
-                        {facets.gers.map(([ger, count]) => (
-                            <CheckboxItem
-                                key={ger}
-                                label={ger}
-                                count={count}
-                                checked={selectedGers.includes(ger)}
-                                onChange={() => toggleFilter(ger, selectedGers, setSelectedGers)}
-                            />
-                        ))}
+                        {(() => {
+                            const WAYS_GERS = new Set([
+                                'Aesthetic and Interpretive Inquiry',
+                                'Applied Quantitative Reasoning',
+                                'Creative Expression',
+                                'Exploring Difference and Power',
+                                'Ethical Reasoning',
+                                'Formal Reasoning',
+                                'Scientific Method and Analysis',
+                                'Social Inquiry',
+                            ]);
+                            const isWays = (ger: string) => {
+                                // Check full name match
+                                if (WAYS_GERS.has(ger)) return true;
+                                // Check if the string ends with a known WAYS abbreviation
+                                const abbrev = ger.match(/\(([A-Za-z0-9+]+)\)\s*$/);
+                                if (abbrev) {
+                                    const code = abbrev[1];
+                                    return ['AII', 'AQR', 'CE', 'EDP', 'ER', 'FR', 'SMA', 'SI'].includes(code);
+                                }
+                                return false;
+                            };
+                            const waysGers = facets.gers.filter(([ger]) => isWays(ger));
+                            const otherGers = facets.gers.filter(([ger]) => !isWays(ger));
+                            const waysSelectedCount = waysGers.filter(([ger]) => selectedGers.includes(ger)).length;
+                            const allWaysSelected = waysGers.length > 0 && waysSelectedCount === waysGers.length;
+                            const someWaysSelected = waysSelectedCount > 0;
+                            const totalWaysCount = waysGers.reduce((sum, [, count]) => sum + count, 0);
+                            const formatGerLabel = (ger: string) => {
+                                const map: Record<string, string> = {
+                                    'Language': 'Foreign Language',
+                                    'Writing 1': 'PWR 1',
+                                    'Writing 2': 'PWR 2',
+                                    'Writing SLE': 'SLE',
+                                    'Intro Seminar - Freshman': 'Frosh IntroSem',
+                                    'Intro Seminar - Sophomore': 'Sophomore IntroSem',
+                                };
+                                return map[ger] ?? ger;
+                            };
+                            return (
+                                <>
+                                    {waysGers.length > 0 && (
+                                        <Collapsible open={waysExpanded} onOpenChange={setWaysExpanded} className="space-y-1">
+                                            <div className="flex items-center w-full py-1">
+                                                <div
+                                                    className={cn(
+                                                        "h-4 w-4 border rounded mr-2 flex items-center justify-center transition-colors cursor-pointer shrink-0",
+                                                        allWaysSelected ? "bg-primary border-primary text-primary-foreground" : someWaysSelected ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground hover:border-primary"
+                                                    )}
+                                                    onClick={() => {
+                                                        const waysGerNames = waysGers.map(([ger]) => ger);
+                                                        if (allWaysSelected) {
+                                                            const next = selectedGers.filter(g => !waysGerNames.includes(g));
+                                                            setSelectedGers(next.length ? next : null);
+                                                        } else {
+                                                            const current = new Set(selectedGers);
+                                                            waysGerNames.forEach(g => current.add(g));
+                                                            setSelectedGers(Array.from(current));
+                                                        }
+                                                    }}
+                                                >
+                                                    {allWaysSelected ? <Check size={10} strokeWidth={3} /> : someWaysSelected ? <Minus size={10} strokeWidth={3} /> : null}
+                                                </div>
+                                                <CollapsibleTrigger asChild>
+                                                    <button type="button" className="flex-1 flex items-center justify-between cursor-pointer text-sm text-left min-w-0 font-medium text-foreground">
+                                                        <span>WAYS</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full tabular-nums">{totalWaysCount}</span>
+                                                            {waysExpanded ? <ChevronDown size={14} className="shrink-0 text-muted-foreground" /> : <ChevronRight size={14} className="shrink-0 text-muted-foreground" />}
+                                                        </div>
+                                                    </button>
+                                                </CollapsibleTrigger>
+                                            </div>
+                                            <CollapsibleContent className="space-y-1">
+                                                {waysGers.map(([ger, count]) => (
+                                                    <CheckboxItem
+                                                        key={ger}
+                                                        label={formatGerLabel(ger)}
+                                                        count={count}
+                                                        checked={selectedGers.includes(ger)}
+                                                        onChange={() => toggleFilter(ger, selectedGers, setSelectedGers)}
+                                                    />
+                                                ))}
+                                            </CollapsibleContent>
+                                        </Collapsible>
+                                    )}
+                                    {otherGers.map(([ger, count]) => (
+                                        <CheckboxItem
+                                            key={ger}
+                                            label={formatGerLabel(ger)}
+                                            count={count}
+                                            checked={selectedGers.includes(ger)}
+                                            onChange={() => toggleFilter(ger, selectedGers, setSelectedGers)}
+                                        />
+                                    ))}
+                                    <CheckboxItem
+                                        label="Writing in the Major (WIM)"
+                                        checked={wimOnly}
+                                        onChange={() => setWimOnly(!wimOnly || null)}
+                                    />
+                                </>
+                            );
+                        })()}
                     </FilterSection>
 
                     {/* School */}

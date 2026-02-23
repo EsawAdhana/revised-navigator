@@ -17,7 +17,9 @@ function HomeContent() {
   }, []);
 
   const handleCourseClick = (course: Course) => {
-    router.push(`/courses/${encodeURIComponent(course.id)}`);
+    const params = new URLSearchParams(window.location.search);
+    const qs = params.toString();
+    router.push(`/courses/${encodeURIComponent(course.id)}${qs ? `?${qs}` : ''}`);
   };
 
   return (
