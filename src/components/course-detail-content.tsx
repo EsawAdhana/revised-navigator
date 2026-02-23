@@ -514,23 +514,25 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                             const opts = parseUnitsOptions(section.units);
                                                             const label = unitsLabel(section.units);
                                                             return opts.length > 1 ? (
-                                                                <div className="flex items-center gap-1.5 bg-secondary/30 p-1 rounded-lg">
-                                                                    {opts.map((u) => (
-                                                                        <button
-                                                                            key={u}
-                                                                            onClick={(e) => { e.stopPropagation(); handleUnitsChange(u); }}
-                                                                            disabled={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm}
-                                                                            className={cn(
-                                                                                "w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold transition-all disabled:opacity-50",
-                                                                                selectedUnits === u
-                                                                                    ? "bg-primary text-primary-foreground shadow-sm"
-                                                                                    : "text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                                                                            )}
-                                                                        >
-                                                                            {u}
-                                                                        </button>
-                                                                    ))}
-                                                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold ml-1 mr-2">{label}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="inline-flex items-center p-0.5 bg-secondary/40 border border-border/60 rounded-lg">
+                                                                        {opts.map((u) => (
+                                                                            <button
+                                                                                key={u}
+                                                                                onClick={(e) => { e.stopPropagation(); handleUnitsChange(u); }}
+                                                                                disabled={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm}
+                                                                                className={cn(
+                                                                                    "w-7 h-6 flex items-center justify-center text-xs font-bold rounded-md transition-all disabled:opacity-50",
+                                                                                    selectedUnits === u
+                                                                                        ? "bg-primary text-primary-foreground shadow-sm"
+                                                                                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                                                                                )}
+                                                                            >
+                                                                                {u}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</span>
                                                                 </div>
                                                             ) : (
                                                                 <span>{section.units} {label.charAt(0).toUpperCase() + label.slice(1)}</span>
