@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
-import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader2, Palette, Info } from 'lucide-react';
+import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader2, Palette, Info, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { Section } from '@/types/course';
@@ -17,6 +17,7 @@ import { Course, CourseEvaluation } from '@/types/course';
 import { CourseDescription } from './course-description';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { useMemo } from 'react';
+import { CalendarPreviewModal } from './calendar-preview-modal';
 
 const COLORS = {
     sky: 'bg-sky-500/15 border-sky-500/40 text-sky-950 dark:text-sky-50',
@@ -256,6 +257,8 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     }, [course.sections])
     const gerLabel = gers.length > 0 ? gers.map(abbreviateGer).join(', ') : '—'
 
+    const [previewSection, setPreviewSection] = useState<Section | null>(null);
+
     const handleSelectSection = (sectionId: number) => {
         if (cartItem?.selectedSectionId === sectionId && cartItem?.selectedTerm === activeTerm) {
             removeItem(course.id);
@@ -275,6 +278,17 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
     return (
         <div className="container max-w-[95rem] mx-auto p-4 md:px-8 md:pt-4 md:pb-10 space-y-4 animate-in fade-in zoom-in-95 duration-300">
+            {/* Calendar Preview Modal */}
+            {previewSection && (
+                <CalendarPreviewModal
+                    course={course}
+                    section={previewSection}
+                    term={activeTerm}
+                    isOpen={!!previewSection}
+                    onClose={() => setPreviewSection(null)}
+                    onConfirm={() => handleSelectSection(previewSection.classId)}
+                />
+            )}
             {/* Header Area */}
             <div className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -553,14 +567,18 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                                 ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm"
                                                                 : "hover:bg-primary/5 hover:text-primary hover:border-primary/30"
                                                         )}
-                                                        onClick={() => handleSelectSection(section.classId)}
+                                                        onClick={() =>
+                                                            cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm
+                                                                ? handleSelectSection(section.classId)
+                                                                : setPreviewSection(section)
+                                                        }
                                                     >
                                                         {cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? (
                                                             <Check size={12} className="mr-1.5 stroke-[3px]" />
                                                         ) : (
-                                                            <Plus size={12} className="mr-1.5" />
+                                                            <Calendar size={12} className="mr-1.5" />
                                                         )}
-                                                        {cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? "Added to Calendar" : "Add to Calendar"}
+                                                        {cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? "Added to Calendar" : "View on Calendar"}
                                                     </Button>
                                                 </div>
                                             </div>
