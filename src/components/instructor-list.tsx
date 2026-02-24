@@ -9,7 +9,7 @@ interface InstructorListProps {
 export function InstructorList({ instructors, limit = 5 }: InstructorListProps) {
   if (!instructors || instructors.length === 0) {
     return (
-      <div className="flex items-center gap-2" title="Unknown Instructor">
+      <div className="flex items-center gap-2">
         <User size={12} className="shrink-0" />
         <span className="text-xs break-words">Unknown Instructor</span>
       </div>
@@ -20,7 +20,7 @@ export function InstructorList({ instructors, limit = 5 }: InstructorListProps) 
   const remaining = instructors.length - limit;
 
   return (
-    <div className="flex items-center gap-2 min-w-0" title={instructors.join(', ')}>
+    <div className="flex items-center gap-2 min-w-0">
       <User size={12} className="shrink-0" />
       <div className="text-xs break-words">
         {displayed.join(', ')}
