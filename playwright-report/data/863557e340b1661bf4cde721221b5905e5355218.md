@@ -1,0 +1,57 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - button "Open menu" [ref=e5] [cursor=pointer]:
+          - img [ref=e6]
+        - link "Stanford Root" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img "Stanford Root" [ref=e8]
+      - link [ref=e10] [cursor=pointer]:
+        - /url: /schedule
+        - img [ref=e11]
+    - main [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - heading "CS 106A" [level=1] [ref=e17]
+          - heading "Programming Methodology" [level=2] [ref=e18]
+          - generic [ref=e19]:
+            - generic [ref=e20]:
+              - generic [ref=e21]: "Units:"
+              - generic [ref=e22]: 3-5
+            - generic [ref=e23]:
+              - generic [ref=e24]: "Level:"
+              - generic [ref=e25]: Undergrad
+            - generic [ref=e26]:
+              - generic [ref=e27]: "Grading:"
+              - generic [ref=e28]: Letter (ABC/NC)
+            - generic [ref=e29]:
+              - generic [ref=e30]: "Dept:"
+              - generic [ref=e31]: N/A
+            - generic [ref=e32]:
+              - generic [ref=e33]: "GER:"
+              - generic [ref=e34]: —
+        - generic [ref=e35]:
+          - generic [ref=e37]:
+            - tablist [ref=e38]:
+              - tab "Overview" [selected] [ref=e39] [cursor=pointer]
+              - tab "Charts" [ref=e40] [cursor=pointer]
+              - tab "Comments" [ref=e41] [cursor=pointer]
+            - tabpanel "Overview" [ref=e42]:
+              - generic [ref=e46]: No terms available
+          - complementary [ref=e47]:
+            - generic [ref=e48]:
+              - generic [ref=e49]:
+                - heading "Sections" [level=3] [ref=e50]
+                - generic [ref=e51]: 0 Terms
+              - generic [ref=e52]: No sections available.
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e58] [cursor=pointer]:
+    - img [ref=e59]
+  - alert [ref=e62]
+  - button "Leave feedback" [ref=e64] [cursor=pointer]:
+    - img [ref=e65]
+```

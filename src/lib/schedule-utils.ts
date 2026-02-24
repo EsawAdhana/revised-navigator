@@ -1,6 +1,6 @@
 import type { Course, Section } from '@/types/course'
 
-export type ParsedMeeting = {
+type ParsedMeeting = {
   days: string[]
   startTime: string
   endTime: string
@@ -15,11 +15,11 @@ const DAY_ORDER: Record<string, number> = {
   Fri: 5
 }
 
-function uniq (arr: string[]) {
+function uniq(arr: string[]) {
   return Array.from(new Set(arr))
 }
 
-function normalizeDayToken (token: string) {
+function normalizeDayToken(token: string) {
   const t = token.trim().toLowerCase()
   if (!t) return ''
 
@@ -32,7 +32,7 @@ function normalizeDayToken (token: string) {
   return ''
 }
 
-function parseDays (daysStr: string) {
+function parseDays(daysStr: string) {
   if (!daysStr) return []
   const raw = daysStr.trim()
   if (!raw || raw.toLowerCase().includes('tba')) return []
@@ -69,7 +69,7 @@ function parseDays (daysStr: string) {
   return uniq(normalized).filter(d => d in DAY_ORDER).sort((a, b) => DAY_ORDER[a] - DAY_ORDER[b])
 }
 
-function parseTimePiece (piece: string, fallbackMeridiem?: 'AM' | 'PM') {
+function parseTimePiece(piece: string, fallbackMeridiem?: 'AM' | 'PM') {
   let p = piece.trim()
   if (!p) return ''
 
@@ -81,7 +81,7 @@ function parseTimePiece (piece: string, fallbackMeridiem?: 'AM' | 'PM') {
   return p
 }
 
-function parseTimeRange (timeStr: string) {
+function parseTimeRange(timeStr: string) {
   if (!timeStr) return null
   const raw = timeStr.trim()
   if (!raw || raw.toLowerCase().includes('tba')) return null
@@ -105,7 +105,7 @@ function parseTimeRange (timeStr: string) {
   return { startTime, endTime }
 }
 
-export function timeToMinutes (timeStr: string) {
+export function timeToMinutes(timeStr: string) {
   if (!timeStr) return 0
   const t = timeStr.trim()
   if (!t) return 0
@@ -127,7 +127,7 @@ export function timeToMinutes (timeStr: string) {
   return hours * 60 + minutes
 }
 
-export function formatMinutes (minutes: number) {
+export function formatMinutes(minutes: number) {
   const h24 = Math.floor(minutes / 60)
   const m = minutes % 60
   const mer = h24 >= 12 ? 'PM' : 'AM'
@@ -136,7 +136,7 @@ export function formatMinutes (minutes: number) {
 }
 
 /** Parse time string to minutes from midnight (0–1440). Accepts "9:00 AM", "9:00AM", "14:30" (24h). When endOfDay12AM, "12:00 AM" returns 1440. Returns null if invalid. */
-export function parseTimeStringToMinutes (str: string, endOfDay12AM = false): number | null {
+export function parseTimeStringToMinutes(str: string, endOfDay12AM = false): number | null {
   const s = str.trim()
   if (!s) return null
   // 24h: "14:30", "14:00", "24:00"
@@ -165,7 +165,7 @@ export function parseTimeStringToMinutes (str: string, endOfDay12AM = false): nu
   return null
 }
 
-function pickSectionForTerm (course: Course, term?: string): Section | undefined {
+function pickSectionForTerm(course: Course, term?: string): Section | undefined {
   const sections = course.sections || []
   if (sections.length === 0) return undefined
 
@@ -180,16 +180,16 @@ function pickSectionForTerm (course: Course, term?: string): Section | undefined
   return sectionsForTerm[0]
 }
 
-export function makeMeetingKey (day: string, startTime: string, endTime: string) {
+export function makeMeetingKey(day: string, startTime: string, endTime: string) {
   return `${day}|${startTime}|${endTime}`
 }
 
-export function isMeetingOptional (course: Course, day: string, startTime: string, endTime: string) {
+export function isMeetingOptional(course: Course, day: string, startTime: string, endTime: string) {
   const key = makeMeetingKey(day, startTime, endTime)
   return Boolean(course.optionalMeetings?.includes(key))
 }
 
-export function parseMeetingTimes (course: Course, term?: string): ParsedMeeting[] {
+export function parseMeetingTimes(course: Course, term?: string): ParsedMeeting[] {
   const section = pickSectionForTerm(course, term)
   if (!section) return []
 
@@ -213,7 +213,7 @@ export function parseMeetingTimes (course: Course, term?: string): ParsedMeeting
 }
 
 /** Weekly contact hours from scheduled meetings (first section / term). Returns 0 if no meetings or TBA. */
-export function getWeeklyContactHours (course: Course, term?: string): number {
+export function getWeeklyContactHours(course: Course, term?: string): number {
   const meetings = parseMeetingTimes(course, term)
   let totalHours = 0
   for (const m of meetings) {

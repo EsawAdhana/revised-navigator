@@ -19,7 +19,7 @@ export function scoreColor(score: number): string {
   return 'text-red-600'
 }
 
-export function scoreBg(score: number): string {
+function scoreBg(score: number): string {
   if (score >= 4.5) return 'bg-emerald-500/12 border-emerald-500/25'
   if (score >= 4.0) return 'bg-green-500/12 border-green-500/25'
   if (score >= 3.5) return 'bg-yellow-500/12 border-yellow-500/25'
@@ -39,7 +39,7 @@ export function barFill(score: number): string {
 
 export type QuestionCategory = 'quality' | 'learning' | 'organization' | 'goals' | 'hours' | 'attendance_in_person' | 'attendance_online' | 'unknown'
 
-export function categorizeQuestion(text: string): QuestionCategory {
+function categorizeQuestion(text: string): QuestionCategory {
   const t = text.toLowerCase()
   if (t.includes('quality') || t.includes('overall')) return 'quality'
   if (t.includes('how much did you learn')) return 'learning'
@@ -118,7 +118,7 @@ export function getOverallEvalScore(metrics: Partial<Record<QuestionCategory, nu
   return median(vals)
 }
 
-export function computeInstructorStats(evals: CourseEvaluation[]) {
+function computeInstructorStats(evals: CourseEvaluation[]) {
   const byInstructor: Record<string, { scores: Record<QuestionCategory, number[]>, evalCount: number, terms: Set<string> }> = {}
 
   for (const ev of evals) {
@@ -499,10 +499,10 @@ function AggregatedRatingBreakdown({ questions, aggregateScore }: { questions: E
 
 // --- Main Component ---
 
-export type EvalTab = 'overview' | 'instructors' | 'comments'
+type EvalTab = 'overview' | 'instructors' | 'comments'
 
 
-export interface CourseEvaluationsProps {
+interface CourseEvaluationsProps {
   courseId: string
   subject: string
   code: string
