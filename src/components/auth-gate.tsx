@@ -120,7 +120,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           <h1 className="text-5xl sm:text-7xl font-[family-name:var(--font-outfit)] font-bold tracking-tight leading-[1.1] text-foreground mb-6">
             Everything <span className="text-primary">Stanford</span>,
             <br />
-            in one place!
+            in one place.
           </h1>
 
           <p className="text-lg sm:text-xl text-muted-foreground/80 max-w-2xl leading-relaxed font-light mb-10">
