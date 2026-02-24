@@ -169,7 +169,6 @@ function CourseMetricsSummary({ metrics, evalsCount, isLoading }: { metrics: Par
 export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const { addItem, removeItem, hasItem, getItem } = useCartStore();
     const { fetchCourseEvaluations, getEvaluations, isLoadingCourse } = useEvaluationStore();
-    const { isEnriching } = useCourseStore();
 
     useEffect(() => {
         fetchCourseEvaluations(course.id);
@@ -323,11 +322,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                     </div>
                     <div className="inline-flex items-center gap-1.5 px-3 py-1.5 min-w-0" title={gers.length > 0 ? gers.join(', ') : undefined}>
                         <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight shrink-0">GER:</span>
-                        {isEnriching && gers.length === 0 ? (
-                            <div className="h-4 bg-secondary/30 rounded w-16 animate-pulse" />
-                        ) : (
-                            <span className="text-sm font-semibold text-foreground break-words">{gerLabel}</span>
-                        )}
+                        <span className="text-sm font-semibold text-foreground break-words">{gerLabel}</span>
                     </div>
                 </div>
             </div>
@@ -361,7 +356,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                         <TabsContent value="overview" className="focus-visible:outline-none focus-visible:ring-0">
                             <div className="space-y-6">
                                 <div className="space-y-3">
-                                    <CourseDescription description={course.description} contextSubject={course.subject} className="text-lg leading-relaxed" isEnriching={isEnriching} />
+                                    <CourseDescription description={course.description} contextSubject={course.subject} className="text-lg leading-relaxed" />
 
                                     {/* Syllabus */}
                                     <div className="pt-2 space-y-2 group/syllabus">
@@ -596,28 +591,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                     </TabsContent>
                                 ))}
                             </Tabs>
-                        ) : isEnriching ? (
-                            <div className="space-y-3">
-                                {[1, 2].map((i) => (
-                                    <div key={i} className="border border-border/60 rounded-xl p-4 bg-card/50 transition-all duration-200">
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div className="space-y-2">
-                                                <div className="h-4 bg-secondary/30 rounded w-24 animate-pulse"></div>
-                                                <div className="h-3 bg-secondary/30 rounded w-16 animate-pulse mt-1"></div>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2.5 mb-4">
-                                            <div className="h-3 bg-secondary/30 rounded w-40 animate-pulse"></div>
-                                            <div className="h-3 bg-secondary/30 rounded w-48 animate-pulse"></div>
-                                            <div className="h-3 bg-secondary/30 rounded w-32 animate-pulse"></div>
-                                        </div>
-                                        <div className="pt-3 border-t border-border/30 flex justify-between items-center">
-                                            <div className="h-4 bg-secondary/30 rounded w-16 animate-pulse"></div>
-                                            <div className="h-8 bg-secondary/30 rounded w-36 animate-pulse"></div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
                         ) : (
                             <div className="text-center text-muted-foreground py-8 bg-secondary/10 rounded-2xl border border-dashed border-border/40 text-xs font-medium">
                                 No sections available.
