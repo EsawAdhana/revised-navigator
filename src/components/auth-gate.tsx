@@ -72,10 +72,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const ALL_PHRASES = [
     'Find courses.', 'Read syllabi.', 'Browse evaluations.', 'Build your schedule.',
     'Filter by WAYS.', 'Organize your week.', 'Compare sections.', 'Check course status.',
-    'Explore departments.', 'Read student reviews.', 'Find open seats.',
-    'Search by instructor.', 'Filter by units.', 'View meeting times.', 'Export to calendar.',
+    'Explore departments.', 'Read student reviews.', 'Search by instructor.',
+    'Filter by units.', 'View meeting times.', 'Export to calendar.',
     'Ace your quarter.', 'Plan in seconds.', 'Visualize your week.',
-    'Discover gems.', 'Avoid 8am classes.', 'Simplifying Stanford.', 'Analyze trends.', 'Smart scheduling.',
+    'Discover gems.', 'Avoid 8am classes.', 'Simplifying Stanford.',
     'Search historically.', 'Review professors.', 'Mockup schedules.', 'Explore majors.',
     'Unit planning.', 'Search efficiently.', 'Fast & responsive.', 'Mobile friendly.',
     'Visualize workload.', 'Balance your life.', 'Curate your classes.', 'Map your term.',
