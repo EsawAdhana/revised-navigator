@@ -24,7 +24,7 @@ export default function CoursePage() {
 
     const [query] = useQueryState('q', { defaultValue: '' });
     const { courses: filteredCourses } = useFilteredCourses();
-    const { courses, fetchCourses, hasLoaded } = useCourseStore();
+    const { courses, fetchCourses, hasLoaded, isEnriching } = useCourseStore();
     const { getItem } = useCartStore();
 
     useEffect(() => {
@@ -79,9 +79,9 @@ export default function CoursePage() {
                 <SiteHeader />
                 <main className="flex-1 bg-background">
                     <div className="flex flex-1 items-center justify-center">
-                        <div className="flex flex-col items-center gap-3 animate-fade-in">
+                        <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
                             <div className="h-8 w-8 rounded-xl bg-primary/10 animate-pulse" />
-                            <span className="text-sm text-muted-foreground">Loading course details...</span>
+                            <span className="text-sm text-muted-foreground">Loading class information...</span>
                         </div>
                     </div>
                 </main>
@@ -93,15 +93,15 @@ export default function CoursePage() {
         <div className="min-h-screen bg-background flex flex-col">
             <SiteHeader />
             <main className="flex-1 bg-background">
-                {!hasLoaded && !course ? (
+                {isEnriching || (!hasLoaded && !course) ? (
                     <div className="flex flex-1 items-center justify-center">
-                        <div className="flex flex-col items-center gap-3 animate-fade-in">
+                        <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
                             <div className="h-8 w-8 rounded-xl bg-primary/10 animate-pulse" />
-                            <span className="text-sm text-muted-foreground">Loading course details...</span>
+                            <span className="text-sm text-muted-foreground">Loading class information...</span>
                         </div>
                     </div>
                 ) : !course ? (
-                    <div className="flex flex-1 flex-col items-center justify-center gap-4">
+                    <div className="flex flex-1 flex-col items-center justify-center gap-4 mt-32">
                         <h1 className="text-2xl font-bold">Course Not Found</h1>
                         <p className="text-muted-foreground">The course you are looking for does not exist or has been removed.</p>
                     </div>
