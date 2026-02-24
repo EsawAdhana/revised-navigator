@@ -1,13 +1,17 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { isMeetingOptional, parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
 import { cn, unitsLabel } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRouter } from 'next/navigation';
+import { searchCourses } from '@/lib/search-utils';
+import { compareCourseCodes } from '@/lib/utils';
 
 const COLORS = {
   sky: 'bg-sky-500/15 border-sky-500/40 text-sky-950 dark:text-sky-50',
@@ -122,13 +126,48 @@ function layoutDayEvents(events: CalendarEvent[]) {
 }
 
 export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMin, totalUnitsMax, isOverload, onIgnoreOverload, expectedHoursPerWeek, expectedHoursLoading }: CalendarViewProps) {
-  const { items, removeItem, toggleOptionalMeeting } = useCartStore()
+  const { items, addItem, removeItem, toggleOptionalMeeting } = useCartStore()
+  const { courses } = useCourseStore()
   const router = useRouter()
+
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node) &&
+        searchInputRef.current &&
+        !searchInputRef.current.contains(event.target as Node)
+      ) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const currentTermCourses = items.filter(c =>
     c.selectedTerm ? c.selectedTerm === currentTerm :
       ((c.terms && currentTerm && c.terms.includes(currentTerm)) || c.term === currentTerm)
   )
+
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return []
+    const results = searchCourses(courses, searchQuery)
+    return results
+      .filter(c => c.sections && c.sections.some(s => s.term === currentTerm))
+      .sort((a, b) => {
+        const subjectCompare = a.subject.localeCompare(b.subject)
+        if (subjectCompare !== 0) return subjectCompare
+        return compareCourseCodes(a.code, b.code)
+      })
+  }, [searchQuery, courses, currentTerm])
 
   const formatMeetingLine = (meeting: { days: string[], startTime: string, endTime: string, location?: string }) => {
     const days = (meeting.days || []).join('/')
@@ -346,6 +385,76 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
           </div>
 
           <div className="flex flex-col min-h-0 gap-3 w-full max-h-[calc(100vh-10rem)] overflow-hidden">
+
+            {/* Local Search Input for Calendar */}
+            <div className="relative shrink-0">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-muted-foreground/60" />
+              </div>
+              <Input
+                ref={searchInputRef}
+                placeholder={`Search to add a class for ${currentTerm}...`}
+                className="pl-9 h-10 w-full rounded-xl bg-card border-border/60 shadow-sm focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-primary/50"
+                value={searchQuery}
+                onFocus={() => {
+                  setIsSearchFocused(true)
+                  if (searchQuery.trim()) setDropdownOpen(true)
+                }}
+                onBlur={() => setIsSearchFocused(false)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  if (e.target.value.trim()) setDropdownOpen(true)
+                  else setDropdownOpen(false)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setDropdownOpen(false)
+                    searchInputRef.current?.blur()
+                  }
+                }}
+              />
+              {/* Dropdown Results */}
+              {dropdownOpen && searchQuery.trim() && (
+                <div
+                  ref={dropdownRef}
+                  className="absolute z-50 top-full left-0 right-0 mt-1.5 max-h-64 overflow-y-auto bg-card border border-border/50 rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-top-2 duration-200"
+                >
+                  {searchResults.length === 0 ? (
+                    <div className="p-3 text-sm text-center text-muted-foreground">No courses found matching "{searchQuery}"</div>
+                  ) : (
+                    searchResults.map(course => {
+                      const isAdded = currentTermCourses.some(c => c.id === course.id);
+                      return (
+                        <div
+                          key={course.id}
+                          className={cn(
+                            "flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors",
+                            isAdded ? "opacity-50 grayscale cursor-not-allowed" : "hover:bg-accent/50 group"
+                          )}
+                          onClick={() => {
+                            if (isAdded) return;
+                            addItem(course, currentTerm);
+                            setSearchQuery('');
+                            setDropdownOpen(false);
+                            searchInputRef.current?.blur();
+                          }}
+                        >
+                          <div className="min-w-0 pr-3">
+                            <div className="text-sm font-semibold truncate font-[family-name:var(--font-outfit)] text-primary">
+                              {course.subject} {course.code}
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate">{course.title}</div>
+                          </div>
+                          {isAdded && (
+                            <span className="text-[10px] font-medium text-muted-foreground px-1.5 py-0.5 border rounded-sm bg-muted/30 shrink-0">Added</span>
+                          )}
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Metrics Layout */}
             <div className="grid grid-cols-2 gap-3 shrink-0">
