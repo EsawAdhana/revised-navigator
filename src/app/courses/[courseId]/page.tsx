@@ -8,6 +8,7 @@ import { SiteHeader } from '@/components/site-header';
 import { CourseDetailContent } from '@/components/course-detail-content';
 import { useCartStore } from '@/lib/cart-store';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
+import { Loader2 } from 'lucide-react';
 
 export default function CoursePage() {
     const params = useParams();
@@ -80,7 +81,7 @@ export default function CoursePage() {
                 <main className="flex-1 bg-background">
                     <div className="flex flex-1 items-center justify-center">
                         <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
-                            <div className="h-8 w-8 rounded-xl bg-primary/10 animate-pulse" />
+                            <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
                             <span className="text-sm text-muted-foreground">Loading class information...</span>
                         </div>
                     </div>
@@ -96,7 +97,7 @@ export default function CoursePage() {
                 {isEnriching || (!hasLoaded && !course) ? (
                     <div className="flex flex-1 items-center justify-center">
                         <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
-                            <div className="h-8 w-8 rounded-xl bg-primary/10 animate-pulse" />
+                            <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
                             <span className="text-sm text-muted-foreground">Loading class information...</span>
                         </div>
                     </div>
