@@ -1,7 +1,7 @@
 /** Writing in the Major (WIM) course identifiers.
  *  Format: "SUBJECT CODE" — cross-listed courses use "/" separator.
  *  Used for the WIM filter toggle in the sidebar. */
-export const WIM_COURSES: ReadonlySet<string> = new Set([
+const WIM_COURSES: ReadonlySet<string> = new Set([
     "AA 136A/B",
     "AA 146A",
     "AA 190",
