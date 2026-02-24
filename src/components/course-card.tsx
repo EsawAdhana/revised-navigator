@@ -22,24 +22,14 @@ export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick
         {/* Top row: class code (left) + unit count (right); under unit count, show sort value when applicable */}
         <div className="flex items-start justify-between gap-2 mb-2.5">
           <span className="text-sm font-bold tabular-nums text-primary/80 group-hover:text-primary transition-colors font-[family-name:var(--font-outfit)]">
-            <a
-              href={getDepartmentUrl(course.subject)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-inherit font-inherit hover:underline underline-offset-2"
-              title={`Visit ${course.subject} Department Website`}
-            >
-              {course.subject}
-            </a>
-            {' '}{course.code}
+            {course.subject} {course.code}
           </span>
           <div className="shrink-0 text-right">
-            <span className="text-sm font-bold tabular-nums text-primary/80 group-hover:text-primary transition-colors font-[family-name:var(--font-outfit)]" title="Units">
+            <span className="text-sm font-bold tabular-nums text-primary/80 group-hover:text-primary transition-colors font-[family-name:var(--font-outfit)]">
               {course.units ?? '—'} {unitsLabel(course.units)}
             </span>
             {sortDisplayValue ? (
-              <div className="text-xs font-medium text-muted-foreground/80 mt-0.5" title="Value for current sort">
+              <div className="text-xs font-medium text-muted-foreground/80 mt-0.5">
                 {sortDisplayValue}
               </div>
             ) : null}
@@ -47,7 +37,7 @@ export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick
         </div>
 
         {/* Title */}
-        <h3 className="font-semibold text-[15px] leading-snug text-foreground/90 group-hover:text-foreground line-clamp-2 transition-colors mb-3" title={course.title}>
+        <h3 className="font-semibold text-[15px] leading-snug text-foreground/90 group-hover:text-foreground line-clamp-2 transition-colors mb-3">
           {course.title}
         </h3>
 
@@ -59,7 +49,7 @@ export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick
           {(course.terms && course.terms.length > 0) ? (
             <div className="flex items-start gap-1.5 font-medium text-muted-foreground/70 shrink-0 max-w-[55%]">
               <Calendar size={12} className="shrink-0 mt-0.5" />
-              <div className="text-right text-xs leading-snug break-words" title={course.terms.join(', ')}>
+              <div className="text-right text-xs leading-snug break-words">
                 {course.terms.map(t => t.split(' ')[0]).join(', ')}
               </div>
             </div>

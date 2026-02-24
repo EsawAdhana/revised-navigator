@@ -57,7 +57,7 @@ function InstructorSummary({ instructorName, evals }: { instructorName: string; 
     return (
         <div className="bg-secondary/10 rounded-2xl p-4 border border-border/40 space-y-3">
             <div className="flex items-center justify-between border-b border-border/20 pb-2">
-                <h3 className="text-sm font-bold text-foreground truncate max-w-[200px]" title={instructorName}>
+                <h3 className="text-sm font-bold text-foreground truncate max-w-[200px]">
                     {instructorName.split(', ').reverse().join(' ')}
                 </h3>
                 <div className="text-xs text-muted-foreground font-medium">
@@ -251,9 +251,9 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                     </div>
                     <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0 min-w-0">
                         <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight shrink-0">Dept:</span>
-                        <span className="text-sm font-semibold text-foreground break-words" title={course.dept}>{course.dept || 'N/A'}</span>
+                        <span className="text-sm font-semibold text-foreground break-words">{course.dept || 'N/A'}</span>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 min-w-0" title={gers.length > 0 ? gers.join(', ') : undefined}>
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 min-w-0">
                         <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight shrink-0">GER:</span>
                         <span className="text-sm font-semibold text-foreground break-words">{gerLabel}</span>
                     </div>
