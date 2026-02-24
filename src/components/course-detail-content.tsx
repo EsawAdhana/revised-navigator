@@ -117,7 +117,7 @@ function CourseMetricsSummary({ metrics, evalsCount, isLoading }: { metrics: Par
                     No historical evaluation data available.
                 </div>
                 <div className="text-xs text-muted-foreground/80 max-w-sm">
-                    Note that our charts and comments only include data up to Fall 2023. Please check EvaluationKit for other quarters.
+                    Please note that our charts and comments currently only cover terms up through Fall 2023. You can check EvaluationKit for more recent quarters.
                 </div>
             </div>
         );
