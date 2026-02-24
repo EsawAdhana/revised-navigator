@@ -3,11 +3,12 @@ import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
 import { parseMeetingTimes, timeToMinutes, isMeetingOptional, getWeeklyContactHours } from '@/lib/schedule-utils';
-import { getSchoolFromSubject, getCourseUnitsNumeric } from '@/lib/utils';
+import { getSchoolFromSubject, getCourseUnitsNumeric, compareCourseCodes } from '@/lib/utils';
 // Removing isWimCourse import as WIM is now handled as a standard GER
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { aggregateMetrics, getOverallEvalScore } from '@/components/course-evaluations';
 import type { Course } from '@/types/course';
+import { searchCourses } from '@/lib/search-utils';
 
 export function useFilteredCourses() {
     const { courses, isLoading } = useCourseStore();
@@ -233,56 +234,7 @@ export function useFilteredCourses() {
 
         // Filter by Query
         if (query) {
-            const lowerQuery = query.toLowerCase().trim()
-            const compactQuery = lowerQuery.replace(/\s+/g, '')
-            const parts = lowerQuery.split(/\s+/).filter(Boolean)
-
-            const allSubjects = new Set(courses.map(c => c.subject))
-
-            let subject = parts[0]?.toUpperCase() || ''
-            let remainingQuery = parts.slice(1).join(' ')
-
-            // Support searches like "cs106a" as well as "cs 106a"
-            if (parts.length === 1 && compactQuery) {
-                const m = compactQuery.match(/^([a-z&]+)(\d.*)$/i)
-                if (m) {
-                    const maybeSubject = m[1].toUpperCase()
-                    if (allSubjects.has(maybeSubject)) {
-                        subject = maybeSubject
-                        remainingQuery = m[2]
-                    }
-                }
-            }
-
-            const isSubjectSearch = Boolean(subject) && allSubjects.has(subject)
-
-            if (isSubjectSearch) {
-                result = result.filter(c => c.subject === subject)
-
-                if (remainingQuery) {
-                    const remainingLower = remainingQuery.toLowerCase().trim()
-                    const remainingCompact = remainingLower.replace(/\s+/g, '')
-                    result = result.filter(c => {
-                        const codeCompact = (c.code || '').toLowerCase().replace(/\s+/g, '')
-                        if (codeCompact.includes(remainingCompact)) return true
-                        if ((c.title || '').toLowerCase().includes(remainingLower)) return true
-                        return false
-                    })
-                }
-            } else {
-                result = result.filter(c => {
-                    const subjectCodeSpaced = `${c.subject} ${c.code}`.toLowerCase()
-                    const subjectCodeCompact = `${c.subject}${c.code}`.toLowerCase().replace(/\s+/g, '')
-                    const codeCompact = (c.code || '').toLowerCase().replace(/\s+/g, '')
-
-                    if (subjectCodeSpaced.startsWith(lowerQuery)) return true
-                    if (subjectCodeCompact.startsWith(compactQuery)) return true
-                    if (codeCompact.includes(compactQuery)) return true
-                    if ((c.title || '').toLowerCase().includes(lowerQuery)) return true
-                    if (c.instructors && c.instructors.some(i => i.toLowerCase().includes(lowerQuery))) return true
-                    return false
-                })
-            }
+            result = searchCourses(result, query);
         }
 
         // All filtering is done; this is the set we will sort (sort is the last step)
@@ -325,7 +277,7 @@ export function useFilteredCourses() {
         const sortedResult = [...listToSort].sort((a, b) => {
             if (sortKey === 'az' || !sortKey) {
                 const subjectCompare = a.subject.localeCompare(b.subject);
-                const codeCompare = a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
+                const codeCompare = compareCourseCodes(a.code, b.code);
                 const cmp = subjectCompare !== 0 ? subjectCompare : codeCompare;
                 return dir === 'desc' ? -cmp : cmp;
             }
@@ -335,14 +287,14 @@ export function useFilteredCourses() {
             if (va == null && vb == null) {
                 const subjectCompare = a.subject.localeCompare(b.subject);
                 if (subjectCompare !== 0) return subjectCompare;
-                return a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
+                return compareCourseCodes(a.code, b.code);
             }
             if (va == null) return 1;
             if (vb == null) return -1;
             if (va !== vb) return mult * (va > vb ? 1 : -1);
             const subjectCompare = a.subject.localeCompare(b.subject);
             if (subjectCompare !== 0) return subjectCompare;
-            return a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
+            return compareCourseCodes(a.code, b.code);
         });
 
         return sortedResult;

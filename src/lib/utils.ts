@@ -218,3 +218,28 @@ export function abbreviateGer(ger: string): string {
   if (match) return match[1]
   return GER_ABBREV[ger] ?? ger
 }
+
+/**
+ * Custom sort comparator for course codes.
+ * Ensures "7" comes before "10", and "106A" comes before "106B".
+ * Does this by extracting the numeric part, comparing it, and then falling back to alphabetical for suffixes.
+ */
+export function compareCourseCodes(a: string, b: string): number {
+  const parseCode = (code: string) => {
+    const match = (code || '').match(/^(\d+)(.*)$/)
+    if (match) {
+      return { num: parseInt(match[1], 10), suffix: match[2].trim().toLowerCase() }
+    }
+    // Fallback if there are no leading numbers (e.g. some weird seminar codes)
+    return { num: 0, suffix: (code || '').toLowerCase() }
+  }
+
+  const parsedA = parseCode(a)
+  const parsedB = parseCode(b)
+
+  if (parsedA.num !== parsedB.num) {
+    return parsedA.num - parsedB.num // Ascending numeric 7 < 10
+  }
+
+  return parsedA.suffix.localeCompare(parsedB.suffix) // Ascending alphabetical A < B
+}
