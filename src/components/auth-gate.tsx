@@ -43,7 +43,7 @@ function FeatureCard({ icon: Icon, title, description }: { icon: any, title: str
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, isLoading, initialize, signInWithGoogle } = useAuthStore()
+  const { user, isLoading, initialize, signInWithGoogle, signInAsGuest } = useAuthStore()
   // We remove the timedOut state and logic to allow immediate rendering of the landing page
   // for better SEO and perceived performance.
 
@@ -112,9 +112,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
         {/* Hero Content */}
         <div className="relative z-10 flex flex-col items-center px-6 py-8 sm:py-0 animate-fade-in-up text-center max-w-4xl mx-auto">
-          <div className="mb-6 sm:mb-8 relative group">
-            <div className="absolute -inset-1 bg-gradient-to-r from-primary to-orange-500 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
-            <Logo className="h-20 w-20 sm:h-24 sm:w-24 relative rounded-2xl shadow-2xl" />
+          <div className="mb-6 sm:mb-8 relative group w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center">
+            <div className="absolute -inset-2 bg-primary/40 rounded-full blur-xl opacity-20 group-hover:opacity-60 transition duration-500" />
+            <Logo className="w-full h-full relative rounded-2xl shadow-2xl object-cover" />
           </div>
 
           <h1 className="text-5xl sm:text-7xl font-[family-name:var(--font-outfit)] font-bold tracking-tight leading-[1.1] text-foreground mb-6">
@@ -123,8 +123,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             in one place.
           </h1>
 
-          <p className="text-lg sm:text-xl text-muted-foreground/80 max-w-2xl leading-relaxed font-light mb-10">
-            The ultimate tool for course discovery and scheduling.
+          <p className="text-lg sm:text-xl text-muted-foreground/80 max-w-2xl leading-relaxed font-light mb-10 sm:text-balance text-center mx-auto px-4 sm:px-0">
+            The ultimate tool for course
+            <br className="block sm:hidden" />
+            <span className="hidden sm:inline"> </span>
+            discovery and scheduling.
           </p>
 
           <div className="flex flex-col items-center gap-4 w-full max-w-xs">
@@ -141,6 +144,13 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                   className="w-full relative group flex items-center justify-center gap-3 rounded-xl bg-foreground text-background px-8 py-3.5 sm:py-4 font-semibold text-[15px] shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98]"
                 >
                   <span>Log in with Stanford</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={signInAsGuest}
+                  className="w-full relative group flex items-center justify-center gap-3 rounded-xl bg-secondary/70 text-secondary-foreground px-8 py-3.5 sm:py-4 font-semibold text-[15px] transition-all duration-300 hover:bg-secondary/90 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <span>Continue as Guest</span>
                 </button>
               </>
             )}

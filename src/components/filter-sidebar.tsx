@@ -566,7 +566,7 @@ export function FilterSidebar() {
                             value={excludeInput}
                             onChange={(e) => setExcludeInput(e.target.value)}
                             onKeyDown={handleAddExclude}
-                            className="h-8 text-base md:text-sm"
+                            className="h-8 text-sm"
                         />
                         {excludedWords.length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
