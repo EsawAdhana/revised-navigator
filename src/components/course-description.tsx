@@ -9,12 +9,27 @@ interface CourseDescriptionProps {
     /** When set, bare course numbers (e.g. "30", "70", "112") in the text are resolved as this subject (e.g. CS 30, CS 70). */
     contextSubject?: string;
     className?: string;
+    isEnriching?: boolean;
 }
 
-export function CourseDescription({ description, contextSubject, className }: CourseDescriptionProps) {
+export function CourseDescription({ description, contextSubject, className, isEnriching }: CourseDescriptionProps) {
     const { courses } = useCourseStore();
 
-    if (!description) return null;
+    if (!description) {
+        if (isEnriching) {
+            return (
+                <div className={className}>
+                    <div className="space-y-2 mt-1 animate-pulse">
+                        <div className="h-4 bg-secondary/30 rounded w-full"></div>
+                        <div className="h-4 bg-secondary/30 rounded w-[95%]"></div>
+                        <div className="h-4 bg-secondary/30 rounded w-[85%]"></div>
+                        <div className="h-4 bg-secondary/30 rounded w-[60%]"></div>
+                    </div>
+                </div>
+            );
+        }
+        return null;
+    }
 
     // Helper to render description with clickable course links
     const renderDescriptionWithLinks = (text: string) => {
