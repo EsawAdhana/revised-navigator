@@ -613,7 +613,7 @@ export function CourseEvaluations({ courseId, subject, code, forcedTab }: Course
     return (
       <div className="text-center py-8 space-y-3">
         <p className="text-muted-foreground text-sm max-w-sm mx-auto">
-          No evaluation data available. Note that our charts and comments only include data up to <strong>Fall 2023</strong>.
+          No evaluation data available. Please note that our charts and comments currently only cover terms up through <strong>Fall 2023</strong>.
         </p>
         <a
           href={`https://stanford.evaluationkit.com/Report/Public/Results?Course=${encodeURIComponent(subject + ' ' + code)}&Search=true`}
