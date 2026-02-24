@@ -72,7 +72,7 @@ function AlphabetScrubber({ letters, onSelect }: { letters: string[], onSelect: 
 
   return (
     <div
-      className="absolute right-0 inset-y-0 pt-4 pb-40 md:pb-4 z-20 flex flex-col justify-center select-none touch-none"
+      className="absolute right-0 inset-y-0 pt-4 pb-40 md:pb-4 z-20 flex flex-col justify-center items-center w-8 select-none touch-none md:opacity-0 md:hover:opacity-100 transition-opacity duration-300"
       ref={containerRef}
       onTouchStart={(e) => { touchActive.current = true; handleMove(e.touches[0].clientY); }}
       onTouchMove={onTouchMove}
@@ -82,9 +82,6 @@ function AlphabetScrubber({ letters, onSelect }: { letters: string[], onSelect: 
       onMouseUp={() => setActiveLetter(null)}
       onMouseLeave={() => setActiveLetter(null)}
     >
-      {/* Visual Background Pill */}
-      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-full -z-10 w-full h-full opacity-0 hover:opacity-100 transition-opacity duration-300" />
-
       {letters.map((letter) => {
         const isActive = activeLetter === letter;
         // Calculate distance from active letter could be cool but a simple scale is usually enough for the "blow up" effect users expect (like iOS)
