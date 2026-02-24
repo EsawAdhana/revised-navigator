@@ -612,7 +612,7 @@ export function CourseEvaluations({ courseId, subject, code, forcedTab }: Course
   if (evaluations.length === 0) {
     return (
       <div className="text-center py-8 space-y-3">
-        <p className="text-muted-foreground text-sm">No evaluation data found. Our records only go back to <strong>Fall 2023</strong>.</p>
+        <p className="text-muted-foreground text-sm">No evaluation data found. Note: Our records only go back to <strong>Fall 2023</strong>.</p>
         <a
           href={`https://stanford.evaluationkit.com/Report/Public/Results?Course=${encodeURIComponent(subject + ' ' + code)}&Search=true`}
           target="_blank"
