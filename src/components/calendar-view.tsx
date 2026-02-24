@@ -5,7 +5,7 @@ import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { isMeetingOptional, parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
 import { cn, unitsLabel } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
