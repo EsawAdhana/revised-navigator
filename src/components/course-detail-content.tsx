@@ -182,7 +182,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
     // Group sections by term, deduplicating by classId so the same section never appears twice
     const sectionsByTerm = (course?.sections || []).reduce((acc, section) => {
-        if (section.status !== 'Open') return acc;
         if (!acc[section.term]) acc[section.term] = [];
         const already = acc[section.term].some(s => s.classId === section.classId);
         if (!already) acc[section.term].push(section);
@@ -496,8 +495,13 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                             <div key={section.classId} className="border border-border/60 rounded-xl p-4 bg-card/50 hover:bg-card hover:shadow-md transition-all duration-200 group/section">
                                                 <div className="flex justify-between items-start mb-3">
                                                     <div>
-                                                        <div className="font-bold text-sm text-foreground">
+                                                        <div className="font-bold text-sm text-foreground flex items-center gap-2">
                                                             Section {section.sectionNumber}
+                                                            {section.status !== 'Open' && (
+                                                                <span className="text-[10px] uppercase font-bold text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded">
+                                                                    {section.status}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="text-xs text-muted-foreground mt-0.5 font-medium tracking-tight">ID: {section.classId}</div>
                                                     </div>
