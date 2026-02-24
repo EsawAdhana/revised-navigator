@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/lib/auth-store'
 import {
   Dialog,
   DialogContent,
@@ -29,18 +30,21 @@ const TYPES = [
   { value: 'request', label: 'Request or idea' }
 ] as const
 
-export function FeedbackDialog () {
+export function FeedbackDialog() {
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [type, setType] = useState<string>('feedback')
   const [submitting, setSubmitting] = useState(false)
+  const user = useAuthStore((state) => state.user)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  async function handleSubmit (e: React.FormEvent) {
+  if (!user) return null
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const t = text.trim()
     if (!t) {
