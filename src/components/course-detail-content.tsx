@@ -112,9 +112,12 @@ function CourseMetricsSummary({ metrics, evalsCount, isLoading }: { metrics: Par
 
     if (evalsCount === 0) {
         return (
-            <div className="mt-6 p-4 bg-secondary/5 border border-dashed border-border/40 rounded-2xl flex items-center justify-between group">
-                <div className="text-sm text-muted-foreground font-medium">
-                    No historical evaluation data available for this course.
+            <div className="mt-6 p-4 bg-secondary/5 border border-dashed border-border/40 rounded-2xl flex flex-col items-center justify-center text-center group">
+                <div className="text-sm text-muted-foreground font-medium mb-1">
+                    No historical evaluation data available.
+                </div>
+                <div className="text-xs text-muted-foreground/80 max-w-sm">
+                    Note that our charts and comments only include data up to Fall 2023. Please check EvaluationKit for other quarters.
                 </div>
             </div>
         );

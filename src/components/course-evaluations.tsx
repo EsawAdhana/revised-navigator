@@ -612,14 +612,16 @@ export function CourseEvaluations({ courseId, subject, code, forcedTab }: Course
   if (evaluations.length === 0) {
     return (
       <div className="text-center py-8 space-y-3">
-        <p className="text-muted-foreground text-sm">No evaluation data available for this course.</p>
+        <p className="text-muted-foreground text-sm max-w-sm mx-auto">
+          No evaluation data available. Note that our charts and comments only include data up to <strong>Fall 2023</strong>.
+        </p>
         <a
           href={`https://stanford.evaluationkit.com/Report/Public/Results?Course=${encodeURIComponent(subject + ' ' + code)}&Search=true`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+          className="inline-flex items-center justify-center gap-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 px-4 py-2 rounded-full transition-colors"
         >
-          Search on EvaluationKit
+          Search EvaluationKit for other quarters
           <ExternalLink size={12} />
         </a>
       </div>
