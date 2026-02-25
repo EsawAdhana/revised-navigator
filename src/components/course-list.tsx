@@ -72,7 +72,7 @@ function AlphabetScrubber({ letters, onSelect }: { letters: string[], onSelect: 
 
   return (
     <div
-      className="absolute right-0 inset-y-0 pt-4 pb-40 md:pb-4 z-20 flex flex-col justify-center items-center w-8 select-none touch-none md:opacity-0 md:hover:opacity-100 transition-opacity duration-300"
+      className="absolute right-0 inset-y-0 pt-4 pb-40 md:pb-4 z-20 flex flex-col justify-center items-center w-8 select-none touch-none"
       ref={containerRef}
       onTouchStart={(e) => { touchActive.current = true; handleMove(e.touches[0].clientY); }}
       onTouchMove={onTouchMove}
