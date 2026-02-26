@@ -1,5 +1,7 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { Metadata } from 'next'
+import { SiteHeader } from '@/components/site-header'
 
 export const metadata: Metadata = {
   title: 'Privacy Policy — Stanford Root',
@@ -7,8 +9,11 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-3xl px-6 py-12">
+    <div className="min-h-screen bg-background flex flex-col">
+      <Suspense fallback={<div className="h-16 border-b border-border/50" />}>
+        <SiteHeader />
+      </Suspense>
+      <div className="mx-auto max-w-3xl px-6 py-12 flex-1">
         <div className="mb-12">
           <Link
             href="/"
@@ -46,7 +51,7 @@ export default function PrivacyPage() {
             </p>
           </section>
 
-          <section>
+          <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">How We Use Your Information</h2>
             <ul className="list-disc pl-5 space-y-1">
               <li>To authenticate your identity and restrict access to Stanford students.</li>
@@ -54,7 +59,7 @@ export default function PrivacyPage() {
             </ul>
           </section>
 
-          <section>
+          <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">Data Storage</h2>
             <p>
               Your data is stored securely using Supabase, a hosted database platform with
@@ -63,7 +68,7 @@ export default function PrivacyPage() {
             </p>
           </section>
 
-          <section>
+          <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">Data Sharing</h2>
             <p>
               We do not sell, rent, or share your personal information with third parties.
@@ -72,7 +77,7 @@ export default function PrivacyPage() {
             </p>
           </section>
 
-          <section>
+          <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">Cookies &amp; Local Storage</h2>
             <p>
               We use browser localStorage to persist your course schedule across sessions.
@@ -81,7 +86,7 @@ export default function PrivacyPage() {
             </p>
           </section>
 
-          <section>
+          <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">Your Rights</h2>
             <p>
               You may sign out at any time to end your session. If you wish to delete your
@@ -90,7 +95,7 @@ export default function PrivacyPage() {
             </p>
           </section>
 
-          <section>
+          <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">Changes to This Policy</h2>
             <p>
               We may update this Privacy Policy from time to time. Any changes will be reflected
@@ -98,7 +103,7 @@ export default function PrivacyPage() {
             </p>
           </section>
 
-          <section>
+          <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">Contact</h2>
             <p>
               If you have questions about this Privacy Policy, please reach out to us at{' '}

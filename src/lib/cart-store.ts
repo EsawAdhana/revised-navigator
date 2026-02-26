@@ -28,11 +28,21 @@ export const useCartStore = create<CartStore>()(
         // Preserve existing color if updating same course
         const existingColor = existingIndex >= 0 ? currentItems[existingIndex].color : undefined
 
+        // Resolve selectedUnits: explicit arg > course > existing item (never overwrite with undefined)
+        const resolvedUnits =
+          selectedUnits !== undefined
+            ? selectedUnits
+            : course.selectedUnits !== undefined
+              ? course.selectedUnits
+              : existingIndex >= 0
+                ? currentItems[existingIndex].selectedUnits
+                : undefined
+
         const courseWithTerm: CartItem = {
           ...course,
-          selectedTerm: term || course.selectedTerm || (course.terms ? course.terms[0] : course.term),
+          selectedTerm: term || course.selectedTerm || course.terms?.[0],
           selectedSectionId: sectionId,
-          selectedUnits: selectedUnits !== undefined ? selectedUnits : course.selectedUnits,
+          selectedUnits: resolvedUnits,
           color: existingColor || course.color // Keep existing or use provided
         }
 

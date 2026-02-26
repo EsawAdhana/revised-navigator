@@ -37,9 +37,7 @@ export interface Course {
   units: string;
   grading: string;
   instructors: string[];
-  term?: string;
   terms?: string[];
-  dept?: string;
   sections?: Section[];
   selectedTerm?: string; // The term selected by the user for their schedule
   selectedSectionId?: number; // The specific section (classId) selected

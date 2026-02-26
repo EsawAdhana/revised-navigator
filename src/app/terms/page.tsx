@@ -1,5 +1,7 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
+import { SiteHeader } from '@/components/site-header'
 
 export const metadata: Metadata = {
   title: 'Terms of Service — Stanford Root',
@@ -7,8 +9,11 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-3xl px-6 py-12">
+    <div className="min-h-screen bg-background flex flex-col">
+      <Suspense fallback={<div className="h-16 border-b border-border/50" />}>
+        <SiteHeader />
+      </Suspense>
+      <div className="mx-auto max-w-3xl px-6 py-12 flex-1">
         <div className="mb-12">
           <Link
             href="/"
@@ -21,7 +26,7 @@ export default function TermsPage() {
         <h1 className="text-3xl font-bold text-foreground mt-8 mb-2 font-[family-name:var(--font-outfit)]">Terms of Service</h1>
         <p className="text-sm text-muted-foreground mb-10">Last updated: February 15, 2026</p>
 
-        <div className="prose prose-neutral max-w-none space-y-6 text-sm text-foreground/80 leading-relaxed">
+        <div className="prose prose-neutral dark:prose-invert max-w-none space-y-6 text-sm text-foreground/80 leading-relaxed">
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-2">1. Acceptance of Terms</h2>
             <p>

@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
+import { useCourseStore } from '@/lib/store';
 import { parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
-import { cn } from '@/lib/utils';
-import { AlertTriangle, CalendarPlus } from 'lucide-react';
+import { cn, decodeHtmlEntities, parseUnitsOptions } from '@/lib/utils';
+import { AlertTriangle, CalendarPlus, Calendar, Clock, MapPin } from 'lucide-react';
 import type { Course, Section } from '@/types/course';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -110,7 +111,10 @@ interface CalendarPreviewModalProps {
     term: string;
     isOpen: boolean;
     onClose: () => void;
-    onConfirm: () => void;
+    /** Called with selectedUnits when section has variable units (e.g. 3-4). */
+    onConfirm: (selectedUnits?: number) => void;
+    /** Pre-selected units from parent (e.g. from section card or cart). */
+    initialSelectedUnits?: number;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -122,19 +126,44 @@ export function CalendarPreviewModal({
     isOpen,
     onClose,
     onConfirm,
+    initialSelectedUnits,
 }: CalendarPreviewModalProps) {
     const { items } = useCartStore();
+    const { courses } = useCourseStore();
 
-    // Existing cart items for this term (excluding this course if already there)
-    const existingItems = useMemo(
-        () => items.filter(c => {
+    // Section may have 0, empty, or invalid units; use course as fallback (e.g. section "0" vs course "4")
+    const sectionOpts = parseUnitsOptions(section.units ?? '');
+    const courseOpts = parseUnitsOptions(course.units ?? '');
+    const secHasValidUnits = sectionOpts.length > 0 && Math.max(0, ...sectionOpts) > 0;
+    const unitOptions = sectionOpts.length > 1 ? sectionOpts : courseOpts.length > 1 ? courseOpts : (secHasValidUnits ? sectionOpts : courseOpts);
+    const hasVariableUnits = unitOptions.length > 1;
+
+    const [selectedUnits, setSelectedUnits] = useState<number | undefined>(() =>
+        initialSelectedUnits !== undefined && unitOptions.includes(initialSelectedUnits) ? initialSelectedUnits : undefined
+    );
+
+    useEffect(() => {
+        if (initialSelectedUnits !== undefined && unitOptions.includes(initialSelectedUnits)) {
+            setSelectedUnits(initialSelectedUnits);
+        }
+    }, [initialSelectedUnits, unitOptions.join(',')]);
+
+    // Existing cart items for this term (excluding this course), merged with full course data for sections
+    const existingItems = useMemo(() => {
+        const filtered = items.filter(c => {
             const forTerm = c.selectedTerm
                 ? c.selectedTerm === term
-                : ((c.terms && c.terms.includes(term)) || c.term === term);
+                : ((c.terms && c.terms.includes(term)));
             return forTerm && c.id !== course.id;
-        }),
-        [items, term, course.id]
-    );
+        });
+        return filtered.map(item => {
+            const fullCourse = courses.find(c => c.id === item.id);
+            if (fullCourse?.sections && fullCourse.sections.length > 0) {
+                return { ...fullCourse, ...item, sections: fullCourse.sections };
+            }
+            return item;
+        });
+    }, [items, term, course.id, courses]);
 
     // Build calendar events from existing cart items
     const existingEvents = useMemo<CalendarEvent[]>(() => {
@@ -152,7 +181,7 @@ export function CalendarPreviewModal({
                         id: `${c.id}-${day}-${start}`,
                         courseId: c.id,
                         courseCode: `${c.subject} ${c.code}`,
-                        title: c.title,
+                        title: decodeHtmlEntities(c.title),
                         day: day as CalendarEvent['day'],
                         start,
                         end,
@@ -197,7 +226,7 @@ export function CalendarPreviewModal({
                     id: `preview-${day}-${start}`,
                     courseId: course.id,
                     courseCode: `${course.subject} ${course.code}`,
-                    title: course.title,
+                    title: decodeHtmlEntities(course.title),
                     day,
                     start,
                     end,
@@ -264,14 +293,34 @@ export function CalendarPreviewModal({
                         <CalendarPlus size={16} className="text-primary shrink-0" />
                         Preview: {course.subject} {course.code} — {term}
                     </DialogTitle>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                        {section.meetings?.[0]
-                            ? `${section.meetings[0].days} · ${section.meetings[0].time}`
-                            : 'Time TBA'}
-                        {section.meetings?.[0]?.location && section.meetings[0].location !== 'TBA'
-                            ? ` · ${section.meetings[0].location}`
-                            : ''}
-                    </p>
+                    <div className="text-xs text-muted-foreground mt-1 flex flex-col gap-1.5">
+                        {section.meetings?.[0] ? (
+                            <>
+                                <div className="flex items-center gap-1.5 capitalize">
+                                    <Calendar size={14} strokeWidth={2.5} className="text-foreground shrink-0" />
+                                    <span>{(() => {
+                                        const days = (section.meetings[0].days || '').toLowerCase().split(/[,\s]+/);
+                                        return days.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ');
+                                    })()}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <Clock size={14} strokeWidth={2.5} className="text-foreground shrink-0" />
+                                    <span>{section.meetings[0].time?.replace(/:00/g, '').replace(/\s+-\s+/g, '-')}</span>
+                                </div>
+                                {section.meetings[0].location && section.meetings[0].location !== 'TBA' && (
+                                    <div className="flex items-center gap-1.5">
+                                        <MapPin size={14} strokeWidth={2.5} className="text-foreground shrink-0" />
+                                        <span className="truncate">{section.meetings[0].location}</span>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div className="flex items-center gap-1.5">
+                                <Clock size={14} strokeWidth={2.5} className="text-foreground shrink-0" />
+                                <span>Time TBA</span>
+                            </div>
+                        )}
+                    </div>
                 </DialogHeader>
 
                 {/* Conflict warning */}
@@ -408,6 +457,31 @@ export function CalendarPreviewModal({
                     </div>
                 </div>
 
+                {/* Units selector when section has variable units */}
+                {hasVariableUnits && (
+                    <div className="px-6 py-3 border-t border-border/30 flex items-center gap-3">
+                        <span className="text-sm font-semibold text-muted-foreground">Units:</span>
+                        <div className="flex items-center gap-2">
+                            {unitOptions.map((u) => (
+                                <button
+                                    key={u}
+                                    type="button"
+                                    onClick={() => setSelectedUnits(prev => prev === u ? undefined : u)}
+                                    className={cn(
+                                        "flex items-center justify-center w-9 h-8 font-bold rounded-md transition-all text-sm",
+                                        selectedUnits === u
+                                            ? "bg-primary text-primary-foreground shadow-sm"
+                                            : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                                    )}
+                                >
+                                    {u}
+                                </button>
+                            ))}
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-tight ml-1">units</span>
+                        </div>
+                    </div>
+                )}
+
                 <DialogFooter className="px-6 py-4 border-t border-border/40 flex flex-row items-center justify-between sm:justify-between gap-3">
                     <Button
                         size="sm"
@@ -419,13 +493,14 @@ export function CalendarPreviewModal({
                     <Button
                         size="sm"
                         className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm"
-                        onClick={() => { onConfirm(); onClose(); }}
+                        disabled={hasVariableUnits && selectedUnits === undefined}
+                        onClick={() => { onConfirm(hasVariableUnits ? selectedUnits : undefined); onClose(); }}
                     >
                         <CalendarPlus size={13} />
                         Add to Calendar
                     </Button>
                 </DialogFooter>
             </DialogContent>
-        </Dialog>
+        </Dialog >
     );
 }

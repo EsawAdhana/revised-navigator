@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
-import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader2, Palette, Info, Calendar } from 'lucide-react';
+import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader2, Palette, Info, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { Section } from '@/types/course';
-import { cn, getSyllabusUrl, parseUnitsOptions, hasVariableUnits, formatLevel, abbreviateGer, unitsLabel } from '@/lib/utils';
+import { cn, getSyllabusUrl, parseUnitsOptions, hasVariableUnits, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities } from '@/lib/utils';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSyllabusValidity } from '@/hooks/use-syllabus-validity';
@@ -121,12 +121,21 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         return acc;
     }, {} as Record<string, Section[]>);
 
+    // Sort sections within each term numerically
+    Object.keys(sectionsByTerm).forEach(term => {
+        sectionsByTerm[term].sort((a, b) => compareCourseCodes(a.sectionNumber, b.sectionNumber));
+    });
+
     // Sort terms logically
     const terms = Object.keys(sectionsByTerm).sort((a, b) => {
         const order = ['Autumn', 'Winter', 'Spring', 'Summer'];
-        const [semA, yearA] = a.split(' ');
-        const [semB, yearB] = b.split(' ');
-        if (yearA !== yearB) return yearA.localeCompare(yearB);
+        const partsA = (a || '').split(' ');
+        const partsB = (b || '').split(' ');
+        const semA = partsA[0] || '';
+        const yearA = partsA[1] || '';
+        const semB = partsB[0] || '';
+        const yearB = partsB[1] || '';
+        if (yearA !== yearB) return (yearA || '').localeCompare(yearB || '');
         return order.indexOf(semA) - order.indexOf(semB);
     });
 
@@ -138,6 +147,28 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         if (terms.includes('Spring 2026')) return 'Spring 2026';
         return terms[0] || '';
     });
+
+    // Term carousel: show 3 at a time when there are more than 3 terms
+    const TERMS_VISIBLE = 3;
+    const maxCarouselIndex = Math.max(0, terms.length - TERMS_VISIBLE);
+    const [termCarouselIndex, setTermCarouselIndex] = useState(0);
+    const visibleTerms = terms.length > TERMS_VISIBLE
+        ? terms.slice(termCarouselIndex, termCarouselIndex + TERMS_VISIBLE)
+        : terms;
+
+    // Keep active term in view when user selects a tab; don't override arrow clicks
+    const prevActiveTermRef = React.useRef(activeTerm);
+    const isInitialMount = React.useRef(true);
+    useEffect(() => {
+        if (!isInitialMount.current && prevActiveTermRef.current === activeTerm) return;
+        isInitialMount.current = false;
+        prevActiveTermRef.current = activeTerm;
+        const idx = terms.indexOf(activeTerm);
+        if (idx >= 0 && terms.length > TERMS_VISIBLE) {
+            const newStart = Math.min(idx, Math.max(0, terms.length - TERMS_VISIBLE));
+            setTermCarouselIndex(Math.max(0, newStart));
+        }
+    }, [activeTerm]);
 
     // Units: use active section or course; support variable units (e.g. 3-4)
     const unitsSource = (() => {
@@ -181,12 +212,14 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         }
     }, [course.id, cartItem?.selectedTerm, terms.length]); // eslint-disable-line
 
-    const isSpring2026 = activeTerm === 'Spring 2026'
+    const isFutureTerm = activeTerm === 'Spring 2026' || activeTerm === 'Summer 2026'
 
     // GER (General Education Requirements / WAYS) from sections
     const gers = useMemo(() => {
         const set = new Set<string>()
-        course.sections?.forEach(s => s.gers?.forEach(g => set.add(g)))
+        course.sections?.forEach(s => s.gers?.forEach(g => {
+            if (isAllowedGer(g)) set.add(g)
+        }))
         if (isWimCourse(course.subject, course.code)) {
             set.add('WIM')
         }
@@ -196,11 +229,16 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
     const [previewSection, setPreviewSection] = useState<Section | null>(null);
 
-    const handleSelectSection = (sectionId: number) => {
+    const handleSelectSection = (sectionId: number, section?: Section, selectedUnitsOverride?: number) => {
         if (cartItem?.selectedSectionId === sectionId && cartItem?.selectedTerm === activeTerm) {
             removeItem(course.id);
         } else {
-            addItem(course, activeTerm, sectionId, hasVariable ? selectedUnits : undefined);
+            // Section may have single value (e.g. "4") while course has range ("3-4"); use course as fallback
+            const sectionOpts = parseUnitsOptions(section?.units ?? '');
+            const courseOpts = parseUnitsOptions(course.units ?? '');
+            const hasVariable = sectionOpts.length > 1 || courseOpts.length > 1;
+            const unitsToUse = selectedUnitsOverride !== undefined ? selectedUnitsOverride : selectedUnits;
+            addItem(course, activeTerm, sectionId, hasVariable ? unitsToUse : undefined);
         }
     };
 
@@ -223,73 +261,80 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                     term={activeTerm}
                     isOpen={!!previewSection}
                     onClose={() => setPreviewSection(null)}
-                    onConfirm={() => handleSelectSection(previewSection.classId)}
+                    onConfirm={(units) => handleSelectSection(previewSection.classId, previewSection, units)}
+                    initialSelectedUnits={selectedUnits}
                 />
             )}
             {/* Header Area */}
             <div className="space-y-3">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 pl-3 md:pl-4">
                     <h1 className="text-2xl font-bold text-destructive tracking-tight font-[family-name:var(--font-outfit)]">
                         {course.subject} {course.code}
                     </h1>
                 </div>
-                <h2 className="text-3xl md:text-4xl font-extrabold leading-tight text-foreground tracking-tight">{course.title}</h2>
+                <h2 className="text-3xl md:text-4xl font-extrabold leading-tight text-foreground tracking-tight pl-3 md:pl-4">{decodeHtmlEntities(course.title)}</h2>
 
-                {/* Quick Info - continuous strip; flex-wrap so dept/GER are never cut off */}
-                <div className="inline-flex flex-wrap items-stretch rounded-xl border border-border/40 bg-secondary/20 min-w-0">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
-                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight">Units:</span>
-                        <span className="text-sm font-semibold text-foreground">{course.units}</span>
+                {/* Quick Info - continuous strip; px-3 aligns content with course code/title above */}
+                <div className="inline-flex flex-wrap items-stretch rounded-xl border border-border/40 bg-secondary/10 min-w-0 px-3 md:px-4">
+                    <div className="inline-flex items-center gap-2 py-1.5 pr-3 border-r border-border/40 last:border-r-0 shrink-0">
+                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight">UNITS:</span>
+                        <div className="flex items-baseline gap-1">
+                            <span className="text-[18px] font-bold text-foreground tabular-nums">
+                                {(() => {
+                                    const u = (course.units || '').toString();
+                                    const opts = parseUnitsOptions(u);
+                                    if (opts.length === 1) return opts[0];
+                                    if (opts.length > 1) return u;
+                                    return 0;
+                                })()}
+                            </span>
+                        </div>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
-                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight">Level:</span>
-                        <span className="text-sm font-semibold text-foreground">{formatLevel(course.sections?.[0]?.classLevel || course.code)}</span>
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
+                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight">LEVEL:</span>
+                        <span className="text-[18px] font-bold text-foreground">{formatLevel(course.sections?.[0]?.classLevel || course.code)}</span>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
-                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight">Grading:</span>
-                        <span className="text-sm font-semibold text-foreground">{course.grading || 'Letter (ABC/NC)'}</span>
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
+                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight">GRADING:</span>
+                        <span className="text-[18px] font-bold text-foreground">{course.grading || 'Letter (ABC/NC)'}</span>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 border-r border-border/40 last:border-r-0 min-w-0">
-                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight shrink-0">Dept:</span>
-                        <span className="text-sm font-semibold text-foreground break-words">{course.dept || 'N/A'}</span>
-                    </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 min-w-0">
-                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-tight shrink-0">GER:</span>
-                        <span className="text-sm font-semibold text-foreground break-words">{gerLabel}</span>
+                    <div className="inline-flex items-center gap-2 py-1.5 pl-3 min-w-0">
+                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight shrink-0">GER:</span>
+                        <span className="text-[18px] font-bold text-foreground break-words text-left">{gerLabel}</span>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6 items-start">
                 {/* Left Column: Tab Content */}
                 <div className="space-y-2">
                     <Tabs defaultValue="overview" className="w-full">
-                        <TabsList className="w-full justify-start bg-transparent border-b border-border/40 rounded-none h-auto p-0 gap-8 mb-4">
+                        <TabsList className="w-full justify-start bg-transparent border-b border-border/40 rounded-none h-auto p-0 pl-3 md:pl-4 gap-8 mb-4">
                             <TabsTrigger
                                 value="overview"
-                                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 py-3 font-semibold text-muted-foreground data-[state=active]:text-foreground transition-all hover:text-foreground/80"
+                                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 py-3 text-[18px] font-bold text-muted-foreground data-[state=active]:text-foreground transition-all hover:text-foreground/80"
                             >
                                 Overview
                             </TabsTrigger>
                             <TabsTrigger
                                 value="charts"
-                                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 py-3 font-semibold text-muted-foreground data-[state=active]:text-foreground transition-all hover:text-foreground/80"
+                                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 py-3 text-[18px] font-bold text-muted-foreground data-[state=active]:text-foreground transition-all hover:text-foreground/80"
                             >
                                 Charts
                             </TabsTrigger>
                             <TabsTrigger
                                 value="comments"
-                                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 py-3 font-semibold text-muted-foreground data-[state=active]:text-foreground transition-all hover:text-foreground/80"
+                                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 py-3 text-[18px] font-bold text-muted-foreground data-[state=active]:text-foreground transition-all hover:text-foreground/80"
                             >
                                 Comments
                             </TabsTrigger>
                         </TabsList>
 
                         {/* Overview Tab Content */}
-                        <TabsContent value="overview" className="focus-visible:outline-none focus-visible:ring-0">
+                        <TabsContent value="overview" className="focus-visible:outline-none focus-visible:ring-0 pl-3 md:pl-4">
                             <div className="space-y-6">
                                 <div className="space-y-3">
-                                    <CourseDescription description={course.description} contextSubject={course.subject} className="text-lg leading-relaxed" />
+                                    <CourseDescription description={course.description} contextSubject={course.subject} className="text-[18px] leading-relaxed" />
 
                                     {/* Syllabus */}
                                     <div className="pt-2 space-y-2 group/syllabus">
@@ -297,15 +342,15 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                             <>
                                                 <div className="text-sm text-muted-foreground flex items-center gap-2">
                                                     Syllabus for selected term:
-                                                    {!isSpring2026 && isCheckingSyllabus && (
+                                                    {!isFutureTerm && isCheckingSyllabus && (
                                                         <Loader2 size={12} className="animate-spin opacity-60" />
                                                     )}
-                                                    {!isSpring2026 && !isCheckingSyllabus && isSyllabusValid === false && (
+                                                    {!isFutureTerm && !isCheckingSyllabus && isSyllabusValid === false && (
                                                         <div title="Syllabus URL may be invalid">
                                                             <AlertCircle size={12} className="text-amber-500" />
                                                         </div>
                                                     )}
-                                                    {!isSpring2026 && !isCheckingSyllabus && isSyllabusValid === null && (
+                                                    {!isFutureTerm && !isCheckingSyllabus && isSyllabusValid === null && (
                                                         <div title="Unable to verify syllabus availability">
                                                             <AlertCircle size={12} className="text-muted-foreground opacity-50" />
                                                         </div>
@@ -315,19 +360,19 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                     variant="outline"
                                                     size="sm"
                                                     asChild
-                                                    disabled={isSpring2026}
+                                                    disabled={isFutureTerm}
                                                     className={cn(
                                                         "gap-2 w-full sm:w-auto",
-                                                        isSpring2026 && "opacity-50 cursor-not-allowed",
-                                                        !isSpring2026 && isSyllabusValid === false && "border-amber-500/50 text-amber-600 dark:text-amber-400"
+                                                        isFutureTerm && "opacity-50 cursor-not-allowed",
+                                                        !isFutureTerm && isSyllabusValid === false && "border-amber-500/50 text-amber-600 dark:text-amber-400"
                                                     )}
                                                 >
                                                     <a
-                                                        href={isSpring2026 ? '#' : (syllabusUrl || '#')}
-                                                        target={isSpring2026 ? undefined : "_blank"}
-                                                        rel={isSpring2026 ? undefined : "noopener noreferrer"}
+                                                        href={isFutureTerm ? '#' : (syllabusUrl || '#')}
+                                                        target={isFutureTerm ? undefined : "_blank"}
+                                                        rel={isFutureTerm ? undefined : "noopener noreferrer"}
                                                         onClick={(e) => {
-                                                            if (isSpring2026 || !syllabusUrl) {
+                                                            if (isFutureTerm || !syllabusUrl) {
                                                                 e.preventDefault()
                                                             } else {
                                                                 e.stopPropagation()
@@ -336,23 +381,23 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                     >
                                                         <FileText size={16} />
                                                         View {activeTerm} Syllabus
-                                                        {!isSpring2026 && isSyllabusValid === false && (
+                                                        {!isFutureTerm && isSyllabusValid === false && (
                                                             <span className="text-xs ml-1">(may not be available)</span>
                                                         )}
-                                                        {!isSpring2026 && <ExternalLink size={14} className="opacity-60" />}
+                                                        {!isFutureTerm && <ExternalLink size={14} className="opacity-60" />}
                                                     </a>
                                                 </Button>
-                                                {isSpring2026 && (
+                                                {isFutureTerm && (
                                                     <p className="text-xs text-muted-foreground opacity-0 group-hover/syllabus:opacity-100 transition-opacity duration-150 delay-500">
-                                                        Syllabi for Spring 2026 are not yet available on syllabus.stanford.edu.
+                                                        Syllabi for {activeTerm} are not yet available on syllabus.stanford.edu.
                                                     </p>
                                                 )}
-                                                {!isSpring2026 && isSyllabusValid === false && (
+                                                {!isFutureTerm && isSyllabusValid === false && (
                                                     <p className="text-xs text-amber-600 dark:text-amber-400">
                                                         This syllabus link may not be available. Try searching on syllabus.stanford.edu directly.
                                                     </p>
                                                 )}
-                                                {!isSpring2026 && (
+                                                {!isFutureTerm && (
                                                     <SyllabusVoting courseId={course.id} term={activeTerm} />
                                                 )}
                                             </>
@@ -367,7 +412,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                         </TabsContent>
 
                         {/* Charts Tab Content */}
-                        <TabsContent value="charts" className="focus-visible:outline-none focus-visible:ring-0">
+                        <TabsContent value="charts" className="focus-visible:outline-none focus-visible:ring-0 pl-3 md:pl-4">
                             <CourseEvaluations
                                 courseId={course.id}
                                 subject={course.subject}
@@ -377,7 +422,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                         </TabsContent>
 
                         {/* Comments Tab Content */}
-                        <TabsContent value="comments" className="focus-visible:outline-none focus-visible:ring-0">
+                        <TabsContent value="comments" className="focus-visible:outline-none focus-visible:ring-0 pl-3 md:pl-4">
                             <CourseEvaluations
                                 courseId={course.id}
                                 subject={course.subject}
@@ -399,128 +444,216 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                     })()}
 
                     <div className="space-y-4">
-                        <div className="flex items-center justify-between border-b border-border/40 pb-2">
-                            <h3 className="text-lg font-bold text-foreground">
+                        <div className="flex items-center justify-between border-b border-border/40 pb-2 pl-5">
+                            <h3 className="text-[20px] font-bold text-foreground">
                                 Sections
                             </h3>
-                            <div className="text-sm text-muted-foreground font-medium">
+                            <div className="text-[15px] text-muted-foreground font-medium">
                                 {terms.length} {terms.length === 1 ? 'Term' : 'Terms'}
                             </div>
                         </div>
 
                         {terms.length > 0 ? (
                             <Tabs value={activeTerm} onValueChange={setActiveTerm} className="w-full">
-                                <TabsList className="w-full justify-start overflow-x-auto bg-transparent border-b border-border/40 rounded-none h-auto p-0 gap-4 mb-4">
-                                    {terms.map(term => (
-                                        <TabsTrigger
-                                            key={term}
-                                            value={term}
-                                            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 py-2 text-sm font-bold text-muted-foreground data-[state=active]:text-foreground transition-all"
+                                <div className="flex items-center gap-1 pl-5 mb-4 border-b border-border/40">
+                                    {terms.length > TERMS_VISIBLE && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setTermCarouselIndex(i => Math.max(0, i - 1))}
+                                            disabled={termCarouselIndex === 0}
+                                            className="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                                            aria-label="Previous terms"
                                         >
-                                            {term}
-                                        </TabsTrigger>
-                                    ))}
-                                </TabsList>
+                                            <ChevronLeft size={20} strokeWidth={2.5} />
+                                        </button>
+                                    )}
+                                    <TabsList className="flex-1 flex min-w-0 overflow-hidden bg-transparent border-0 rounded-none h-auto p-0">
+                                        {visibleTerms.map(term => (
+                                            <TabsTrigger
+                                                key={term}
+                                                value={term}
+                                                title={term}
+                                                className="flex-1 min-w-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-1 py-2 text-[15px] font-bold text-muted-foreground data-[state=active]:text-foreground transition-all truncate"
+                                            >
+                                                {term}
+                                            </TabsTrigger>
+                                        ))}
+                                    </TabsList>
+                                    {terms.length > TERMS_VISIBLE && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setTermCarouselIndex(i => Math.min(maxCarouselIndex, i + 1))}
+                                            disabled={termCarouselIndex >= maxCarouselIndex}
+                                            className="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                                            aria-label="Next terms"
+                                        >
+                                            <ChevronRight size={20} strokeWidth={2.5} />
+                                        </button>
+                                    )}
+                                </div>
 
                                 {terms.map(term => (
                                     <TabsContent key={term} value={term} className="space-y-3 focus-visible:outline-none focus-visible:ring-0">
-                                        {sectionsByTerm[term].map((section) => (
-                                            <div key={section.classId} className="border border-border/60 rounded-xl p-4 bg-card/50 hover:bg-card hover:shadow-md transition-all duration-200 group/section">
-                                                <div className="flex justify-between items-start mb-3">
-                                                    <div>
-                                                        <div className="font-bold text-sm text-foreground flex items-center gap-2">
-                                                            Section {section.sectionNumber}
-                                                            {section.status !== 'Open' && (
-                                                                <span className="text-[10px] uppercase font-bold text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded">
-                                                                    {section.status}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <div className="text-xs text-muted-foreground mt-0.5 font-medium tracking-tight">ID: {section.classId}</div>
-                                                    </div>
-                                                </div>
+                                        {(() => {
+                                            const termSections = sectionsByTerm[term];
+                                            const compCounters: Record<string, number> = {};
 
-                                                <div className="space-y-2.5 text-sm text-foreground/80 mb-4">
-                                                    {section.meetings.map((m, i) => (
-                                                        <div key={i} className="space-y-1.5">
-                                                            <div className="flex items-center gap-2 text-sm">
-                                                                <Clock size={12} className="text-primary/70 shrink-0" />
-                                                                <span className="font-semibold text-foreground/90">{m.days} {m.time}</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                                                <MapPin size={12} className="shrink-0" />
-                                                                <span className="truncate">{m.location}</span>
-                                                            </div>
-                                                            {m.instructors && m.instructors.length > 0 && (
-                                                                <InstructorList instructors={m.instructors} />
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                            const INDEPENDENT_COMPONENTS = new Set(['INS', 'PRA', 'T/D', 'CLN', 'RES', 'ITR', 'RSC', 'TUT', 'SIM', 'CAS']);
 
-                                                <div className="pt-3 border-t border-border/30 flex flex-wrap justify-between items-center gap-x-2 gap-y-3">
-                                                    <div className="text-sm font-bold text-primary/80 flex items-center gap-2">
-                                                        {hasVariableUnits(section.units) ? (() => {
-                                                            const opts = parseUnitsOptions(section.units);
-                                                            const label = unitsLabel(section.units);
-                                                            return opts.length > 1 ? (
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className={cn(
-                                                                        "inline-flex items-center p-0.5 bg-secondary/40 border border-border/60 rounded-lg",
-                                                                        opts.length > 6 ? "flex-wrap gap-0.5 max-w-[200px]" : ""
-                                                                    )}>
-                                                                        {opts.map((u) => (
-                                                                            <button
-                                                                                key={u}
-                                                                                onClick={(e) => { e.stopPropagation(); handleUnitsChange(u); }}
-                                                                                disabled={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm}
-                                                                                className={cn(
-                                                                                    "flex items-center justify-center font-bold rounded-md transition-all disabled:opacity-50",
-                                                                                    opts.length > 6 ? "w-6 h-5 text-[10px]" : "w-7 h-6 text-xs",
-                                                                                    selectedUnits === u
-                                                                                        ? "bg-primary text-primary-foreground shadow-sm"
-                                                                                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                                                                                )}
-                                                                            >
-                                                                                {u}
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</span>
+                                            return termSections.map((section) => {
+                                                const isIndependent = INDEPENDENT_COMPONENTS.has(section.component);
+                                                const tbdLabel = isIndependent ? 'Not Applicable' : 'TBD';
+                                                const compLabel = formatComponent(section.component);
+                                                compCounters[compLabel] = (compCounters[compLabel] || 0) + 1;
+                                                const displayNum = compCounters[compLabel];
+
+                                                return (
+                                                    <div key={section.classId} className="border border-border/60 rounded-xl p-5 bg-card/50 hover:bg-card hover:shadow-md transition-all duration-200 group/section overflow-hidden">
+                                                        <div className="flex justify-between items-start gap-3 mb-4">
+                                                            <div>
+                                                                <div className="font-bold text-[18px] text-foreground flex flex-wrap items-center gap-2">
+                                                                    <span className="shrink-0">{compLabel} {displayNum}</span>
+                                                                    {section.status !== 'Open' && (
+                                                                        <span className="text-[12px] uppercase font-bold text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded">
+                                                                            {section.status}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
-                                                            ) : (
-                                                                <span>{section.units} {label.charAt(0).toUpperCase() + label.slice(1)}</span>
-                                                            );
-                                                        })() : (
-                                                            <span>{section.units} {unitsLabel(section.units).charAt(0).toUpperCase() + unitsLabel(section.units).slice(1)}</span>
-                                                        )}
-                                                    </div>
+                                                                <div className="text-[15px] text-muted-foreground mt-0.5 font-medium tracking-tight">ID: {section.classId}</div>
+                                                            </div>
+                                                        </div>
 
-                                                    <Button
-                                                        size="sm"
-                                                        variant={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? "default" : "outline"}
-                                                        className={cn(
-                                                            "h-8 text-sm px-4 rounded-lg font-bold transition-all whitespace-nowrap",
-                                                            cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm
-                                                                ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm"
-                                                                : "hover:bg-primary/5 hover:text-primary hover:border-primary/30"
-                                                        )}
-                                                        onClick={() =>
-                                                            cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm
-                                                                ? handleSelectSection(section.classId)
-                                                                : setPreviewSection(section)
-                                                        }
-                                                    >
-                                                        {cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? (
-                                                            <Check size={12} className="mr-1.5 stroke-[3px]" />
-                                                        ) : (
-                                                            <Calendar size={12} className="mr-1.5" />
-                                                        )}
-                                                        {cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? "Added to Calendar" : "View on Calendar"}
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        ))}
+                                                        <div className="space-y-4 text-[17px] text-foreground/80 mb-4">
+                                                            {section.meetings.map((m, i) => (
+                                                                <div
+                                                                    key={i}
+                                                                    className={cn(
+                                                                        "flex flex-col gap-3 text-[17px] text-foreground/90",
+                                                                        section.meetings.length > 1 && i > 0 && "pt-4 border-t border-border/50"
+                                                                    )}
+                                                                >
+                                                                    {section.meetings.length > 1 && (
+                                                                        <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                                                                            Meeting {i + 1} of {section.meetings.length}
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="flex gap-2.5 min-w-0">
+                                                                        <Calendar size={15} strokeWidth={2.5} className="text-foreground shrink-0 mt-0.5" />
+                                                                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0 flex-1">
+                                                                            <span className="text-[13px] font-bold text-muted-foreground uppercase tracking-tight leading-none shrink-0">DAYS:</span>
+                                                                            <span className="capitalize font-medium text-foreground leading-tight break-words">{(() => {
+                                                                                const rawDays = m.days || '';
+                                                                                if (!rawDays.trim()) return tbdLabel;
+                                                                                const days = rawDays.toLowerCase().split(/[,\s]+/);
+                                                                                return days.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ');
+                                                                            })()}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex gap-2.5 min-w-0">
+                                                                        <Clock size={15} strokeWidth={2.5} className="text-foreground shrink-0 mt-0.5" />
+                                                                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0 flex-1">
+                                                                            <span className="text-[13px] font-bold text-muted-foreground uppercase tracking-tight leading-none shrink-0">TIME:</span>
+                                                                            <span className="font-medium text-foreground leading-tight break-words">{m.time ? m.time.replace(/:00/g, '').replace(/\s+-\s+/g, '-') : tbdLabel}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex gap-2.5 min-w-0">
+                                                                        <MapPin size={15} strokeWidth={2.5} className="text-foreground shrink-0 mt-0.5" />
+                                                                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0 flex-1">
+                                                                            <span className="text-[13px] font-bold text-muted-foreground uppercase tracking-tight leading-none shrink-0">LOCATION:</span>
+                                                                            <span className="font-medium text-foreground leading-tight break-words">{m.location || tbdLabel}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    {m.instructors && m.instructors.length > 0 && (
+                                                                        <div className="flex gap-2.5 min-w-0">
+                                                                            <InstructorList instructors={m.instructors} showIcon={true} label="INSTRUCTOR:" />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="pt-4 border-t border-border/30 flex flex-wrap justify-between items-center gap-3">
+                                                            {(() => {
+                                                                const secOpts = parseUnitsOptions(section.units ?? '');
+                                                                const courseOpts = parseUnitsOptions(course.units ?? '');
+                                                                const secHasValidUnits = secOpts.length > 0 && Math.max(0, ...secOpts) > 0;
+                                                                const opts = secOpts.length > 1 ? secOpts : courseOpts.length > 1 ? courseOpts : (secHasValidUnits ? secOpts : courseOpts);
+                                                                const useCourseForDisplay = !secHasValidUnits || opts.length > 1;
+                                                                const uVal = opts.length > 1 ? (course.units || '') : (useCourseForDisplay ? (course.units ?? '') : (section.units ?? course.units ?? ''));
+                                                                const isVariable = opts.length > 1;
+                                                                return (
+                                                            <div className={cn("flex items-center gap-2 text-[17px] font-bold text-foreground/80 bg-secondary/40 h-10 rounded-lg border border-border/40 transition-colors group-hover/section:bg-secondary/60", isVariable ? "pl-0 pr-3" : "px-3")}>
+                                                                {opts.length > 1 ? (
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div className="flex items-center">
+                                                                                    {opts.map((u) => (
+                                                                                        <button
+                                                                                            key={u}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleUnitsChange(u);
+                                                                                            }}
+                                                                                            className={cn(
+                                                                                                "flex items-center justify-center font-bold rounded-md transition-all",
+                                                                                                opts.length > 6 ? "w-7 h-6 text-[11px]" : "w-8 h-7 text-[13px]",
+                                                                                                (selectedUnits === u || (selectedUnits === undefined && cartItem?.selectedUnits === u))
+                                                                                                    ? "bg-primary text-primary-foreground shadow-sm"
+                                                                                                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                                                                                            )}
+                                                                                        >
+                                                                                            {u}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                                <span className="text-[13px] font-bold text-muted-foreground uppercase tracking-tight leading-none">units</span>
+                                                                            </div>
+                                                                        ) : (
+                                                                            (() => {
+                                                                                const normalizedVal = (() => {
+                                                                                    if (opts.length === 0) return '0';
+                                                                                    const s = (uVal || '').toString();
+                                                                                    const m = s.match(/^(\d+)\s*-\s*(\d+)$/);
+                                                                                    if (m && m[1] === m[2]) return m[1];
+                                                                                    return s || '0';
+                                                                                })();
+                                                                                return (
+                                                                                    <div className="flex items-baseline gap-1 px-0.5 uppercase whitespace-nowrap text-[15px] font-bold">
+                                                                                        <span className="tabular-nums leading-none">{normalizedVal}</span>
+                                                                                        <span className="opacity-70 tracking-tight text-[14px] leading-none">{unitsLabel(normalizedVal)}</span>
+                                                                                    </div>
+                                                                                );
+                                                                            })()
+                                                                        )}
+                                                            </div>
+                                                                );
+                                                            })()}
+
+                                                            <Button
+                                                                size="sm"
+                                                                variant={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? "default" : "outline"}
+                                                                className={cn(
+                                                                    "h-10 text-[16px] px-5 rounded-lg font-bold transition-all whitespace-nowrap",
+                                                                    cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm
+                                                                        ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm"
+                                                                        : "hover:bg-primary/5 hover:text-primary hover:border-primary/30"
+                                                                )}
+                                                                onClick={() =>
+                                                                    cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm
+                                                                        ? handleSelectSection(section.classId)
+                                                                        : setPreviewSection(section)
+                                                                }
+                                                            >
+                                                                {cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? (
+                                                                    <Check size={12} className="mr-1.5 stroke-[3px]" />
+                                                                ) : (
+                                                                    <Calendar size={12} className="mr-1.5" />
+                                                                )}
+                                                                {cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? "Added" : "View on Calendar"}
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            });
+                                        })()}
                                     </TabsContent>
                                 ))}
                             </Tabs>

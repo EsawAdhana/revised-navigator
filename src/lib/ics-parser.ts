@@ -206,7 +206,6 @@ export function parseICS(icsContent: string): Course[] {
             units: '0',
             grading: 'Letter',
             instructors: [],
-            term,
             terms: [term],
             sections: [section],
             selectedTerm: term,

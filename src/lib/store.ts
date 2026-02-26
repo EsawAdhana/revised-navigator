@@ -64,7 +64,6 @@ function rowToCourse(row: any): Course {
     grading: row.grading || '',
     instructors: row.instructors || [],
     terms: row.terms || [],
-    dept: row.dept || undefined,
     sections: sections
   }
 }

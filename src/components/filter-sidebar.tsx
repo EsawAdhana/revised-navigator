@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
-import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel } from '@/lib/utils';
+import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, formatComponent, isAllowedGer, formatLevel, parseUnitsOptions, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
 import { isWimCourse } from '@/lib/wim-courses';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { parseMeetingTimes, timeToMinutes, formatMinutes, isMeetingOptional, parseTimeStringToMinutes } from '@/lib/schedule-utils';
@@ -137,6 +137,16 @@ export function FilterSidebar() {
     const getFilteredCoursesForFacets = (excludeFilter?: string) => {
         let filtered = courses;
 
+        // Apply invalid course filter (no grade basis)
+        filtered = filtered.filter(c => c.grading && c.grading.trim() !== '' && c.grading !== 'TBD');
+
+        // Cross-list: show only canonical course per group (same as main list)
+        const primaryMap = getCrossListPrimaryMap(courses);
+        filtered = filtered.filter(c => {
+            const norm = normalizeCourseId(c.id);
+            const canonical = resolveToCanonicalPrimary(norm, primaryMap);
+            return canonical === norm;
+        });
 
         // Apply excluded words filter
         if (excludedWords && excludedWords.length > 0 && excludeFilter !== 'exclude') {
@@ -154,10 +164,7 @@ export function FilterSidebar() {
         // Apply term filter
         if (selectedTerms && selectedTerms.length > 0 && excludeFilter !== 'terms' && !selectedTerms.includes('any')) {
             filtered = filtered.filter(c => {
-                if (c.terms) {
-                    return c.terms.some(t => selectedTerms.includes(t));
-                }
-                return c.term && selectedTerms.includes(c.term);
+                return c.terms && c.terms.some(t => selectedTerms.includes(t));
             });
         }
 
@@ -172,13 +179,21 @@ export function FilterSidebar() {
         }
 
 
-        // Apply level filter
+        // Apply level filter (normalize classLevel for matching: UG/UNDERGRAD -> Undergrad, etc.); fallback to course code
         if (selectedLevels && selectedLevels.length > 0 && excludeFilter !== 'levels') {
+            const hasTermFilter = selectedTerms && selectedTerms.length > 0 && !selectedTerms.includes('any');
             filtered = filtered.filter(c => {
+                const inferFromCode = () => selectedLevels.includes(formatLevel(c.code || ''));
                 if (c.sections && c.sections.length > 0) {
-                    return c.sections.some(s => s.classLevel && selectedLevels.includes(s.classLevel));
+                    const sectionsToCheck = hasTermFilter
+                        ? c.sections.filter(s => s.term && selectedTerms!.includes(s.term))
+                        : c.sections;
+                    const sectionMatch = sectionsToCheck.length > 0
+                        ? sectionsToCheck.some(s => s.classLevel && String(s.classLevel).trim() && selectedLevels.includes(formatLevel(s.classLevel)))
+                        : false;
+                    if (sectionMatch) return true;
                 }
-                return false;
+                return inferFromCode();
             });
         }
 
@@ -200,28 +215,33 @@ export function FilterSidebar() {
             });
         }
 
-        // Apply unit range filter (slider: unitMin–unitMax)
+        // Apply unit range filter (use parseUnitsOptions so variable units like 3-4 match if any option is in range)
         const unitsFilterActive = unitMin > 1 || unitMax < 5;
         if (unitsFilterActive && excludeFilter !== 'units') {
             const min = Math.max(1, unitMin);
             const max = Math.min(5, unitMax);
+            const maxOpen = max >= 5;
+            const hasTermFilter = selectedTerms && selectedTerms.length > 0 && !selectedTerms.includes('any');
             filtered = filtered.filter(c => {
                 const checkUnits = (uStr: string | number) => {
-                    if (!uStr) return false;
-                    const u = typeof uStr === 'string' ? parseFloat(uStr) : uStr;
-                    if (isNaN(u)) return false;
-                    return u >= min && (max >= 5 ? true : u <= max);
+                    const opts = parseUnitsOptions(uStr);
+                    if (opts.length === 0) return false;
+                    return opts.some(u => u >= min && (maxOpen ? true : u <= max));
                 };
                 if (c.sections && c.sections.length > 0) {
-                    return c.sections.some(s => checkUnits(s.units));
+                    const sectionsToCheck = hasTermFilter
+                        ? c.sections.filter(s => s.term && selectedTerms!.includes(s.term))
+                        : c.sections;
+                    const sectionMatch = sectionsToCheck.length > 0
+                        ? sectionsToCheck.some(s => checkUnits(s.units))
+                        : false;
+                    if (sectionMatch) return true;
                 }
-                const mainUnits = parseFloat(c.units);
-                if (!isNaN(mainUnits)) return checkUnits(mainUnits);
-                return false;
+                return checkUnits(c.units);
             });
         }
 
-        // Apply start time range filter (minutes from midnight, 0–1440)
+        // Apply start time range filter (handle both hyphen and en dash in time strings)
         const timeFilterActive = timeMin > 420 || timeMax < 1320;
         if (timeFilterActive && excludeFilter !== 'times') {
             const min = Math.max(420, timeMin);
@@ -229,8 +249,9 @@ export function FilterSidebar() {
             filtered = filtered.filter(c => {
                 if (c.sections && c.sections.length > 0) {
                     return c.sections.some(s => s.meetings.some(m => {
-                        const startStr = m.time && m.time.includes('-') ? m.time.split('-')[0].trim() : m.time;
-                        const startMins = timeToMinutes(startStr || '');
+                        const timeStr = m.time || '';
+                        const startStr = timeStr.split(/\s*[-–]\s*/)[0]?.trim() || timeStr;
+                        const startMins = timeToMinutes(startStr);
                         return startMins >= min && startMins <= max;
                     }));
                 }
@@ -386,7 +407,6 @@ export function FilterSidebar() {
     const facets = useMemo(() => {
         const depts = new Map<string, number>();
         const terms = new Map<string, number>();
-        const deptNames = new Map<string, string>(); // Map Code -> Full Name
 
         // New Facets
         const formats = new Map<string, number>();
@@ -401,22 +421,16 @@ export function FilterSidebar() {
         const coursesForLevels = getFilteredCoursesForFacets('levels');
         const coursesForGers = getFilteredCoursesForFacets('gers');
         const coursesForSchools = getFilteredCoursesForFacets('schools');
-        const coursesForExams = getFilteredCoursesForFacets('exams');
 
         // Compute dept facets
         coursesForDepts.forEach(c => {
             depts.set(c.subject, (depts.get(c.subject) || 0) + 1);
-            if (c.dept && !deptNames.has(c.subject)) {
-                deptNames.set(c.subject, c.dept);
-            }
         });
 
         // Compute term facets
         coursesForTerms.forEach(c => {
             if (c.terms) {
                 c.terms.forEach(t => terms.set(t, (terms.get(t) || 0) + 1));
-            } else if (c.term) {
-                terms.set(c.term, (terms.get(c.term) || 0) + 1);
             }
         });
 
@@ -432,23 +446,26 @@ export function FilterSidebar() {
         });
 
 
-        // Compute level facets
+        // Compute level facets (normalize UG/UNDERGRAD -> Undergrad, etc.); infer from course code when sections lack classLevel
         coursesForLevels.forEach(c => {
             const uniqueLevels = new Set<string>();
             if (c.sections && c.sections.length > 0) {
                 c.sections.forEach(s => {
-                    if (s.classLevel) uniqueLevels.add(s.classLevel);
+                    if (s.classLevel && String(s.classLevel).trim()) uniqueLevels.add(formatLevel(s.classLevel));
                 });
             }
-            uniqueLevels.forEach(lvl => levels.set(lvl, (levels.get(lvl) || 0) + 1));
+            if (uniqueLevels.size === 0) uniqueLevels.add(formatLevel(c.code || ''));
+            uniqueLevels.forEach(lvl => { if (lvl !== 'N/A') levels.set(lvl, (levels.get(lvl) || 0) + 1); });
         });
 
-        // Compute GER facets
+        // Compute GER facets (only allowed GERs: WAYS, WIM, PWR, COLLEGE, Language)
         coursesForGers.forEach(c => {
             const uniqueGers = new Set<string>();
             if (c.sections && c.sections.length > 0) {
                 c.sections.forEach(s => {
-                    if (s.gers) s.gers.forEach(g => uniqueGers.add(g));
+                    if (s.gers) s.gers.forEach(g => {
+                        if (isAllowedGer(g)) uniqueGers.add(g);
+                    });
                 });
             }
             uniqueGers.forEach(g => gers.set(g, (gers.get(g) || 0) + 1));
@@ -465,7 +482,7 @@ export function FilterSidebar() {
                 .map(([code, count]) => ({
                     code,
                     count,
-                    name: deptNames.get(code) || code
+                    name: code
                 }))
                 .sort((a, b) => a.code.localeCompare(b.code)),
             terms: Array.from(terms.entries()).sort((a, b) => {
@@ -528,7 +545,7 @@ export function FilterSidebar() {
     return (
         <div className="flex flex-col h-full bg-background border-r border-border/40">
             <div className="px-4 py-3 border-b border-border/40 flex items-center min-w-0 w-full">
-                <h2 className="text-sm font-semibold text-foreground/80 tracking-wide uppercase shrink-0">Filters</h2>
+                <h2 className="text-base font-semibold text-foreground/80 tracking-wide uppercase shrink-0">Filters</h2>
             </div>
 
             <SimpleScrollArea className="flex-1 px-4 py-3 space-y-3">
@@ -705,7 +722,7 @@ export function FilterSidebar() {
                         {facets.formats.map(([fmt, count]) => (
                             <CheckboxItem
                                 key={fmt}
-                                label={fmt} // e.g. "Lecture", "Seminar"
+                                label={formatComponent(fmt)} // e.g. "Lecture", "Seminar"
                                 count={count}
                                 checked={selectedFormats.includes(fmt)}
                                 onChange={() => toggleFilter(fmt, selectedFormats, setSelectedFormats)}
