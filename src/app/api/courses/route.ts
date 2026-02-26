@@ -55,7 +55,7 @@ async function fetchAllRows(columns: string) {
     }
   }
 
-  return rows
+  return rows.filter(r => r.grading && r.grading.trim() !== '' && r.grading !== 'TBD')
 }
 
 function mergeRows(rows: any[]) {
@@ -63,8 +63,7 @@ function mergeRows(rows: any[]) {
   for (const row of rows) {
     const existing = merged.get(row.course_id)
     if (!existing) {
-      const { quarter: _q, ...rest } = row
-      merged.set(row.course_id, { ...rest })
+      merged.set(row.course_id, { ...row })
       continue
     }
     const terms = Array.from(new Set([...(existing.terms || []), ...(row.terms || [])]))
@@ -92,7 +91,7 @@ export async function GET(request: Request) {
       }
 
       const rows = await fetchAllRows(
-        'course_id, quarter, subject, code, title, description, units, grading, instructors, terms, dept, sections'
+        'course_id, subject, code, title, description, units, grading, instructors, terms, sections'
       )
       const merged = mergeRows(rows)
       cachedFull = merged
@@ -111,7 +110,7 @@ export async function GET(request: Request) {
     }
 
     const rows = await fetchAllRows(
-      'course_id, quarter, subject, code, title, units, instructors, terms'
+      'course_id, subject, code, title, units, instructors, terms, grading'
     )
     const merged = mergeRows(rows)
     cachedLight = merged

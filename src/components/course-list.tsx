@@ -207,7 +207,7 @@ export function CourseList({ onCourseClick }: CourseListProps) {
         </Select>
         <ActiveFilterChips />
         <div className="ml-auto shrink-0 text-right">
-          <span className="tabular-nums font-semibold text-foreground/70">
+          <span className="text-xs tabular-nums font-semibold text-foreground/70">
             {courses.length.toLocaleString()} classes
           </span>
         </div>

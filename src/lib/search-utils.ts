@@ -1,4 +1,5 @@
 import type { Course } from '@/types/course';
+import { getAlternateCourseCodesFromTitle, normalizeCourseId } from '@/lib/utils';
 
 /**
  * Filters a list of courses based on a search query.
@@ -33,6 +34,8 @@ export function searchCourses(courses: Course[], query: string): Course[] {
         }
     }
 
+    const queryNorm = normalizeCourseId(compactQuery);
+
     const isSubjectSearch = Boolean(subject) && allSubjects.has(subject);
 
     if (isSubjectSearch) {
@@ -45,6 +48,11 @@ export function searchCourses(courses: Course[], query: string): Course[] {
                 const codeCompact = (c.code || '').toLowerCase().replace(/\s+/g, '');
                 if (codeCompact.includes(remainingCompact)) return true;
                 if ((c.title || '').toLowerCase().includes(remainingLower)) return true;
+                // Match when query is an alternate code in this course's title (e.g. "238v" and title has "(CS 238V)")
+                if (queryNorm) {
+                    const alts = getAlternateCourseCodesFromTitle(c.title || '');
+                    if (alts.some(alt => alt === queryNorm)) return true;
+                }
                 return false; /* No instructor search under explicit subject */
             });
         }
@@ -58,6 +66,10 @@ export function searchCourses(courses: Course[], query: string): Course[] {
             if (subjectCodeCompact.startsWith(compactQuery)) return true;
             if (codeCompact.includes(compactQuery)) return true;
             if ((c.title || '').toLowerCase().includes(lowerQuery)) return true;
+            if (queryNorm) {
+                const alts = getAlternateCourseCodesFromTitle(c.title || '');
+                if (alts.some(alt => alt === queryNorm)) return true;
+            }
             if (c.instructors && c.instructors.some(i => i.toLowerCase().includes(lowerQuery))) return true;
             return false;
         });

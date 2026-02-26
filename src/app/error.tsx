@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { SiteHeader } from '@/components/site-header';
 import { AlertCircle, RefreshCcw } from 'lucide-react';
 
 export default function ErrorBoundary({
@@ -17,7 +18,9 @@ export default function ErrorBoundary({
     }, [error]);
 
     return (
-        <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-300">
+        <div className="min-h-screen flex flex-col bg-background">
+            <SiteHeader />
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-300">
             <div className="bg-destructive/10 text-destructive p-4 rounded-full mb-6 relative">
                 <div className="absolute inset-0 bg-destructive/20 rounded-full animate-ping opacity-25" />
                 <AlertCircle size={48} className="relative z-10" />
@@ -61,6 +64,7 @@ export default function ErrorBoundary({
                     </pre>
                 </div>
             )}
+            </div>
         </div>
     );
 }

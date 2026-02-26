@@ -3,7 +3,7 @@ import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
 import { parseMeetingTimes, timeToMinutes, isMeetingOptional, getWeeklyContactHours } from '@/lib/schedule-utils';
-import { getSchoolFromSubject, getCourseUnitsNumeric, compareCourseCodes } from '@/lib/utils';
+import { getSchoolFromSubject, getCourseUnitsNumeric, compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary, formatLevel, parseUnitsOptions } from '@/lib/utils';
 // Removing isWimCourse import as WIM is now handled as a standard GER
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { aggregateMetrics, getOverallEvalScore } from '@/components/course-evaluations';
@@ -36,8 +36,16 @@ export function useFilteredCourses() {
     const evaluations = useEvaluationStore(state => state.evaluations);
 
     const filteredResult = useMemo(() => {
-        // Start with all courses
-        let result = courses;
+        // Start with all courses, excluding those without a grade basis (invalid)
+        let result = courses.filter(c => c.grading && c.grading.trim() !== '' && c.grading !== 'TBD');
+
+        // Cross-list: hide courses that are alternates; when A and B list each other, show only the canonical (alphabetically first)
+        const primaryMap = getCrossListPrimaryMap(courses);
+        result = result.filter(c => {
+            const norm = normalizeCourseId(c.id);
+            const canonical = resolveToCanonicalPrimary(norm, primaryMap);
+            return canonical === norm;
+        });
 
         // Filter by Excluded Keywords
         if (excludedWords && excludedWords.length > 0) {
@@ -58,7 +66,7 @@ export function useFilteredCourses() {
                 if (c.terms) {
                     return c.terms.some(t => selectedTerms.includes(t));
                 }
-                return c.term && selectedTerms.includes(c.term);
+                return c.selectedTerm && selectedTerms.includes(c.selectedTerm);
             });
         }
 
@@ -73,13 +81,21 @@ export function useFilteredCourses() {
         }
 
 
-        // Filter by Level (Undergrad/Grad etc)
+        // Filter by Level (Undergrad/Grad etc) - normalize classLevel for matching; fallback to course code
         if (selectedLevels && selectedLevels.length > 0) {
+            const hasTermFilter = selectedTerms && selectedTerms.length > 0 && !selectedTerms.includes('any');
             result = result.filter(c => {
+                const inferFromCode = () => selectedLevels.includes(formatLevel(c.code || ''));
                 if (c.sections && c.sections.length > 0) {
-                    return c.sections.some(s => s.classLevel && selectedLevels.includes(s.classLevel));
+                    const sectionsToCheck = hasTermFilter
+                        ? c.sections.filter(s => s.term && selectedTerms!.includes(s.term))
+                        : c.sections;
+                    const sectionMatch = sectionsToCheck.length > 0
+                        ? sectionsToCheck.some(s => s.classLevel && String(s.classLevel).trim() && selectedLevels.includes(formatLevel(s.classLevel)))
+                        : false;
+                    if (sectionMatch) return true;
                 }
-                return false;
+                return inferFromCode();
             });
         }
 
@@ -94,28 +110,33 @@ export function useFilteredCourses() {
         }
 
 
-        // Filter by unit range (slider: unitMin–unitMax)
+        // Filter by unit range (slider: unitMin–unitMax) - use parseUnitsOptions for variable units
         const unitsFilterActive = unitMin > 1 || unitMax < 5;
         if (unitsFilterActive) {
             const min = Math.max(1, unitMin);
             const max = Math.min(5, unitMax);
+            const maxOpen = max >= 5;
+            const hasTermFilter = selectedTerms && selectedTerms.length > 0 && !selectedTerms.includes('any');
             result = result.filter(c => {
                 const checkUnits = (uStr: string | number) => {
-                    if (!uStr) return false;
-                    const u = typeof uStr === 'string' ? parseFloat(uStr) : uStr;
-                    if (isNaN(u)) return false;
-                    return u >= min && (max >= 5 ? true : u <= max);
+                    const opts = parseUnitsOptions(uStr);
+                    if (opts.length === 0) return false;
+                    return opts.some(u => u >= min && (maxOpen ? true : u <= max));
                 };
                 if (c.sections && c.sections.length > 0) {
-                    return c.sections.some(s => checkUnits(s.units));
+                    const sectionsToCheck = hasTermFilter
+                        ? c.sections.filter(s => s.term && selectedTerms!.includes(s.term))
+                        : c.sections;
+                    const sectionMatch = sectionsToCheck.length > 0
+                        ? sectionsToCheck.some(s => checkUnits(s.units))
+                        : false;
+                    if (sectionMatch) return true;
                 }
-                const mainUnits = parseFloat(c.units);
-                if (!isNaN(mainUnits)) return checkUnits(mainUnits);
-                return false;
+                return checkUnits(c.units);
             });
         }
 
-        // Filter by start time range (minutes from midnight, 0–1440)
+        // Filter by start time range (minutes from midnight, 0–1440) - handle hyphen and en dash
         const timeFilterActive = timeMin > 420 || timeMax < 1320;
         if (timeFilterActive) {
             const min = Math.max(420, timeMin);
@@ -123,8 +144,9 @@ export function useFilteredCourses() {
             result = result.filter(c => {
                 if (c.sections && c.sections.length > 0) {
                     return c.sections.some(s => s.meetings.some(m => {
-                        const startStr = m.time && m.time.includes('-') ? m.time.split('-')[0].trim() : m.time;
-                        const startMins = timeToMinutes(startStr || '');
+                        const timeStr = m.time || '';
+                        const startStr = timeStr.split(/\s*[-–]\s*/)[0]?.trim() || timeStr;
+                        const startMins = timeToMinutes(startStr);
                         return startMins >= min && startMins <= max;
                     }));
                 }
@@ -234,7 +256,23 @@ export function useFilteredCourses() {
 
         // Filter by Query
         if (query) {
+            const beforeSearch = result;
             result = searchCourses(result, query);
+            // If the user searched for an alternate course code (e.g. "cs 238v"), include the primary course so it shows up
+            const queryNorm = normalizeCourseId(query.trim().replace(/\s+/g, ''));
+            if (queryNorm) {
+                const primaryMap = getCrossListPrimaryMap(courses);
+                if (primaryMap.has(queryNorm)) {
+                    const canonicalNorm = resolveToCanonicalPrimary(queryNorm, primaryMap);
+                    // Prefer primary from beforeSearch (so it passed term/dept etc.); fallback to full list so search always finds the course
+                    let primary = beforeSearch.find(c => normalizeCourseId(c.id) === canonicalNorm);
+                    if (!primary) {
+                        const withGrading = courses.filter(c => c.grading && c.grading.trim() !== '' && c.grading !== 'TBD');
+                        primary = withGrading.find(c => normalizeCourseId(c.id) === canonicalNorm);
+                    }
+                    if (primary && !result.some(c => c.id === primary!.id)) result = [...result, primary];
+                }
+            }
         }
 
         // All filtering is done; this is the set we will sort (sort is the last step)

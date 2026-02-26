@@ -8,6 +8,7 @@ import { SiteHeader } from '@/components/site-header';
 import { CourseDetailContent } from '@/components/course-detail-content';
 import { useCartStore } from '@/lib/cart-store';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
+import { getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
 
 export default function CoursePage() {
@@ -72,6 +73,20 @@ export default function CoursePage() {
         }
         return found;
     }, [courses, courseId, getItem]);
+
+    // Redirect to primary course when this URL is an alternate (cross-listed) course
+    useEffect(() => {
+        if (!hasLoaded || !course || !courses.length) return;
+        const primaryMap = getCrossListPrimaryMap(courses);
+        const norm = normalizeCourseId(courseId);
+        const canonicalNorm = resolveToCanonicalPrimary(norm, primaryMap);
+        if (canonicalNorm === norm) return;
+        const primaryCourse = courses.find(c => normalizeCourseId(c.id) === canonicalNorm);
+        if (primaryCourse && primaryCourse.id !== courseId) {
+            const search = typeof window !== 'undefined' ? window.location.search : '';
+            router.replace(`/courses/${encodeURIComponent(primaryCourse.id)}${search || ''}`);
+        }
+    }, [hasLoaded, course, courseId, courses, router]);
 
     // Same initial output on server and first client render to avoid hydration mismatch
     if (!mounted) {

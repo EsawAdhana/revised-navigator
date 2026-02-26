@@ -86,7 +86,8 @@ function parseTimeRange(timeStr: string) {
   const raw = timeStr.trim()
   if (!raw || raw.toLowerCase().includes('tba')) return null
 
-  const parts = raw.split('-').map(s => s.trim()).filter(Boolean)
+  // Split on hyphen or en-dash (scrape stores "10:30 AM – 12:20 PM")
+  const parts = raw.split(/\s*[-–]\s*/).map(s => s.trim()).filter(Boolean)
   if (parts.length === 0) return null
   if (parts.length === 1) {
     const start = parts[0]

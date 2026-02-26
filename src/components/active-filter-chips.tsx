@@ -64,8 +64,8 @@ export function ActiveFilterChips() {
     })
     if (unitMin > 1 || unitMax < 5) {
       const label = unitMin === unitMax
-        ? (unitMax >= 5 ? `${unitMin}+ ${unitsLabel(unitMin)}` : `${unitMin} ${unitsLabel(unitMin)}`)
-        : (unitMax >= 5 ? `${unitMin}–5+ ${unitsLabel(unitMin)}` : (unitMin === 1 && unitMax === 1 ? `1 ${unitsLabel(1)}` : `${unitMin}–${unitMax} ${unitsLabel(unitMin)}`))
+        ? (unitMax >= 5 ? `${unitMin}+ units` : `${unitMin} ${unitsLabel(unitMin)}`)
+        : (unitMax >= 5 ? `${unitMin}–5+ units` : `${unitMin}–${unitMax} units`)
       out.push({
         id: 'unit-range',
         label,

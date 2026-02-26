@@ -26,7 +26,12 @@ import { toast } from 'sonner';
 
 function ScheduleContent() {
   const { items } = useCartStore()
+  const { courses, fetchCourses } = useCourseStore()
   const [ignoredOverloads, setIgnoredOverloads] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    fetchCourses()
+  }, [fetchCourses])
   const searchParams = useSearchParams()
 
   const backHref = useMemo(() => {
@@ -60,12 +65,20 @@ function ScheduleContent() {
     })
   }
 
+  // Merge cart items with full course data (cart may have light data without sections)
   const currentTermCourses = useMemo(() => {
-    return items.filter(c =>
+    const filtered = items.filter(c =>
       c.selectedTerm ? c.selectedTerm === currentTerm :
-        ((c.terms && currentTerm && c.terms.includes(currentTerm)) || c.term === currentTerm)
+        (c.terms && currentTerm && c.terms.includes(currentTerm))
     )
-  }, [items, currentTerm])
+    return filtered.map(item => {
+      const fullCourse = courses.find(c => c.id === item.id)
+      if (fullCourse?.sections && fullCourse.sections.length > 0) {
+        return { ...fullCourse, ...item, sections: fullCourse.sections }
+      }
+      return item
+    })
+  }, [items, currentTerm, courses])
 
   const { totalUnitsMin, totalUnitsMax } = useMemo(() => {
     let totalUnitsMin = 0
@@ -82,7 +95,8 @@ function ScheduleContent() {
         const section = c.sections.find(s => s.classId === c.selectedSectionId)
         if (section) {
           const opts = parseUnitsOptions(section.units)
-          if (opts.length > 0) {
+          const hasValid = opts.length > 0 && Math.max(0, ...opts) > 0
+          if (hasValid) {
             totalUnitsMin += opts[0]
             totalUnitsMax += opts[opts.length - 1]
             return
@@ -309,7 +323,7 @@ END:VEVENT
             // Using real ID might de-dupe against existing cart items better.
             // Let's use real ID but maybe modify it if we want to allow duplicates?
             // Standard behavior: use real ID.
-            selectedTerm: imported.term,
+            selectedTerm: imported.selectedTerm ?? imported.terms?.[0],
             selectedSectionId: bestSectionId
           }
           addItem(enriched)

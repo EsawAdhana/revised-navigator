@@ -69,6 +69,12 @@ function ensureArray(val) {
     return Array.isArray(val) ? val : [val]
 }
 
+function textVal(v) {
+    if (v == null || v === '') return ''
+    if (typeof v === 'object' && '_text' in v) return String(v._text ?? '').trim()
+    return String(v).trim()
+}
+
 function parseDays(schedule) {
     // Days are represented as child elements inside <days>. fast-xml-parser
     // captures these differently depending on content — we check common keys.
@@ -102,10 +108,26 @@ function parseGers(courseNode, sectionNode) {
 }
 
 function parseSectionTerm(sectionNode) {
+    // 1. Try direct <term> element first (e.g. "2025-2026 Autumn")
+    const rawTerm = sectionNode?.term
+    if (rawTerm && typeof rawTerm === 'string') {
+        const parts = rawTerm.trim().split(/\s+/)
+        if (parts.length === 2 && parts[0].includes('-')) {
+            const years = parts[0].split('-')
+            const quarter = parts[1]
+            if (quarter === 'Autumn' || quarter === 'Fall') return `Autumn ${years[0]}`
+            if (quarter === 'Winter') return `Winter ${years[1]}`
+            if (quarter === 'Spring') return `Spring ${years[1]}`
+            if (quarter === 'Summer') return `Summer ${years[1]}`
+        }
+        return rawTerm
+    }
+
+    // 2. Fallback to NQTR attribute
     const attrs = ensureArray(sectionNode?.attributes?.attribute)
     for (const attr of attrs) {
-        if (attr?.name === 'NQTR') {
-            const val = attr?.value || ''
+        if (attr?.name === 'NQTR' || attr?._name === 'NQTR') {
+            const val = attr?.value || attr?._value || ''
             return NQTR_MAP[val] || val
         }
     }
@@ -127,9 +149,14 @@ function parseSection(sectionNode, courseNode) {
         classId: parseInt(sectionNode?.classId, 10) || 0,
         sectionNumber: String(sectionNode?.sectionNumber || ''),
         component: sectionNode?.component || '',
-        units: sectionNode?.maxUnits || sectionNode?.minUnits || '',
+        units: (() => {
+            const min = textVal(sectionNode?.minUnits)
+            const max = textVal(sectionNode?.maxUnits)
+            if (min && max && min !== max) return `${min}-${max}`
+            return max || min || ''
+        })(),
         grading: courseNode?.grading || '',
-        classLevel: sectionNode?.classLevel || '',
+        classLevel: textVal(sectionNode?.classLevel) || '',
         instructionalMode: sectionNode?.instructionalMode || '',
         status: sectionNode?.currentlyEnrolled || '',
         enrolled: parseInt(sectionNode?.currentClassSize, 10) || 0,
@@ -177,24 +204,48 @@ async function fetchSections(subject, code) {
         const root = parsed?.xml ?? parsed
         const courses = ensureArray(root?.courses?.course)
 
-        // Find the exact course match
+        if (courses.length === 0) return null
+
+        // Find all exact course matches (sometimes split across multiple course entries)
         const normalizedTarget = `${subject.replace(/\s+/g, '').toUpperCase()}${code.replace(/\s+/g, '').toUpperCase()}`
-        const matched = courses.find(c => {
+        const matchedCourses = courses.filter(c => {
             const s = String(c?.subject || '').replace(/\s+/g, '').toUpperCase()
             const cd = String(c?.code || '').replace(/\s+/g, '').toUpperCase()
             return `${s}${cd}` === normalizedTarget
         })
 
-        if (!matched) return null
+        if (matchedCourses.length === 0) return null
 
-        const sections = ensureArray(matched?.sections?.section)
+        const baseMatch = matchedCourses[0]
+        const allSections = []
+        for (const c of matchedCourses) {
+            const secs = ensureArray(c?.sections?.section)
+            allSections.push(...secs.map(sec => parseSection(sec, c)))
+        }
+
+        // Deduplicate sections by classId
+        const uniqueSections = []
+        const seenIds = new Set()
+        for (const s of allSections) {
+            if (!seenIds.has(s.classId)) {
+                uniqueSections.push(s)
+                seenIds.add(s.classId)
+            }
+        }
+
+        const terms = Array.from(new Set(uniqueSections.map(s => s.term).filter(Boolean)))
 
         return {
-            sections: sections.map(sec => parseSection(sec, matched)),
-            description: matched.description || '',
-            title: matched.title || '',
-            units: [matched.unitsMin, matched.unitsMax].filter(u => u && u !== '0').join('-') || matched.unitsMin || '',
-            grading: matched.grading || '',
+            sections: uniqueSections,
+            terms,
+            description: (baseMatch.description || '')
+                .replace(/&#[A-Z]+\s+039;/g, "'")
+                .replace(/&#039;/g, "'")
+                .replace(/&#[A-Z]+\s+034;/g, '"')
+                .replace(/&amp;/g, '&'),
+            title: baseMatch.title || '',
+            units: [baseMatch.unitsMin, baseMatch.unitsMax].filter(u => u && u !== '0').join('-') || baseMatch.unitsMin || '',
+            grading: baseMatch.grading || '',
         }
     } catch (e) {
         console.error(`  XML parse error for ${subject}${code}:`, e.message)
@@ -282,12 +333,13 @@ async function main() {
                     return
                 }
 
-                const { sections, ...metadata } = result
+                const { sections, terms, ...metadata } = result
 
                 const { error } = await supabase
                     .from('courses')
                     .update({
                         sections,
+                        terms,
                         description: metadata.description,
                         title: metadata.title,
                         units: metadata.units,

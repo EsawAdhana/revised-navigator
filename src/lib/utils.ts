@@ -5,6 +5,109 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/**
+ * Decode HTML entities in user-facing text (e.g. course descriptions/titles from API).
+ * Converts &nbsp; &amp; &#39; etc. to actual characters so we never show raw "&something;" placeholders.
+ */
+export function decodeHtmlEntities(text: string): string {
+  if (!text || typeof text !== 'string') return text
+  let s = text
+  // Numeric decimal &#39; &#8230; (do first so we don't double-decode)
+  s = s.replace(/&#(\d+);/g, (_, num) => {
+    const n = parseInt(num, 10)
+    return n >= 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : `&#${num};`
+  })
+  // Numeric hex &#x00A0; &#x1F;
+  s = s.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+    const n = parseInt(hex, 16)
+    return n >= 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : `&#x${hex};`
+  })
+  // Named entities (do &amp; last so it doesn't break others)
+  s = s.replace(/&nbsp;/g, ' ')
+  s = s.replace(/&lt;/g, '<')
+  s = s.replace(/&gt;/g, '>')
+  s = s.replace(/&quot;/g, '"')
+  s = s.replace(/&apos;/g, "'")
+  s = s.replace(/&lsquo;/g, "'")
+  s = s.replace(/&rsquo;/g, "'")
+  s = s.replace(/&ldquo;/g, '"')
+  s = s.replace(/&rdquo;/g, '"')
+  s = s.replace(/&ndash;/g, '–')
+  s = s.replace(/&mdash;/g, '—')
+  s = s.replace(/&hellip;/g, '…')
+  s = s.replace(/&amp;/g, '&')
+  return s
+}
+
+/**
+ * Extract alternate course codes from a title's trailing parenthetical, e.g. "(CS 137A, EE 160A)".
+ * Returns normalized ids (no space, uppercase) for comparison, or empty array if none.
+ */
+export function getAlternateCourseCodesFromTitle(title: string): string[] {
+  if (!title || typeof title !== 'string') return []
+  const trimmed = title.trim()
+  const match = trimmed.match(/\s*\(([^)]+)\)\s*$/)
+  if (!match) return []
+  const inner = match[1].trim()
+  const courseCodeList = /^[A-Za-z]{2,4}\s+\d{1,3}[A-Za-z]?(\s*,\s*[A-Za-z]{2,4}\s+\d{1,3}[A-Za-z]?)*$/
+  if (!courseCodeList.test(inner)) return []
+  return inner.split(/\s*,\s*/).map(part => part.replace(/\s+/g, '').toUpperCase())
+}
+
+/** Normalize course id for comparison (no spaces, uppercase). */
+export function normalizeCourseId(id: string): string {
+  if (!id || typeof id !== 'string') return ''
+  return id.replace(/\s+/g, '').toUpperCase()
+}
+
+/**
+ * Returns the set of normalized course ids that appear as alternates in some course's title.
+ * Those courses should be hidden from the list (we show only the "primary" course that lists them).
+ */
+export function getCrossListAlternateIds(courses: { id: string; title: string }[]): Set<string> {
+  const set = new Set<string>()
+  for (const c of courses) {
+    const alts = getAlternateCourseCodesFromTitle(c.title)
+    alts.forEach(a => set.add(a))
+  }
+  return set
+}
+
+/**
+ * Map from normalized alternate id -> normalized primary id.
+ * Used to redirect /courses/CS137A to /courses/AA174A when they're the same course.
+ * Note: When courses mutually list each other (A lists B, B lists A), both end up in the map.
+ * Use resolveToCanonicalPrimary to get the single canonical id and avoid redirect loops.
+ */
+export function getCrossListPrimaryMap(courses: { id: string; title: string }[]): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const c of courses) {
+    const primary = normalizeCourseId(c.id)
+    const alts = getAlternateCourseCodesFromTitle(c.title)
+    alts.forEach(a => {
+      if (a !== primary) map.set(a, primary)
+    })
+  }
+  return map
+}
+
+/**
+ * Resolve a normalized course id to its canonical primary (for redirects).
+ * Handles cycles: when A and B list each other, returns the alphabetically first as canonical.
+ */
+export function resolveToCanonicalPrimary(norm: string, primaryMap: Map<string, string>): string {
+  const visited = new Set<string>()
+  let current = norm
+  while (primaryMap.has(current)) {
+    if (visited.has(current)) {
+      return [...visited].sort()[0]
+    }
+    visited.add(current)
+    current = primaryMap.get(current)!
+  }
+  return current
+}
+
 // Very lightweight heuristic mapping for Stanford subjects.
 // This is only used for filtering facets, so it's intentionally best-effort.
 export function getSchoolFromSubject(subject: string) {
@@ -139,13 +242,14 @@ export function getSyllabusUrl(subject: string, code: string, classId?: number, 
   return `https://syllabus.stanford.edu/syllabus/#/search?q=${encodeURIComponent(courseCode)}`
 }
 
-/** Parse a units string (e.g. "3-4", "3", "5+") into selectable unit options. */
 export function parseUnitsOptions(units: string | number): number[] {
   if (typeof units === 'number') {
     return isNaN(units) ? [] : [units]
   }
-  const s = String(units).trim()
+  // Strip " units" or " unit" suffix and trim
+  const s = String(units).toLowerCase().replace(/\s*units?\s*$/i, '').trim()
   if (!s) return []
+
   const rangeMatch = s.match(/^(\d+)\s*-\s*(\d+)$/)
   if (rangeMatch) {
     const low = parseInt(rangeMatch[1], 10)
@@ -174,6 +278,14 @@ export function unitsLabel(value: number | string | null | undefined): 'unit' | 
   return 'units'
 }
 
+/** Formats a unit value or range (e.g. "1 unit", "3 units", "3-4 units"). */
+export function formatUnits(min: number, max?: number): string {
+  if (max === undefined || min === max) {
+    return `${min} ${unitsLabel(min)}`
+  }
+  return `${min}–${max} units`
+}
+
 /** Single numeric units value for a course (for sorting/display). Uses max of range or first section/course units. */
 export function getCourseUnitsNumeric(course: { units?: string; sections?: { units: string | number }[] }): number {
   const unitsStr = course.sections?.[0]?.units ?? course.units
@@ -184,12 +296,12 @@ export function getCourseUnitsNumeric(course: { units?: string; sections?: { uni
 }
 /** Normalize a level string (e.g. "UG", "Graduate", "UNDERGRAD") to "Undergrad" or "Graduate". */
 export function formatLevel(level: string): string {
-  if (!level) return 'N/A';
-  const l = level.toUpperCase();
-  if (l.includes('UNDERGRAD') || l === 'UG') return 'Undergrad';
-  if (l.includes('GRAD') || l === 'GR') return 'Graduate';
-  // If it's a code-based check
-  const codeMatch = level.match(/^\d+/);
+  if (!level || !String(level).trim()) return 'N/A';
+  const l = String(level).toUpperCase().trim();
+  if (l.includes('UNDERGRAD') || l === 'UG' || l === 'U') return 'Undergrad';
+  if (l.includes('GRAD') || l === 'GR' || l === 'G') return 'Graduate';
+  // If it's a code-based check (e.g. "106A" -> Undergrad, "246" -> Graduate)
+  const codeMatch = String(level).match(/\d+/);
   if (codeMatch) {
     const num = parseInt(codeMatch[0], 10);
     if (num < 200) return 'Undergrad';
@@ -213,10 +325,66 @@ const GER_ABBREV: Record<string, string> = {
   'Civic, Liberal, and Global Education': 'COLLEGE'
 }
 
+export function isAllowedGer(ger: string): boolean {
+  const g = ger.toUpperCase()
+  // WAYS (all 8)
+  if (g.startsWith('WAY-')) return true
+  const ways = ['AII', 'AQR', 'CE', 'EDP', 'ER', 'FR', 'SMA', 'SI', 'ED']
+  if (ways.some(w => g === w || g.includes(`(${w})`))) return true
+
+  // WIM
+  if (g === 'WIM' || g.includes('WRITING IN THE MAJOR')) return true
+
+  // COLLEGE
+  if (g.includes('COLLEGE') || g.includes('CIVIC, LIBERAL, AND GLOBAL EDUCATION')) return true
+
+  // PWR
+  if (g.includes('PWR 1') || g.includes('PWR 2') || g === 'PWR') return true
+
+  // Language
+  if (g.includes('LANGUAGE') && !g.includes('GER:')) return true
+  if (g === 'LANG') return true
+
+  return false
+}
+
 export function abbreviateGer(ger: string): string {
   const match = ger.match(/\s*\(([A-Za-z0-9+]+)\)\s*$/)
   if (match) return match[1]
-  return GER_ABBREV[ger] ?? ger
+  const abbr = GER_ABBREV[ger] ?? ger
+  if (abbr === 'Engaging Diversity') return 'ED' // Fix for old/mixed format
+  return abbr
+}
+
+const COMPONENT_MAP: Record<string, string> = {
+  LEC: 'Lecture',
+  SEM: 'Seminar',
+  DIS: 'Discussion',
+  LAB: 'Laboratory',
+  LBS: 'Lab Section',
+  INS: 'Independent Study',
+  PRA: 'Practicum',
+  LNG: 'Language',
+  'T/D': 'Thesis/Dissertation',
+  CLK: 'Clerkship',
+  WKS: 'Workshop',
+  COL: 'Colloquium',
+  CAS: 'Case Study',
+  ACT: 'Activity',
+  ISF: 'Intro Seminar - Freshman',
+  CLN: 'Clinical',
+  RES: 'Research',
+  ISS: 'Intro Seminar - Sophomore',
+  ITR: 'Internship',
+  RSC: 'Research Section',
+  TUT: 'Tutorial',
+  SIM: 'Simulation'
+};
+
+export function formatComponent(comp: string): string {
+  if (!comp) return '';
+  const c = comp.toUpperCase().trim();
+  return COMPONENT_MAP[c] ?? comp;
 }
 
 /**

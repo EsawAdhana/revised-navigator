@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useCourseStore } from '@/lib/store';
+import { decodeHtmlEntities } from '@/lib/utils';
 
 interface CourseDescriptionProps {
     description: string;
@@ -16,18 +17,33 @@ export function CourseDescription({ description, contextSubject, className }: Co
 
     if (!description) return null;
 
+    // Decode all HTML entities first so we never show raw &nbsp; &amp; etc.
+    const decodedDescription = decodeHtmlEntities(description);
+
     // Helper to render description with clickable course links
     const renderDescriptionWithLinks = (text: string) => {
+        if (!text) return [];
+
+        // Text is already decoded; use as-is for matching
+        const decodedText = text;
+
         // Match: "SUBJ CODE" or "SUBJCODE" (e.g. "CS 106A", "CS106B", "MATH 51") or bare code with context (e.g. "30" in a CS course).
+        // Added negative lookbehind (for browsers that support it) or just ensuring we don't match after &#
         const courseRegex = /\b(?:([A-Z]{2,4})\s*(\d{1,3}[A-Z]?)|(\d{2,3}[A-Z]?))\b/g;
 
         const parts = [];
         let lastIndex = 0;
         let match;
 
-        while ((match = courseRegex.exec(text)) !== null) {
+        while ((match = courseRegex.exec(decodedText)) !== null) {
+            // Basic check to avoid matching inside an entity-like string if any remain
+            const precedingText = decodedText.substring(0, match.index);
+            if (precedingText.endsWith('&#') || (match[3] && precedingText.match(/&#\d*$/))) {
+                continue;
+            }
+
             if (match.index > lastIndex) {
-                parts.push(text.substring(lastIndex, match.index));
+                parts.push(decodedText.substring(lastIndex, match.index));
             }
 
             const subject = match[1] ?? (contextSubject && match[3] ? contextSubject : null);
@@ -47,7 +63,7 @@ export function CourseDescription({ description, contextSubject, className }: Co
                     <Link
                         key={`${match.index}-${fullCode}`}
                         href={`/courses/${encodeURIComponent(targetCourse.id)}`}
-                        className="text-primary font-bold"
+                        className="text-primary font-bold hover:underline"
                         onClick={(e) => {
                             e.stopPropagation();
                         }}
@@ -62,8 +78,8 @@ export function CourseDescription({ description, contextSubject, className }: Co
             lastIndex = match.index + match[0].length;
         }
 
-        if (lastIndex < text.length) {
-            parts.push(text.substring(lastIndex));
+        if (lastIndex < decodedText.length) {
+            parts.push(decodedText.substring(lastIndex));
         }
 
         return parts;
@@ -71,8 +87,8 @@ export function CourseDescription({ description, contextSubject, className }: Co
 
     return (
         <div className={className}>
-            <p className="text-muted-foreground text-base leading-relaxed font-normal">
-                {renderDescriptionWithLinks(description)}
+            <p className="text-muted-foreground text-[18px] leading-relaxed font-normal">
+                {renderDescriptionWithLinks(decodedDescription)}
             </p>
         </div>
     )

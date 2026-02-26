@@ -4,7 +4,7 @@ import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { isMeetingOptional, parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
-import { cn, unitsLabel } from '@/lib/utils';
+import { cn, unitsLabel, decodeHtmlEntities } from '@/lib/utils';
 import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -152,10 +152,20 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const currentTermCourses = items.filter(c =>
-    c.selectedTerm ? c.selectedTerm === currentTerm :
-      ((c.terms && currentTerm && c.terms.includes(currentTerm)) || c.term === currentTerm)
-  )
+  // Merge cart items with full course data from store (cart may have light data without sections)
+  const currentTermCourses = useMemo(() => {
+    const filtered = items.filter(c =>
+      c.selectedTerm ? c.selectedTerm === currentTerm :
+        (c.terms && currentTerm && c.terms.includes(currentTerm))
+    )
+    return filtered.map(item => {
+      const fullCourse = courses.find(c => c.id === item.id)
+      if (fullCourse?.sections && fullCourse.sections.length > 0) {
+        return { ...fullCourse, ...item, sections: fullCourse.sections } as typeof item
+      }
+      return item
+    })
+  }, [items, currentTerm, courses])
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return []
@@ -194,7 +204,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
               id: `${course.id}-${day}-${start}-${end}`,
               courseId: course.id,
               courseCode: `${course.subject} ${course.code}`,
-              title: course.title,
+              title: decodeHtmlEntities(course.title),
               day: day as CalendarEvent['day'],
               startTime: m.startTime,
               endTime: m.endTime,
@@ -443,7 +453,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                             <div className="text-sm font-semibold truncate font-[family-name:var(--font-outfit)] text-primary">
                               {course.subject} {course.code}
                             </div>
-                            <div className="text-xs text-muted-foreground truncate">{course.title}</div>
+                            <div className="text-xs text-muted-foreground truncate">{decodeHtmlEntities(course.title)}</div>
                           </div>
                           {isAdded && (
                             <span className="text-[10px] font-medium text-muted-foreground px-1.5 py-0.5 border rounded-sm bg-muted/30 shrink-0">Added</span>
@@ -502,7 +512,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="font-medium truncate font-[family-name:var(--font-outfit)]">{course.subject} {course.code}</div>
-                          <div className="text-xs text-muted-foreground truncate">{course.title}</div>
+                          <div className="text-xs text-muted-foreground truncate">{decodeHtmlEntities(course.title)}</div>
                         </div>
                         <Button
                           variant="ghost" size="icon"
