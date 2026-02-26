@@ -14,7 +14,8 @@
     "upload:courses": "node scripts/upload-courses.js",
     "scrape:final-exams": "node scripts/scrape-final-exams.js",
     "update:exam-types": "node scripts/update-exam-types.js",
-    "check:units": "node scripts/check-units.mjs"
+    "check:units": "node scripts/check-units.mjs",
+    "fuzz": "npx tsx scripts/fuzz-schedule.ts"
   },
   "keywords": [],
   "author": "",
