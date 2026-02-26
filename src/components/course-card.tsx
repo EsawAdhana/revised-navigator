@@ -26,13 +26,13 @@ export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick
           </span>
           <div className="shrink-0 text-right text-foreground">
             <div className="flex items-baseline justify-end gap-1 transition-colors whitespace-nowrap">
-              <span className="text-[12px] font-extrabold tabular-nums font-[family-name:var(--font-outfit)] leading-none">
+              <span className="text-[13px] font-extrabold tabular-nums font-[family-name:var(--font-outfit)] leading-none">
                 {(() => {
                   const opts = parseUnitsOptions(course.units || '');
                   return (opts.length === 1) ? opts[0] : (course.units || '0');
                 })()}
               </span>
-              <span className="text-[11px] font-semibold tracking-tight leading-none">
+              <span className="text-[13px] font-semibold tracking-tight leading-none">
                 {(() => {
                   const label = unitsLabel(course.units || '');
                   return label.charAt(0).toUpperCase() + label.slice(1);
@@ -59,7 +59,7 @@ export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick
           </div>
           {(course.terms && course.terms.length > 0) && (
             <div className="flex items-center gap-1.5 font-medium shrink-0 max-w-[50%]">
-              <div className="text-right text-[11px] leading-none">
+              <div className="text-right text-[13px] leading-none">
                 {course.terms.map(t => t.split(' ')[0]).join(', ')}
               </div>
             </div>
