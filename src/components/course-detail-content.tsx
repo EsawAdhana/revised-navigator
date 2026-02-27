@@ -278,33 +278,31 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                 </div>
                 <h2 className="text-3xl md:text-4xl font-extrabold leading-tight text-foreground tracking-tight pl-3 md:pl-4">{decodeHtmlEntities(course.title)}</h2>
 
-                {/* Quick Info - continuous strip; px-3 aligns content with course code/title above */}
-                <div className="inline-flex flex-wrap items-stretch rounded-xl border border-border/40 bg-secondary/10 min-w-0 px-3 md:px-4">
-                    <div className="inline-flex items-center gap-2 py-1.5 pr-3 border-r border-border/40 last:border-r-0 shrink-0">
-                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight">UNITS:</span>
-                        <div className="flex items-baseline gap-1">
-                            <span className="text-[18px] font-bold text-foreground tabular-nums">
-                                {(() => {
-                                    const u = (course.units || '').toString();
-                                    const opts = parseUnitsOptions(u);
-                                    if (opts.length === 1) return opts[0];
-                                    if (opts.length > 1) return u;
-                                    return 0;
-                                })()}
-                            </span>
-                        </div>
+                {/* Quick Info - 2x2 grid on mobile (UNITS|GRADING, LEVEL|GER), single row on md+ */}
+                <div className="grid grid-cols-2 md:flex md:flex-nowrap rounded-xl border border-border/40 bg-secondary/10 min-w-0">
+                    <div className="order-1 flex flex-col md:flex-row md:items-center gap-0.5 md:gap-2 p-3 border-r border-b md:border-b-0 border-border/40 shrink-0">
+                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight shrink-0">UNITS:</span>
+                        <span className="text-[18px] font-bold text-foreground tabular-nums">
+                            {(() => {
+                                const u = (course.units || '').toString();
+                                const opts = parseUnitsOptions(u);
+                                if (opts.length === 1) return opts[0];
+                                if (opts.length > 1) return u;
+                                return 0;
+                            })()}
+                        </span>
                     </div>
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
-                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight">LEVEL:</span>
+                    <div className="order-2 flex flex-col md:flex-row md:items-center gap-0.5 md:gap-2 p-3 border-b border-r-0 md:border-b-0 md:border-r md:border-border/40 shrink-0 min-w-0">
+                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight shrink-0">GRADING:</span>
+                        <span className="text-[18px] font-bold text-foreground break-words">{course.grading || 'Letter (ABC/NC)'}</span>
+                    </div>
+                    <div className="order-3 flex flex-col md:flex-row md:items-center gap-0.5 md:gap-2 p-3 border-r border-border/40 shrink-0">
+                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight shrink-0">LEVEL:</span>
                         <span className="text-[18px] font-bold text-foreground">{formatLevel(course.sections?.[0]?.classLevel || course.code)}</span>
                     </div>
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 border-r border-border/40 last:border-r-0 shrink-0">
-                        <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight">GRADING:</span>
-                        <span className="text-[18px] font-bold text-foreground">{course.grading || 'Letter (ABC/NC)'}</span>
-                    </div>
-                    <div className="inline-flex items-center gap-2 py-1.5 pl-3 min-w-0">
+                    <div className="order-4 flex flex-col md:flex-row md:items-center gap-0.5 md:gap-2 p-3 min-w-0 shrink-0">
                         <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight shrink-0">GER:</span>
-                        <span className="text-[18px] font-bold text-foreground break-words text-left">{gerLabel}</span>
+                        <span className="text-[18px] font-bold text-foreground break-words">{gerLabel}</span>
                     </div>
                 </div>
             </div>

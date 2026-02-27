@@ -12,6 +12,8 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 })
 
+const MAX_COURSE_IDS = 50
+
 /** POST /api/evaluations — bulk fetch by course IDs. Body: { courseIds: string[] } */
 export async function POST(request: Request) {
   try {
@@ -19,18 +21,23 @@ export async function POST(request: Request) {
     if (!Array.isArray(courseIds) || courseIds.length === 0) {
       return NextResponse.json({ error: 'courseIds is required' }, { status: 400 })
     }
+    if (courseIds.length > MAX_COURSE_IDS) {
+      return NextResponse.json({ error: `At most ${MAX_COURSE_IDS} course IDs allowed` }, { status: 400 })
+    }
+
+    const ids = courseIds.filter((id): id is string => typeof id === 'string')
 
     // Single query — Supabase supports .in() with many values (up to 1000+)
     const { data, error } = await supabase
       .from('evaluations')
       .select('course_id, term, instructor, course_code, respondents, questions, comments')
-      .in('course_id', courseIds)
+      .in('course_id', ids)
 
     if (error) throw error
 
     // Group by course_id, map to camelCase for client
     const byCourse: Record<string, Array<{ term: string; instructor: string; courseCode: string; respondents: string; questions: unknown; comments: unknown }>> = {}
-    for (const id of courseIds) {
+    for (const id of ids) {
       byCourse[id] = []
     }
     for (const row of data || []) {
