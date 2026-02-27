@@ -1,8 +1,11 @@
+'use client';
+
 import React, { useMemo, useState } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
 import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, formatComponent, isAllowedGer, formatLevel, parseUnitsOptions, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
+import { searchCourses } from '@/lib/search-utils';
 import { isWimCourse } from '@/lib/wim-courses';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { parseMeetingTimes, timeToMinutes, formatMinutes, isMeetingOptional, parseTimeStringToMinutes } from '@/lib/schedule-utils';
@@ -53,7 +56,7 @@ const FilterSection = ({
             <CollapsibleTrigger asChild>
                 <button
                     type="button"
-                    className="group flex w-full cursor-pointer items-center justify-between rounded-sm py-2.5 px-1 text-left hover:bg-secondary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-muted-foreground/25 focus-visible:ring-offset-1 min-h-[2.5rem]"
+                    className="group flex w-full cursor-pointer items-center justify-between rounded-sm py-2.5 px-1 text-left hover:bg-secondary/50 focus:outline-none focus-visible:ring-0 min-h-[2.5rem]"
                 >
                     <div className="flex items-center gap-2">
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pl-1">{title}</h3>
@@ -169,12 +172,11 @@ export function FilterSidebar() {
         }
 
         // Apply format filter
+        // When sections is empty (Phase 1 / light data), include course so we don't incorrectly hide during enrichment
         if (selectedFormats && selectedFormats.length > 0 && excludeFilter !== 'formats') {
             filtered = filtered.filter(c => {
-                if (c.sections && c.sections.length > 0) {
-                    return c.sections.some(s => s.component && selectedFormats.includes(s.component));
-                }
-                return false;
+                if (!c.sections || c.sections.length === 0) return true;
+                return c.sections.some(s => s.component && selectedFormats.includes(s.component));
             });
         }
 
@@ -198,12 +200,11 @@ export function FilterSidebar() {
         }
 
         // Apply GER filter
+        // When sections is empty (Phase 1 / light data), include course so we don't incorrectly hide during enrichment
         if (selectedGers && selectedGers.length > 0 && excludeFilter !== 'gers') {
             filtered = filtered.filter(c => {
-                if (c.sections && c.sections.length > 0) {
-                    return c.sections.some(s => s.gers && s.gers.some(g => selectedGers.includes(g)));
-                }
-                return false;
+                if (!c.sections || c.sections.length === 0) return true;
+                return c.sections.some(s => s.gers && s.gers.some(g => selectedGers.includes(g)));
             });
         }
 
@@ -242,20 +243,19 @@ export function FilterSidebar() {
         }
 
         // Apply start time range filter (handle both hyphen and en dash in time strings)
+        // When sections is empty (Phase 1 / light data), include course so we don't incorrectly hide during enrichment
         const timeFilterActive = timeMin > 420 || timeMax < 1320;
         if (timeFilterActive && excludeFilter !== 'times') {
             const min = Math.max(420, timeMin);
             const max = Math.min(1320, timeMax);
             filtered = filtered.filter(c => {
-                if (c.sections && c.sections.length > 0) {
-                    return c.sections.some(s => s.meetings.some(m => {
-                        const timeStr = m.time || '';
-                        const startStr = timeStr.split(/\s*[-–]\s*/)[0]?.trim() || timeStr;
-                        const startMins = timeToMinutes(startStr);
-                        return startMins >= min && startMins <= max;
-                    }));
-                }
-                return false;
+                if (!c.sections || c.sections.length === 0) return true;
+                return c.sections.some(s => s.meetings?.some(m => {
+                    const timeStr = m.time || '';
+                    const startStr = timeStr.split(/\s*[-–]\s*/)[0]?.trim() || timeStr;
+                    const startMins = timeToMinutes(startStr);
+                    return startMins >= min && startMins <= max;
+                }));
             });
         }
         // WIM filter is now handled as part of standard GER filtering.
@@ -346,58 +346,9 @@ export function FilterSidebar() {
             });
         }
 
-        // Apply search query filter (always applied, not excluded)
+        // Apply search query filter (use shared searchCourses for consistency with main list)
         if (query) {
-            const lowerQuery = query.toLowerCase().trim()
-            const compactQuery = lowerQuery.replace(/\s+/g, '')
-            const parts = lowerQuery.split(/\s+/).filter(Boolean)
-
-            const allSubjects = new Set(courses.map(c => c.subject))
-
-            let subject = parts[0]?.toUpperCase() || ''
-            let remainingQuery = parts.slice(1).join(' ')
-
-            // Support searches like "cs106a" as well as "cs 106a"
-            if (parts.length === 1 && compactQuery) {
-                const m = compactQuery.match(/^([a-z&]+)(\d.*)$/i)
-                if (m) {
-                    const maybeSubject = m[1].toUpperCase()
-                    if (allSubjects.has(maybeSubject)) {
-                        subject = maybeSubject
-                        remainingQuery = m[2]
-                    }
-                }
-            }
-
-            const isSubjectSearch = Boolean(subject) && allSubjects.has(subject)
-
-            if (isSubjectSearch) {
-                filtered = filtered.filter(c => c.subject === subject)
-
-                if (remainingQuery) {
-                    const remainingLower = remainingQuery.toLowerCase().trim()
-                    const remainingCompact = remainingLower.replace(/\s+/g, '')
-                    filtered = filtered.filter(c => {
-                        const codeCompact = (c.code || '').toLowerCase().replace(/\s+/g, '')
-                        if (codeCompact.includes(remainingCompact)) return true
-                        if ((c.title || '').toLowerCase().includes(remainingLower)) return true
-                        return false
-                    })
-                }
-            } else {
-                filtered = filtered.filter(c => {
-                    const subjectCodeSpaced = `${c.subject} ${c.code}`.toLowerCase()
-                    const subjectCodeCompact = `${c.subject}${c.code}`.toLowerCase().replace(/\s+/g, '')
-                    const codeCompact = (c.code || '').toLowerCase().replace(/\s+/g, '')
-
-                    if (subjectCodeSpaced.startsWith(lowerQuery)) return true
-                    if (subjectCodeCompact.startsWith(compactQuery)) return true
-                    if (codeCompact.includes(compactQuery)) return true
-                    if ((c.title || '').toLowerCase().includes(lowerQuery)) return true
-                    if (c.instructors && c.instructors.some(i => i.toLowerCase().includes(lowerQuery))) return true
-                    return false
-                })
-            }
+            filtered = searchCourses(filtered, query);
         }
 
         return filtered;
@@ -501,10 +452,14 @@ export function FilterSidebar() {
 
     const filteredDepts = useMemo(() => {
         if (!deptQuery) return facets.depts;
-        const lower = deptQuery.toLowerCase();
+        const lower = deptQuery.toLowerCase().trim();
         return facets.depts.filter(d => {
-            if (d.code.toLowerCase().includes(lower)) return true;
-            const words = d.name.toLowerCase().split(/[\s-]+/);
+            const codeLower = d.code.toLowerCase();
+            // Match department code that starts with query (e.g. "cs" -> CS, CSB, CSRE, but not ECOS)
+            if (codeLower.startsWith(lower)) return true;
+            const nameLower = (d.name || '').toLowerCase();
+            if (nameLower.startsWith(lower)) return true;
+            const words = nameLower.split(/[\s-]+/);
             return words.some(w => w.startsWith(lower));
         });
     }, [facets.depts, deptQuery]);

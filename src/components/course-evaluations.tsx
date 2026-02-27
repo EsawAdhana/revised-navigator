@@ -40,12 +40,13 @@ export function barFill(score: number): string {
 export type QuestionCategory = 'quality' | 'learning' | 'organization' | 'goals' | 'hours' | 'attendance_in_person' | 'attendance_online' | 'unknown'
 
 function categorizeQuestion(text: string): QuestionCategory {
-  const t = text.toLowerCase()
+  const t = (text || '').toLowerCase()
   if (t.includes('quality') || t.includes('overall')) return 'quality'
   if (t.includes('how much did you learn')) return 'learning'
   if (t.includes('organized')) return 'organization'
   if (t.includes('learning goals')) return 'goals'
-  if (t.includes('hours per week')) return 'hours'
+  // Hours: "hours per week", "how many hours...week", or "hours" + "week" (Stanford: "How many hours per week on average did you spend...")
+  if (t.includes('hours per week') || (t.includes('hours') && t.includes('week'))) return 'hours'
   if (t.includes('percent') && t.includes('in person')) return 'attendance_in_person'
   if (t.includes('percent') && t.includes('online')) return 'attendance_online'
   return 'unknown'
@@ -96,9 +97,11 @@ export function aggregateMetrics(evals: CourseEvaluation[]) {
   }
 
   for (const ev of evals) {
-    for (const q of ev.questions) {
-      const cat = categorizeQuestion(q.text)
-      byCat[cat].push(q.median)
+    const questions = ev.questions || []
+    for (const q of questions) {
+      const cat = categorizeQuestion(q?.text ?? '')
+      const val = typeof q?.median === 'number' && !isNaN(q.median) ? q.median : null
+      if (val != null) byCat[cat].push(val)
     }
   }
 
@@ -503,14 +506,16 @@ type EvalTab = 'overview' | 'instructors' | 'comments'
 
 
 interface CourseEvaluationsProps {
-  courseId: string
+  /** All course IDs in the cross-list group (e.g. CS 24, LINGUIST 35, BILL 99). Chart/comments include data from all. */
+  courseIds: string[]
   subject: string
   code: string
   forcedTab?: 'overview' | 'instructors' | 'comments'
 }
 
-export function CourseEvaluations({ courseId, subject, code, forcedTab }: CourseEvaluationsProps) {
-  const { fetchCourseEvaluations, getEvaluations, isLoadingCourse, hasErrorForCourse } = useEvaluationStore()
+export function CourseEvaluations({ courseIds, subject, code, forcedTab }: CourseEvaluationsProps) {
+  const { fetchBulkEvaluations, getMergedEvaluations, isLoadingCourse, hasErrorForCourse } = useEvaluationStore()
+  const evaluationsById = useEvaluationStore(state => state.evaluations)
   const [activeTermFilter, setActiveTermFilter] = useState<string>('all')
   const [activeTab, setActiveTab] = useState<EvalTab>(forcedTab || 'overview')
   const [expandedInstructor, setExpandedInstructor] = useState<string | null>(null)
@@ -522,13 +527,14 @@ export function CourseEvaluations({ courseId, subject, code, forcedTab }: Course
     }
   }, [forcedTab])
 
-  const isLoading = isLoadingCourse(courseId)
-  const hasError = hasErrorForCourse(courseId)
-  const evaluations = getEvaluations(courseId)
+  const isLoading = courseIds.some(id => isLoadingCourse(id))
+  const hasError = courseIds.some(id => hasErrorForCourse(id))
+  const evaluations = useMemo(() => getMergedEvaluations(courseIds), [getMergedEvaluations, courseIds, evaluationsById])
 
+  const courseIdsKey = courseIds.join(',')
   useEffect(() => {
-    fetchCourseEvaluations(courseId)
-  }, [courseId, fetchCourseEvaluations])
+    if (courseIds.length > 0) fetchBulkEvaluations(courseIds)
+  }, [courseIdsKey, fetchBulkEvaluations])
 
   // Unique terms (newest first)
   const evalTerms = useMemo(() => {

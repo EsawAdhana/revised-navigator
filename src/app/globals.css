@@ -43,6 +43,16 @@
     @apply border-border;
   }
 
+  /* Remove focus rings / emphasis on click (no blue/red borders) */
+  *:focus {
+    outline: none;
+  }
+  *:focus-visible {
+    outline: none;
+    --tw-ring-shadow: none;
+    box-shadow: none;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
   }

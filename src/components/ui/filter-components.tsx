@@ -35,8 +35,13 @@ interface CheckboxItemProps {
 export function CheckboxItem({ label, count, checked, onChange }: CheckboxItemProps) {
   return (
     <button
-      onClick={onChange}
-      className="flex items-center w-full group py-1"
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onChange();
+      }}
+      className="flex items-center w-full group py-1 focus:outline-none focus-visible:ring-0"
     >
       <div className={cn(
         "h-4 w-4 border rounded mr-2 flex items-center justify-center transition-colors",

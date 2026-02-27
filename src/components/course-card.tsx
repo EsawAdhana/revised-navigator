@@ -14,7 +14,7 @@ interface CourseCardProps {
 
 export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick }: CourseCardProps) => {
   return (
-    <div style={style} className="px-2 py-1.5">
+    <div style={style} className="w-full py-1.5">
       <div
         className="group relative w-full rounded-xl bg-card text-card-foreground border border-border/40 hover:border-primary/25 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(140,21,21,0.06)] transition-all duration-300 cursor-pointer pl-4 pr-4 py-4 hover:-translate-y-[1px]"
         onClick={onClick}
@@ -26,18 +26,17 @@ export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick
           </span>
           <div className="shrink-0 text-right text-foreground">
             <div className="flex items-baseline justify-end gap-1 transition-colors whitespace-nowrap">
-              <span className="text-[13px] font-extrabold tabular-nums font-[family-name:var(--font-outfit)] leading-none">
-                {(() => {
-                  const opts = parseUnitsOptions(course.units || '');
-                  return (opts.length === 1) ? opts[0] : (course.units || '0');
-                })()}
-              </span>
-              <span className="text-[13px] font-semibold tracking-tight leading-none">
-                {(() => {
-                  const label = unitsLabel(course.units || '');
-                  return label.charAt(0).toUpperCase() + label.slice(1);
-                })()}
-              </span>
+              {(() => {
+                const opts = parseUnitsOptions(course.units || '');
+                const displayVal = opts.length === 1 ? opts[0] : (course.units || '0');
+                const label = unitsLabel(typeof displayVal === 'number' ? displayVal : course.units || '');
+                return (
+                  <>
+                    <span className="text-[13px] font-extrabold tabular-nums font-[family-name:var(--font-outfit)] leading-none">{displayVal}</span>
+                    <span className="text-[13px] font-semibold tracking-tight leading-none">{label.charAt(0).toUpperCase() + label.slice(1)}</span>
+                  </>
+                );
+              })()}
             </div>
             {sortDisplayValue ? (
               <div className="text-[11px] font-medium mt-0.5">

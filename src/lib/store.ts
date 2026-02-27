@@ -14,6 +14,7 @@ type CourseStore = {
 const CACHE_KEY = 'root-courses-cache'
 const CACHE_VERSION = 8
 const CACHE_TTL = 1000 * 60 * 30 // 30 minutes
+const STALE_MAX_AGE = 1000 * 60 * 60 * 24 // 24 hours — show stale cache up to this age
 
 function readCache(): Course[] | null {
   try {
@@ -22,6 +23,20 @@ function readCache(): Course[] | null {
     const { v, ts, data } = JSON.parse(raw)
     if (v !== CACHE_VERSION) return null
     if (Date.now() - ts > CACHE_TTL) return null
+    return data
+  } catch {
+    return null
+  }
+}
+
+/** Returns cache even if expired, for stale-while-revalidate. Null if cache is older than 24h. */
+function readStaleCache(): Course[] | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    const { v, ts, data } = JSON.parse(raw)
+    if (v !== CACHE_VERSION) return null
+    if (Date.now() - ts > STALE_MAX_AGE) return null
     return data
   } catch {
     return null
@@ -77,14 +92,23 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
 
   fetchCourses: async () => {
     const { isLoading, hasLoaded } = get()
-    if (isLoading || hasLoaded) return
+    if (isLoading) return
 
-    set({ isLoading: true })
+    // Stale-while-revalidate: show cached data immediately on refresh (even if expired)
+    const stale = readStaleCache()
+    if (stale) {
+      set({ courses: stale, hasLoaded: true, hasEnriched: true, isLoading: false })
+      // Fall through to fetch fresh in background
+    } else if (hasLoaded) {
+      return
+    } else {
+      set({ isLoading: true })
+    }
 
     try {
-      // ── Cache hit: instant ──
+      // ── Fresh cache hit: skip fetch ──
       const cached = readCache()
-      if (cached) {
+      if (cached && !stale) {
         set({ courses: cached, hasLoaded: true, hasEnriched: true, isLoading: false })
         return
       }

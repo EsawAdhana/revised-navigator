@@ -102,7 +102,7 @@ export function ActiveFilterChips() {
       {chips.map(({ id, label, onRemove }) => (
         <span
           key={id}
-          className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-md bg-primary/5 border border-primary/30 text-xs font-medium text-primary"
+          className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-2 rounded-md bg-primary/5 border border-primary/30 text-xs font-medium text-primary"
         >
           <span className="whitespace-nowrap">{label}</span>
           <button

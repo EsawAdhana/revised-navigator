@@ -68,10 +68,13 @@ function mergeRows(rows: any[]) {
     }
     const terms = Array.from(new Set([...(existing.terms || []), ...(row.terms || [])]))
     const sections = [...(existing.sections || []), ...(row.sections || [])]
+    // Prefer non-empty units when merging (first row may have empty units)
+    const units = (existing.units && String(existing.units).trim()) ? existing.units : (row.units || existing.units)
     merged.set(row.course_id, {
       ...existing,
       terms,
       sections,
+      units,
     })
   }
   return Array.from(merged.values())

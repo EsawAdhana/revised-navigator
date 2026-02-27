@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
 import { Resend } from 'resend'
+import { cookies } from 'next/headers'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -17,6 +18,29 @@ export async function POST (request: Request) {
       { error: 'Feedback is not configured' },
       { status: 503 }
     )
+  }
+
+  const cookieStore = await cookies()
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll () {
+        return cookieStore.getAll()
+      },
+      setAll (cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          )
+        } catch {
+          // Ignored when called from Route Handler
+        }
+      }
+    }
+  })
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   let body: { text?: string; type?: string }
@@ -37,11 +61,13 @@ export async function POST (request: Request) {
     )
   }
 
-  const type = body.type && ALLOWED_TYPES.includes(body.type as typeof ALLOWED_TYPES[number])
+  const typeInput = body.type && ALLOWED_TYPES.includes(body.type as typeof ALLOWED_TYPES[number])
     ? body.type
     : 'feedback'
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey)
+  // Map API types to DB schema: 'feedback' -> 'general', 'request' -> 'request'
+  const type = typeInput === 'feedback' ? 'general' : typeInput
+
   const { error: err } = await supabase
     .from('app_feedback')
     .insert({ text, type })
@@ -49,7 +75,7 @@ export async function POST (request: Request) {
   if (err) {
     console.error('Feedback insert error:', err)
     return NextResponse.json(
-      { error: 'Failed to save feedback' },
+      { error: process.env.NODE_ENV === 'production' ? 'Failed to save feedback' : err.message },
       { status: 500 }
     )
   }
@@ -60,8 +86,8 @@ export async function POST (request: Request) {
       await resend.emails.send({
         from: fromEmail,
         to: feedbackEmailTo,
-        subject: `[Stanford Root] New feedback: ${type}`,
-        text: `Type: ${type}\n\n${text}`
+        subject: `[Stanford Root] New feedback: ${typeInput}`,
+        text: `Type: ${typeInput}\n\n${text}`
       })
     } catch (emailErr) {
       console.error('Feedback email send error:', emailErr)
