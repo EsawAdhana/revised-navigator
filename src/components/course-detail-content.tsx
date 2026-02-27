@@ -585,10 +585,10 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                                 const uVal = opts.length > 1 ? (course.units || '') : (useCourseForDisplay ? (course.units ?? '') : (section.units ?? course.units ?? ''));
                                                                 const isVariable = opts.length > 1;
                                                                 return (
-                                                            <div className={cn("flex items-center gap-2 text-[17px] font-bold text-foreground/80 bg-secondary/40 rounded-lg border border-border/40 transition-colors group-hover/section:bg-secondary/60", isVariable ? "pl-0 pr-3 py-2 min-h-10" : "px-3 h-10")}>
+                                                            <div className={cn("flex items-center text-[17px] font-bold text-foreground/80 bg-secondary/40 rounded-lg border border-border/40 transition-colors group-hover/section:bg-secondary/60", isVariable ? "px-2 py-2 min-h-10" : "px-3 h-10")}>
                                                                 {opts.length > 1 ? (
-                                                                            <div className="flex items-center gap-2">
-                                                                                <div className={cn("grid gap-1.5", opts.length <= 3 ? "grid-cols-3" : opts.length === 4 ? "grid-cols-4" : "grid-cols-5")}>
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <div className={cn("grid gap-1.5", opts.length === 2 ? "grid-cols-2" : opts.length === 3 ? "grid-cols-3" : opts.length === 4 ? "grid-cols-4" : "grid-cols-5")}>
                                                                                     {opts.map((u) => (
                                                                                         <button
                                                                                             key={u}
