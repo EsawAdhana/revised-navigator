@@ -459,7 +459,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
                         {terms.length > 0 ? (
                             <Tabs value={activeTerm} onValueChange={setActiveTerm} className="w-full">
-                                <div className="flex items-center gap-2 pl-5 mb-4 border-b border-border/40">
+                                <div className="flex items-center gap-2 md:gap-1 pl-5 mb-4 border-b border-border/40">
                                     {terms.length > TERMS_VISIBLE && (
                                         <button
                                             type="button"
@@ -471,13 +471,13 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                             <ChevronLeft size={20} strokeWidth={2.5} />
                                         </button>
                                     )}
-                                    <TabsList className="flex-1 flex min-w-0 overflow-x-auto overflow-y-hidden scrollbar-hide bg-transparent border-0 rounded-none h-auto p-0 gap-6">
+                                    <TabsList className="flex-1 flex min-w-0 overflow-x-auto overflow-y-hidden scrollbar-hide md:overflow-hidden bg-transparent border-0 rounded-none h-auto p-0 gap-6 md:gap-1">
                                         {visibleTerms.map(term => (
                                             <TabsTrigger
                                                 key={term}
                                                 value={term}
                                                 title={term}
-                                                className="flex-shrink-0 min-w-[7rem] whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2.5 text-[15px] font-bold text-muted-foreground data-[state=active]:text-foreground transition-all"
+                                                className="flex-shrink-0 min-w-[7rem] whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2.5 md:flex-1 md:min-w-0 md:truncate md:px-1 md:py-2 text-[15px] font-bold text-muted-foreground data-[state=active]:text-foreground transition-all"
                                             >
                                                 {term}
                                             </TabsTrigger>
