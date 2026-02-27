@@ -44,6 +44,12 @@ export interface Course {
   selectedUnits?: number; // When course/section has variable units (e.g. 3-4), the user's choice
   optionalMeetings?: string[]; // Array of meeting keys that are marked as optional/not in class
   color?: string; // User-selected color theme for the course (e.g. 'sky', 'emerald')
+  /** Precomputed from evaluations (hrs/wk median) */
+  hours?: number;
+  /** Precomputed from evaluations (1-5 rating) */
+  quality?: number;
+  /** Precomputed: hours / units */
+  difficulty?: number;
 }
 
 // --- Course Evaluation Types ---
