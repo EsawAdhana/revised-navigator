@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 export function SiteHeader() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const { user, signOut } = useAuthStore();
+    const { user, isGuest, signInWithGoogle, signOut } = useAuthStore();
 
     const scheduleHref = useMemo(() => {
         const params = new URLSearchParams(searchParams.toString());
@@ -34,28 +34,30 @@ export function SiteHeader() {
     }, [pathname, searchParams]);
 
     return (
-        <header className="flex-none h-16 md:h-16 h-auto md:py-0 py-2 border-b border-border/50 flex items-center gap-2 md:gap-4 bg-background/90 backdrop-blur-xl sticky top-0 z-30 transition-all duration-300 justify-between">
+        <header className="flex-none h-14 sm:h-16 md:h-16 border-b border-border/50 flex items-center gap-2 md:gap-4 bg-background/90 backdrop-blur-xl sticky top-0 z-30 transition-all duration-300 justify-between px-2 sm:px-0">
             {/* Left: Logo + Filters (sheet) */}
-            <div className="flex items-center gap-2 md:gap-4 shrink-0 md:w-[270px] pl-4 md:pl-0 md:justify-center">
-                <Sheet>
-                    <SheetTrigger asChild>
-                        <Button variant="ghost" size="icon" className="md:hidden -ml-2" aria-label="Open menu">
-                            <Menu className="h-5 w-5" />
-                        </Button>
-                    </SheetTrigger>
-                    <SheetContent side="left" className="p-0 w-[300px] sm:max-w-[320px]">
-                        <SheetHeader>
-                            <SheetTitle className="sr-only">Filters</SheetTitle>
-                            <SheetDescription className="sr-only">
-                                Filter courses by department, term, and other criteria.
-                            </SheetDescription>
-                        </SheetHeader>
-                        <FilterSidebar />
-                    </SheetContent>
-                </Sheet>
+            <div className="flex items-center gap-2 md:gap-4 shrink-0 md:w-[270px] pl-2 sm:pl-4 md:pl-0 md:justify-center">
+                {!pathname.startsWith('/courses/') && (
+                    <Sheet>
+                        <SheetTrigger asChild>
+                            <Button variant="ghost" size="icon" className="md:hidden -ml-2" aria-label="Open menu">
+                                <Menu className="h-5 w-5" />
+                            </Button>
+                        </SheetTrigger>
+                        <SheetContent side="left" className="p-0 w-[300px] sm:max-w-[320px]">
+                            <SheetHeader>
+                                <SheetTitle className="sr-only">Filters</SheetTitle>
+                                <SheetDescription className="sr-only">
+                                    Filter courses by department, term, and other criteria.
+                                </SheetDescription>
+                            </SheetHeader>
+                            <FilterSidebar />
+                        </SheetContent>
+                    </Sheet>
+                )}
 
-                <Link href={homeHref} className="flex items-center gap-2.5 md:min-w-[120px] group py-1 px-2 -ml-2 rounded-lg hover:bg-secondary/50 transition-colors">
-                    <Logo className="h-10 w-10" />
+                <Link href={homeHref} className="flex items-center gap-2.5 md:min-w-[120px] group py-1 px-1 sm:px-2 -ml-1 sm:-ml-2 rounded-lg hover:bg-secondary/50 transition-colors">
+                    <Logo className="h-9 w-9 sm:h-10 sm:w-10 shrink-0" />
                     <h1 className="text-2xl tracking-tight font-[family-name:var(--font-outfit)] font-bold text-primary select-none hidden sm:block transition-colors duration-300 group-hover:text-cardinal-red">
                         Stanford Root
                     </h1>
@@ -63,7 +65,7 @@ export function SiteHeader() {
             </div>
 
             {/* Center: Search */}
-            <div className="flex-1 flex flex-col justify-center md:justify-start px-2 md:px-0 min-w-0">
+            <div className="flex-1 flex flex-col justify-center md:justify-start px-1 sm:px-2 md:px-0 min-w-0">
                 {!pathname.startsWith('/courses/') && (
                     <div className="w-full">
                         <SearchBar />
@@ -72,7 +74,7 @@ export function SiteHeader() {
             </div>
 
             {/* Right: Actions */}
-            <div className="flex items-center justify-end gap-2 shrink-0 pr-4 md:pr-6">
+            <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0 pr-2 sm:pr-4 md:pr-6">
                 <Button
                     asChild
                     variant="ghost"
@@ -84,6 +86,29 @@ export function SiteHeader() {
                     </Link>
                 </Button>
 
+                {isGuest && !user && (
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <button className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
+                                Guest
+                            </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-48 p-1" align="end" sideOffset={8}>
+                            <button
+                                onClick={signInWithGoogle}
+                                className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-secondary/50 rounded-sm transition-colors"
+                            >
+                                Sign in with Stanford
+                            </button>
+                            <button
+                                onClick={signOut}
+                                className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground hover:bg-secondary/50 hover:text-foreground rounded-sm transition-colors"
+                            >
+                                Exit guest mode
+                            </button>
+                        </PopoverContent>
+                    </Popover>
+                )}
                 {user && (
                     <div className="flex items-center gap-1.5 ml-1">
                         <Popover>

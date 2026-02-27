@@ -91,26 +91,31 @@ function median(values: number[]): number | null {
 // --- Aggregation (all medians, never mean) ---
 
 export function aggregateMetrics(evals: CourseEvaluation[]) {
-  const byCat: Record<QuestionCategory, number[]> = {
-    quality: [], learning: [], organization: [], goals: [], hours: [],
-    attendance_in_person: [], attendance_online: [], unknown: []
-  }
-
-  for (const ev of evals) {
-    const questions = ev.questions || []
-    for (const q of questions) {
-      const cat = categorizeQuestion(q?.text ?? '')
-      const val = typeof q?.median === 'number' && !isNaN(q.median) ? q.median : null
-      if (val != null) byCat[cat].push(val)
+  try {
+    if (!Array.isArray(evals)) return {}
+    const byCat: Record<QuestionCategory, number[]> = {
+      quality: [], learning: [], organization: [], goals: [], hours: [],
+      attendance_in_person: [], attendance_online: [], unknown: []
     }
-  }
 
-  const result: Partial<Record<QuestionCategory, number>> = {}
-  for (const [cat, values] of Object.entries(byCat)) {
-    const m = median(values)
-    if (m != null) result[cat as QuestionCategory] = m
+    for (const ev of evals) {
+      const questions = ev?.questions || []
+      for (const q of questions) {
+        const cat = categorizeQuestion(q?.text ?? '')
+        const val = typeof q?.median === 'number' && !isNaN(q.median) ? q.median : null
+        if (val != null) byCat[cat].push(val)
+      }
+    }
+
+    const result: Partial<Record<QuestionCategory, number>> = {}
+    for (const [cat, values] of Object.entries(byCat)) {
+      const m = median(values)
+      if (m != null) result[cat as QuestionCategory] = m
+    }
+    return result
+  } catch {
+    return {}
   }
-  return result
 }
 
 /** Median of quality, learning, organization (the three chart ratings excluding hours). Used for sorting. */

@@ -293,7 +293,7 @@ export function useFilteredCourses() {
 
         // All filtering is done; this is the set we will sort (sort is the last step)
         return result;
-    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, cartItems, excludedWords, evaluations]);
+    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, cartItems, excludedWords]);
 
     useEffect(() => {
         if ((sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit') && filteredResult.length > 0) {
@@ -312,6 +312,7 @@ export function useFilteredCourses() {
     // Derive displayCourses synchronously via useMemo — no useEffect delay. Filter/sort changes
     // update in the same render cycle, eliminating the "split second" lag.
     const { displayCourses, isInternalLoading } = useMemo(() => {
+        try {
         if (filteredResult.length === 0) {
             return { displayCourses: [] as Course[], isInternalLoading: false };
         }
@@ -321,38 +322,44 @@ export function useFilteredCourses() {
         const needsEvalSort = sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit' || sortBy === 'quality_per_unit' || sortBy === 'efficiency';
 
         const getSortValueCached = (c: Course): number | null => {
-            const cacheKey = `${c.id}-${sortKey}`;
-            if (sortValueCache.has(cacheKey)) return sortValueCache.get(cacheKey)!;
+            try {
+                const cacheKey = `${c?.id ?? ''}-${sortKey}`;
+                if (sortValueCache.has(cacheKey)) return sortValueCache.get(cacheKey)!;
 
-            let val: number | null = null;
-            if (sortKey === 'units') {
-                val = getCourseUnitsNumeric(c);
-            } else {
-                const units = getCourseUnitsNumeric(c);
-                const evals = getEvaluations(c.id);
-                const metrics = evals.length > 0 ? aggregateMetrics(evals) : null;
-                const quality = metrics?.quality;
-                if (sortKey === 'hours') val = evals.length > 0 && metrics?.hours != null ? metrics.hours : null;
-                else if (sortKey === 'hours_per_unit') val = (evals.length > 0 && metrics?.hours != null && units > 0) ? metrics.hours / units : null;
-                else if (sortKey === 'quality') val = evals.length > 0 ? getOverallEvalScore(metrics) : null;
-                else if (sortKey === 'quality_per_unit') val = (quality != null && units > 0) ? quality / units : null;
-                else if (sortKey === 'efficiency') {
-                    const scheduled = getWeeklyContactHours(c);
-                    val = (quality != null && scheduled > 0) ? quality / scheduled : null;
+                let val: number | null = null;
+                if (sortKey === 'units') {
+                    val = getCourseUnitsNumeric(c);
+                } else {
+                    const units = getCourseUnitsNumeric(c);
+                    const evals = getEvaluations(c?.id ?? '');
+                    const metrics = evals?.length > 0 ? aggregateMetrics(evals) : null;
+                    const quality = metrics?.quality;
+                    if (sortKey === 'hours') val = evals?.length > 0 && metrics?.hours != null ? metrics.hours : null;
+                    else if (sortKey === 'hours_per_unit') val = (evals?.length > 0 && metrics?.hours != null && units > 0) ? metrics.hours / units : null;
+                    else if (sortKey === 'quality') val = evals?.length > 0 ? getOverallEvalScore(metrics) : null;
+                    else if (sortKey === 'quality_per_unit') val = (quality != null && units > 0) ? quality / units : null;
+                    else if (sortKey === 'efficiency') {
+                        const scheduled = getWeeklyContactHours(c);
+                        val = (quality != null && scheduled > 0) ? quality / scheduled : null;
+                    }
                 }
-            }
 
-            sortValueCache.set(cacheKey, val);
-            return val;
+                sortValueCache.set(cacheKey, val);
+                return val;
+            } catch {
+                return null;
+            }
         };
 
         const sortVal = (v: number | null): number | null => (v === 0 ? null : v);
 
         const performSort = (list: Course[]) => {
             return [...list].sort((a, b) => {
+                const safeSubject = (x: Course) => (x?.subject ?? '').toString();
+                const safeCode = (x: Course) => (x?.code ?? '').toString();
                 if (sortKey === 'az' || !sortKey) {
-                    const subjectCompare = a.subject.localeCompare(b.subject);
-                    const codeCompare = compareCourseCodes(a.code, b.code);
+                    const subjectCompare = safeSubject(a).localeCompare(safeSubject(b));
+                    const codeCompare = compareCourseCodes(safeCode(a), safeCode(b));
                     const cmp = subjectCompare !== 0 ? subjectCompare : codeCompare;
                     return dir === 'desc' ? -cmp : cmp;
                 }
@@ -360,68 +367,80 @@ export function useFilteredCourses() {
                 const vb = sortVal(getSortValueCached(b));
                 const mult = dir === 'desc' ? -1 : 1;
                 if (va == null && vb == null) {
-                    const subjectCompare = a.subject.localeCompare(b.subject);
+                    const subjectCompare = safeSubject(a).localeCompare(safeSubject(b));
                     if (subjectCompare !== 0) return subjectCompare;
-                    return compareCourseCodes(a.code, b.code);
+                    return compareCourseCodes(safeCode(a), safeCode(b));
                 }
                 if (va == null) return 1;
                 if (vb == null) return -1;
                 if (va !== vb) return mult * (va > vb ? 1 : -1);
-                const subjectCompare = a.subject.localeCompare(b.subject);
+                const subjectCompare = safeSubject(a).localeCompare(safeSubject(b));
                 if (subjectCompare !== 0) return subjectCompare;
-                return compareCourseCodes(a.code, b.code);
+                return compareCourseCodes(safeCode(a), safeCode(b));
             });
         };
 
         const baselineAz = (list: Course[]) =>
             [...list].sort((a, b) => {
-                const subjectCompare = a.subject.localeCompare(b.subject);
-                return subjectCompare !== 0 ? subjectCompare : compareCourseCodes(a.code, b.code);
+                const sa = (a?.subject ?? '').toString();
+                const sb = (b?.subject ?? '').toString();
+                const subjectCompare = sa.localeCompare(sb);
+                return subjectCompare !== 0 ? subjectCompare : compareCourseCodes((a?.code ?? '').toString(), (b?.code ?? '').toString());
             });
 
-        const hasEvaluationsForSort = filteredResult.slice(0, 500).some(c => c.id in evaluations);
+        const evalsObj = evaluations && typeof evaluations === 'object' ? evaluations : {};
+        const hasEvaluationsForSort = filteredResult.slice(0, 500).some(c => c?.id != null && c.id in evalsObj);
         const evalsReady = !needsEvalSort || (hasEvaluationsForSort && !isBulkLoading);
 
         if (!evalsReady) {
             return { displayCourses: baselineAz(filteredResult), isInternalLoading: true };
         }
         return { displayCourses: performSort(filteredResult), isInternalLoading: false };
+        } catch (err) {
+            console.error('Sort error (falling back to A-Z):', err);
+            return { displayCourses: filteredResult, isInternalLoading: false };
+        }
     }, [filteredResult, sortBy, sortDir, getEvaluations, evaluations, sortValueCache, isBulkLoading]);
 
     /** Display string for the current sort criterion (e.g. "4.5/5.0" for quality). Null only for A-Z or Units; show "—" when sort is set but no value. */
     const getSortDisplayValue = useCallback((course: Course): string | null => {
-        const sortKey = sortBy === 'default' ? 'az' : sortBy;
-        if (sortKey === 'az' || !sortKey) return null;
-        if (sortKey === 'units') return null;
-        const evals = getEvaluations(course.id);
-        const metrics = evals.length > 0 ? aggregateMetrics(evals) : null;
-        const units = getCourseUnitsNumeric(course);
-        const empty = '—';
-        if (sortKey === 'quality') {
-            const score = metrics ? getOverallEvalScore(metrics) : null;
-            if (score == null || score === 0) return empty;
-            return `${score.toFixed(1)}/5.0`;
+        try {
+            const sortKey = sortBy === 'default' ? 'az' : sortBy;
+            if (sortKey === 'az' || !sortKey) return null;
+            if (sortKey === 'units') return null;
+            const evals = getEvaluations(course?.id ?? '');
+            const metrics = evals?.length > 0 ? aggregateMetrics(evals) : null;
+            const units = getCourseUnitsNumeric(course);
+            const empty = '—';
+            if (sortKey === 'quality') {
+                const score = metrics ? getOverallEvalScore(metrics) : null;
+                if (score == null || score === 0) return empty;
+                return `${score.toFixed(1)}/5.0`;
+            }
+            if (sortKey === 'hours') {
+                const hours = metrics?.hours;
+                if (hours == null || hours === 0) return empty;
+                return `${hours.toFixed(1)} hrs/wk`;
+            }
+            if (sortKey === 'hours_per_unit') {
+                const hours = metrics?.hours;
+                if (hours == null || units <= 0) return empty;
+                const val = hours / units;
+                if (val === 0 || !Number.isFinite(val)) return empty;
+                return `${val.toFixed(1)} hrs/unit`;
+            }
+            return null;
+        } catch {
+            return '—';
         }
-        if (sortKey === 'hours') {
-            const hours = metrics?.hours;
-            if (hours == null || hours === 0) return empty;
-            return `${hours.toFixed(1)} hrs/wk`;
-        }
-        if (sortKey === 'hours_per_unit') {
-            const hours = metrics?.hours;
-            if (hours == null || units <= 0) return empty;
-            const val = hours / units;
-            if (val === 0) return empty;
-            return `${val.toFixed(1)} hrs/unit`;
-        }
-        return null;
     }, [sortBy, getEvaluations, evaluations]);
 
     const isEnriching = useCourseStore(state => state.isEnriching);
     const needsEvalSort = sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit';
+    const evalsForCheck = evaluations && typeof evaluations === 'object' ? evaluations : {};
     const hasEvaluationsForSort = filteredResult
         .slice(0, 500)
-        .some(c => c.id in evaluations);
+        .some(c => c?.id != null && c.id in evalsForCheck);
     const isSortLoading = (needsEvalSort && filteredResult.length > 0 && (isBulkLoading || !hasEvaluationsForSort)) || isInternalLoading;
 
     const setSortBy = useCallback((value: string) => {

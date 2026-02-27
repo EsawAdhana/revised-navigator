@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
@@ -285,8 +285,25 @@ export function CalendarPreviewModal({
 
     const gridHeight = ((endMinutes - startMinutes) / 60) * HOUR_HEIGHT;
 
+    const scrollRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el || !isOpen) return;
+        const handleWheel = (e: WheelEvent) => {
+            const { scrollTop, scrollHeight, clientHeight } = el;
+            const atTop = scrollTop <= 0;
+            const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
+            if ((atTop && e.deltaY < 0) || (atBottom && e.deltaY > 0)) {
+                e.preventDefault();
+                window.scrollBy({ top: e.deltaY, behavior: 'auto' });
+            }
+        };
+        el.addEventListener('wheel', handleWheel, { passive: false });
+        return () => el.removeEventListener('wheel', handleWheel);
+    }, [isOpen]);
+
     return (
-        <Dialog open={isOpen} onOpenChange={open => { if (!open) onClose(); }}>
+        <Dialog open={isOpen} onOpenChange={open => { if (!open) onClose(); }} modal={false}>
             <DialogContent className="max-w-4xl w-full p-0 gap-0 overflow-hidden rounded-2xl [&>button:last-child]:hidden">
                 <DialogHeader className="px-6 pt-5 pb-3 border-b border-border/40">
                     <DialogTitle className="text-base font-semibold flex items-center gap-2">
@@ -339,8 +356,11 @@ export function CalendarPreviewModal({
                     </div>
                 )}
 
-                {/* Scrollable body */}
-                <div className="overflow-y-auto max-h-[60vh]">
+                {/* Scrollable body — at scroll boundary, wheel scrolls the page */}
+                <div
+                    ref={scrollRef}
+                    className="overflow-y-auto max-h-[60vh]"
+                >
                     <div className="overflow-x-auto px-4 pb-2 pt-3">
                         <div className="min-w-[560px]">
                             {/* Day header */}

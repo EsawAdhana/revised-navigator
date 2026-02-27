@@ -6,8 +6,9 @@ import { useCourseStore } from '@/lib/store';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
 import { CourseCard } from './course-card';
 import { Course } from '@/types/course';
-import { SearchX, Loader2, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { SearchX, Loader2, ArrowUp, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { ActiveFilterChips } from './active-filter-chips';
+import { cn } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -15,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 interface CourseListProps {
   onCourseClick: (course: Course) => void;
 }
@@ -33,6 +35,14 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
 function getDirectionLabel(sortBy: string, sortDir: string): string {
   if (sortBy === 'az') return sortDir === 'asc' ? 'A to Z' : 'Z to A'
   return sortDir === 'asc' ? 'Low to high' : 'High to low'
+}
+
+function getCompactSortLabel(sortBy: string, sortDir: string): string {
+  const sortLabel = SORT_OPTIONS.find(o => o.value === sortBy)?.label ?? 'Sort'
+  const dirLabel = sortBy === 'az'
+    ? (sortDir === 'asc' ? 'A to Z' : 'Z to A')
+    : (sortDir === 'asc' ? 'Low to high' : 'High to low')
+  return `${sortLabel}, ${dirLabel}`
 }
 
 const SCROLL_THRESHOLD = 200
@@ -107,37 +117,96 @@ export function CourseList({ onCourseClick }: CourseListProps) {
 
   return (
     <div className="flex-1 h-full w-full overflow-hidden flex flex-col relative">
-      {/* Results bar: one line when possible; chips wrap to second line only when necessary */}
-      <div className="shrink-0 overflow-hidden border-b border-border/30 bg-background z-10 flex items-center gap-1 flex-nowrap py-2 px-4 text-xs font-medium text-muted-foreground transition-all duration-300 leading-normal min-w-0">
-        <span className="shrink-0 text-muted-foreground leading-7">Sort by</span>
-        <Select value={displaySortValue} onValueChange={handleSortChange} disabled={isLoading}>
-          <SelectTrigger className="h-7 min-h-7 w-[182px] shrink-0 text-xs border-border/60 bg-white dark:bg-background text-primary font-medium px-2 py-1.5" aria-label="Sort by">
-            <SelectValue placeholder="Sort by" />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sortDir} onValueChange={(v) => setSortDir(v === 'desc' ? 'desc' : 'asc')} disabled={isLoading}>
-          <SelectTrigger className="h-7 min-h-7 w-fit min-w-[5rem] shrink-0 text-xs border-border/60 bg-white dark:bg-background text-primary font-medium px-2 py-1.5" aria-label="Sort direction">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="asc" className="text-xs">{getDirectionLabel(sortBy, 'asc')}</SelectItem>
-            <SelectItem value="desc" className="text-xs">{getDirectionLabel(sortBy, 'desc')}</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="min-w-0 flex-1 flex flex-wrap gap-1.5 items-center">
-          <ActiveFilterChips />
-        </div>
-        <div className="shrink-0 flex items-center gap-1.5 whitespace-nowrap min-w-0 justify-end">
-          <span className="text-xs tabular-nums font-semibold text-foreground/70 leading-7">
-            {courses.length.toLocaleString()} classes
-          </span>
+      {/* Results bar: mobile = vertical stack (row1: sort+count, row2: filters); desktop = horizontal row */}
+      <div className="shrink-0 overflow-hidden border-b border-border/30 bg-background z-10 py-2 px-2 sm:px-4 text-xs font-medium text-muted-foreground transition-all duration-300 leading-normal">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-nowrap sm:items-center sm:gap-1 min-w-0">
+          {/* Mobile row 1: Sort by + button + count (horizontal) */}
+          <div className="sm:hidden flex flex-row items-center justify-between gap-2 min-w-0 w-full">
+            <div className="flex flex-row items-center gap-2 shrink-0 min-w-0">
+              <span className="shrink-0 text-muted-foreground leading-7">Sort by:</span>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border/60 bg-white dark:bg-background text-primary font-medium text-left shrink-0"
+                  >
+                    <span className="font-medium truncate">{getCompactSortLabel(sortBy, sortDir)}</span>
+                    <ChevronDown size={14} className="opacity-60 shrink-0" />
+                  </button>
+                </SheetTrigger>
+              <SheetContent side="bottom" className="rounded-t-2xl h-auto max-h-[70vh] overflow-y-auto">
+                <SheetTitle className="sr-only">Sort options</SheetTitle>
+                <div className="flex flex-col gap-4 pt-2 pb-6">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground mb-2 block">Sort by</label>
+                    <Select value={displaySortValue} onValueChange={handleSortChange} disabled={isLoading}>
+                      <SelectTrigger className="h-11 w-full text-base" aria-label="Sort by">
+                        <SelectValue placeholder="Sort by" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SORT_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value} className="text-base">
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground mb-2 block">Direction</label>
+                    <Select value={sortDir} onValueChange={(v) => setSortDir(v === 'desc' ? 'desc' : 'asc')} disabled={isLoading}>
+                      <SelectTrigger className="h-11 w-full text-base" aria-label="Sort direction">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="asc" className="text-base">{getDirectionLabel(sortBy, 'asc')}</SelectItem>
+                        <SelectItem value="desc" className="text-base">{getDirectionLabel(sortBy, 'desc')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
+            </div>
+            <span className="shrink-0 text-xs tabular-nums font-semibold text-foreground/70 leading-7 whitespace-nowrap">
+              {courses.length.toLocaleString()} classes
+            </span>
+          </div>
+          {/* Desktop: horizontal row — sort + dropdowns */}
+          <div className="hidden sm:flex flex-row items-center gap-1 shrink-0">
+            <span className="shrink-0 text-muted-foreground leading-7">Sort by:</span>
+            <Select value={displaySortValue} onValueChange={handleSortChange} disabled={isLoading}>
+              <SelectTrigger className="h-7 min-h-7 w-[182px] shrink-0 text-xs border-border/60 bg-white dark:bg-background text-primary font-medium px-2 py-1.5" aria-label="Sort by">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={sortDir} onValueChange={(v) => setSortDir(v === 'desc' ? 'desc' : 'asc')} disabled={isLoading}>
+              <SelectTrigger className="h-7 min-h-7 w-fit min-w-[5rem] shrink-0 text-xs border-border/60 bg-white dark:bg-background text-primary font-medium px-2 py-1.5" aria-label="Sort direction">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc" className="text-xs">{getDirectionLabel(sortBy, 'asc')}</SelectItem>
+                <SelectItem value="desc" className="text-xs">{getDirectionLabel(sortBy, 'desc')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Filter chips: mobile = full-width row (horizontal wrap), desktop = inline with count */}
+          <div className="flex flex-row flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto sm:flex-1 sm:flex-nowrap sm:justify-between">
+            <div className="min-w-0 flex-1 flex flex-row flex-wrap gap-2 items-center overflow-hidden">
+              <ActiveFilterChips />
+            </div>
+            <span className="hidden sm:inline shrink-0 text-xs tabular-nums font-semibold text-foreground/70 leading-7 whitespace-nowrap">
+              {courses.length.toLocaleString()} classes
+            </span>
+          </div>
         </div>
       </div>
 
@@ -169,7 +238,7 @@ export function CourseList({ onCourseClick }: CourseListProps) {
             )}
             <VList
               ref={vListRef}
-              className="h-full w-full scrollbar-hide pb-4 px-4"
+              className="h-full w-full scrollbar-hide pb-4 px-2 sm:px-4"
               onScroll={(offset) => setScrollOffset(offset)}
             >
               {courses.map((course) => (

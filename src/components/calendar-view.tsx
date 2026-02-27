@@ -255,9 +255,9 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="flex flex-col min-h-0 relative">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 min-h-0 items-stretch">
-          <div className="flex flex-col min-h-0 gap-2 w-full min-w-0">
+      <div className="flex flex-col relative">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
+          <div className="flex flex-col gap-2 w-full min-w-0">
             <div className="rounded-xl border bg-card overflow-hidden flex flex-col shrink-0">
               <div className="grid grid-cols-[40px_1fr_40px] items-center border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 px-2 py-2">
                 <Button variant="ghost" size="icon" onClick={onPrevTerm} aria-label="Previous term">
@@ -394,7 +394,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
             </div>
           </div>
 
-          <div className="flex flex-col min-h-0 gap-3 w-full overflow-hidden">
+          <div className="flex flex-col gap-3 w-full">
 
             {/* Local Search Input for Calendar */}
             <div className="relative shrink-0">
@@ -499,7 +499,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                 </p>
               </div>
             ) : (
-              <div className="space-y-2 overflow-y-auto min-h-0">
+              <div className="space-y-2">
                 {currentTermCourses.map(course => {
                   const meetings = parseMeetingTimes(course, currentTerm);
                   const lines = meetings.map(formatMeetingLine).filter(Boolean) as string[];

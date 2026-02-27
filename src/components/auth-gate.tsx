@@ -43,7 +43,7 @@ function FeatureCard({ icon: Icon, title, description }: { icon: any, title: str
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, isLoading, initialize, signInWithGoogle } = useAuthStore()
+  const { user, isLoading, isGuest, initialize, signInWithGoogle, continueAsGuest } = useAuthStore()
   // We remove the timedOut state and logic to allow immediate rendering of the landing page
   // for better SEO and perceived performance.
 
@@ -61,7 +61,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   // HOWEVER, for a smoother experience, we can keep a small loading state IF we want,
   // but for Google Verification, showing the content immediately is safer.
 
-  if (user) {
+  if (user || isGuest) {
     return <>{children}</>
   }
 
@@ -130,20 +130,29 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             discovery and scheduling.
           </p>
 
-          <div className="flex flex-col items-center gap-4 w-full max-w-xs">
+          <div className="flex flex-col items-center gap-3 w-full max-w-xs">
             {isLoading ? (
               <button disabled className="w-full flex items-center justify-center gap-3 rounded-xl bg-muted text-muted-foreground px-8 py-3.5 sm:py-4 font-semibold text-[15px]">
                 <Loader2 className="h-5 w-5 animate-spin" />
                 <span>Checking session...</span>
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={signInWithGoogle}
-                className="w-full relative group flex items-center justify-center gap-3 rounded-xl bg-foreground text-background px-8 py-3.5 sm:py-4 font-semibold text-[15px] shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98]"
-              >
-                <span>Log in with Stanford</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={signInWithGoogle}
+                  className="w-full relative group flex items-center justify-center gap-3 rounded-xl bg-foreground text-background px-8 py-3.5 sm:py-4 font-semibold text-[15px] shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98]"
+                >
+                  <span>Log in with Stanford</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={continueAsGuest}
+                  className="w-full flex items-center justify-center gap-3 rounded-xl border border-border/60 bg-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/50 px-8 py-3.5 sm:py-4 font-medium text-[15px] transition-all duration-300 hover:border-border active:scale-[0.98]"
+                >
+                  <span>Continue as Guest</span>
+                </button>
+              </>
             )}
           </div>
         </div>
