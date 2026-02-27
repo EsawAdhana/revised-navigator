@@ -1,22 +1,11 @@
-import { useMemo, useEffect, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
-import { useQueryState, useQueryStates, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
-import { parseMeetingTimes, timeToMinutes, isMeetingOptional, getWeeklyContactHours } from '@/lib/schedule-utils';
-import { getSchoolFromSubject, getCourseUnitsNumeric, compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary, formatLevel, parseUnitsOptions } from '@/lib/utils';
-// Removing isWimCourse import as WIM is now handled as a standard GER
-import { useEvaluationStore } from '@/lib/evaluation-store';
-import { aggregateMetrics, getOverallEvalScore } from '@/components/course-evaluations';
+import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
+import { parseMeetingTimes, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils';
+import { getSchoolFromSubject, compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary, formatLevel, parseUnitsOptions } from '@/lib/utils';
 import type { Course } from '@/types/course';
 import { searchCourses } from '@/lib/search-utils';
-
-const DEFAULT_SORT_DIR: Record<string, 'asc' | 'desc'> = {
-    quality: 'desc',
-    az: 'asc',
-    units: 'asc',
-    hours: 'asc',
-    hours_per_unit: 'asc',
-};
 
 export function useFilteredCourses() {
     const { courses, isLoading } = useCourseStore();
@@ -35,16 +24,7 @@ export function useFilteredCourses() {
     const [timeMin] = useQueryState('timeMin', parseAsInteger.withDefault(420));
     const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320));
     const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
-    // WIM is now handled as a standard GER, so we no longer need a separate wimOnly query state.
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
-    const [{ sortBy, sortDir }, setSortState] = useQueryStates({
-        sortBy: parseAsString.withDefault('az'),
-        sortDir: parseAsString.withDefault('asc'),
-    });
-    const getEvaluations = useEvaluationStore(state => state.getEvaluations);
-    const fetchBulkEvaluations = useEvaluationStore(state => state.fetchBulkEvaluations);
-    const evaluations = useEvaluationStore(state => state.evaluations);
-    const isBulkLoading = useEvaluationStore(state => state.isBulkLoading);
 
     const filteredResult = useMemo(() => {
         // O(1) Set lookups for filter membership — faster than array .includes() per course
@@ -269,7 +249,6 @@ export function useFilteredCourses() {
             });
         }
 
-
         // Filter by Query
         if (query) {
             const beforeSearch = result;
@@ -295,160 +274,61 @@ export function useFilteredCourses() {
         return result;
     }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, cartItems, excludedWords]);
 
-    useEffect(() => {
-        if ((sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit') && filteredResult.length > 0) {
-            fetchBulkEvaluations(filteredResult.map(c => c.id).slice(0, 500));
+    const displayCourses = useMemo(() => {
+        if (filteredResult.length === 0) return [] as Course[];
+        return [...filteredResult].sort((a, b) => {
+            const safeSubject = (x: Course) => (x?.subject ?? '').toString();
+            const safeCode = (x: Course) => (x?.code ?? '').toString();
+            const subjectCompare = safeSubject(a).localeCompare(safeSubject(b));
+            const codeCompare = compareCourseCodes(safeCode(a), safeCode(b));
+            return subjectCompare !== 0 ? subjectCompare : codeCompare;
+        });
+    }, [filteredResult]);
+
+    // Precompute difficulty/rating per course (with cross-list lookup) — O(n) total, not O(n²)
+    const metricsByCourseId = useMemo(() => {
+        const map = new Map<string, { difficulty?: number; quality?: number }>();
+        const primaryMap = getCrossListPrimaryMap(courses);
+        const coursesById = new Map(courses.map(c => [c.id, c]));
+
+        // Build canonical -> courseIds in group (one pass)
+        const canonicalToIds = new Map<string, string[]>();
+        for (const c of courses) {
+            const canonical = resolveToCanonicalPrimary(normalizeCourseId(c.id), primaryMap);
+            if (!canonicalToIds.has(canonical)) canonicalToIds.set(canonical, []);
+            canonicalToIds.get(canonical)!.push(c.id);
         }
-    }, [sortBy, filteredResult, fetchBulkEvaluations]);
 
-    // Cache for expensive sort values (quality, hours, etc.) to avoid O(N log N) recalculations
-    const sortValueCache = useMemo(() => new Map<string, number | null>(), []);
-
-    // Clear cache when evaluations change significantly (e.g. bulk load finished)
-    useEffect(() => {
-        sortValueCache.clear();
-    }, [evaluations, sortValueCache]);
-
-    // Derive displayCourses synchronously via useMemo — no useEffect delay. Filter/sort changes
-    // update in the same render cycle, eliminating the "split second" lag.
-    const { displayCourses, isInternalLoading } = useMemo(() => {
-        try {
-        if (filteredResult.length === 0) {
-            return { displayCourses: [] as Course[], isInternalLoading: false };
-        }
-
-        const sortKey = sortBy === 'default' ? 'az' : sortBy;
-        const dir = sortDir === 'desc' ? 'desc' : 'asc';
-        const needsEvalSort = sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit' || sortBy === 'quality_per_unit' || sortBy === 'efficiency';
-
-        const getSortValueCached = (c: Course): number | null => {
-            try {
-                const cacheKey = `${c?.id ?? ''}-${sortKey}`;
-                if (sortValueCache.has(cacheKey)) return sortValueCache.get(cacheKey)!;
-
-                let val: number | null = null;
-                if (sortKey === 'units') {
-                    val = getCourseUnitsNumeric(c);
-                } else {
-                    const units = getCourseUnitsNumeric(c);
-                    const evals = getEvaluations(c?.id ?? '');
-                    const metrics = evals?.length > 0 ? aggregateMetrics(evals) : null;
-                    const quality = metrics?.quality;
-                    if (sortKey === 'hours') val = evals?.length > 0 && metrics?.hours != null ? metrics.hours : null;
-                    else if (sortKey === 'hours_per_unit') val = (evals?.length > 0 && metrics?.hours != null && units > 0) ? metrics.hours / units : null;
-                    else if (sortKey === 'quality') val = evals?.length > 0 ? getOverallEvalScore(metrics) : null;
-                    else if (sortKey === 'quality_per_unit') val = (quality != null && units > 0) ? quality / units : null;
-                    else if (sortKey === 'efficiency') {
-                        const scheduled = getWeeklyContactHours(c);
-                        val = (quality != null && scheduled > 0) ? quality / scheduled : null;
-                    }
-                }
-
-                sortValueCache.set(cacheKey, val);
-                return val;
-            } catch {
-                return null;
+        // For each course, get best metrics from its group (O(1) group lookup)
+        for (const course of courses) {
+            const canonical = resolveToCanonicalPrimary(normalizeCourseId(course.id), primaryMap);
+            const groupIds = canonicalToIds.get(canonical) ?? [course.id];
+            let difficulty: number | undefined;
+            let quality: number | undefined;
+            for (const id of groupIds) {
+                const c = coursesById.get(id);
+                if (c?.difficulty != null) difficulty = c.difficulty;
+                if (c?.quality != null) quality = c.quality;
             }
-        };
-
-        const sortVal = (v: number | null): number | null => (v === 0 ? null : v);
-
-        const performSort = (list: Course[]) => {
-            return [...list].sort((a, b) => {
-                const safeSubject = (x: Course) => (x?.subject ?? '').toString();
-                const safeCode = (x: Course) => (x?.code ?? '').toString();
-                if (sortKey === 'az' || !sortKey) {
-                    const subjectCompare = safeSubject(a).localeCompare(safeSubject(b));
-                    const codeCompare = compareCourseCodes(safeCode(a), safeCode(b));
-                    const cmp = subjectCompare !== 0 ? subjectCompare : codeCompare;
-                    return dir === 'desc' ? -cmp : cmp;
-                }
-                const va = sortVal(getSortValueCached(a));
-                const vb = sortVal(getSortValueCached(b));
-                const mult = dir === 'desc' ? -1 : 1;
-                if (va == null && vb == null) {
-                    const subjectCompare = safeSubject(a).localeCompare(safeSubject(b));
-                    if (subjectCompare !== 0) return subjectCompare;
-                    return compareCourseCodes(safeCode(a), safeCode(b));
-                }
-                if (va == null) return 1;
-                if (vb == null) return -1;
-                if (va !== vb) return mult * (va > vb ? 1 : -1);
-                const subjectCompare = safeSubject(a).localeCompare(safeSubject(b));
-                if (subjectCompare !== 0) return subjectCompare;
-                return compareCourseCodes(safeCode(a), safeCode(b));
-            });
-        };
-
-        const baselineAz = (list: Course[]) =>
-            [...list].sort((a, b) => {
-                const sa = (a?.subject ?? '').toString();
-                const sb = (b?.subject ?? '').toString();
-                const subjectCompare = sa.localeCompare(sb);
-                return subjectCompare !== 0 ? subjectCompare : compareCourseCodes((a?.code ?? '').toString(), (b?.code ?? '').toString());
-            });
-
-        const evalsObj = evaluations && typeof evaluations === 'object' ? evaluations : {};
-        const hasEvaluationsForSort = filteredResult.slice(0, 500).some(c => c?.id != null && c.id in evalsObj);
-        const evalsReady = !needsEvalSort || (hasEvaluationsForSort && !isBulkLoading);
-
-        if (!evalsReady) {
-            return { displayCourses: baselineAz(filteredResult), isInternalLoading: true };
+            if (difficulty != null || quality != null) {
+                map.set(course.id, { ...(difficulty != null && { difficulty }), ...(quality != null && { quality }) });
+            }
         }
-        return { displayCourses: performSort(filteredResult), isInternalLoading: false };
-        } catch (err) {
-            console.error('Sort error (falling back to A-Z):', err);
-            return { displayCourses: filteredResult, isInternalLoading: false };
-        }
-    }, [filteredResult, sortBy, sortDir, getEvaluations, evaluations, sortValueCache, isBulkLoading]);
+        return map;
+    }, [courses]);
 
-    /** Display string for the current sort criterion (e.g. "4.5/5.0" for quality). Null only for A-Z or Units; show "—" when sort is set but no value. */
     const getSortDisplayValue = useCallback((course: Course): string | null => {
-        try {
-            const sortKey = sortBy === 'default' ? 'az' : sortBy;
-            if (sortKey === 'az' || !sortKey) return null;
-            if (sortKey === 'units') return null;
-            const evals = getEvaluations(course?.id ?? '');
-            const metrics = evals?.length > 0 ? aggregateMetrics(evals) : null;
-            const units = getCourseUnitsNumeric(course);
-            const empty = '—';
-            if (sortKey === 'quality') {
-                const score = metrics ? getOverallEvalScore(metrics) : null;
-                if (score == null || score === 0) return empty;
-                return `${score.toFixed(1)}/5.0`;
-            }
-            if (sortKey === 'hours') {
-                const hours = metrics?.hours;
-                if (hours == null || hours === 0) return empty;
-                return `${hours.toFixed(1)} hrs/wk`;
-            }
-            if (sortKey === 'hours_per_unit') {
-                const hours = metrics?.hours;
-                if (hours == null || units <= 0) return empty;
-                const val = hours / units;
-                if (val === 0 || !Number.isFinite(val)) return empty;
-                return `${val.toFixed(1)} hrs/unit`;
-            }
-            return null;
-        } catch {
-            return '—';
-        }
-    }, [sortBy, getEvaluations, evaluations]);
+        const m = metricsByCourseId.get(course.id);
+        if (m?.difficulty != null) return `${m.difficulty.toFixed(1)} hrs/unit`;
+        return null;
+    }, [metricsByCourseId]);
+
+    const getRatingForCourse = useCallback((course: Course): number | null => {
+        const m = metricsByCourseId.get(course.id);
+        return m?.quality ?? null;
+    }, [metricsByCourseId]);
 
     const isEnriching = useCourseStore(state => state.isEnriching);
-    const needsEvalSort = sortBy === 'quality' || sortBy === 'hours' || sortBy === 'hours_per_unit';
-    const evalsForCheck = evaluations && typeof evaluations === 'object' ? evaluations : {};
-    const hasEvaluationsForSort = filteredResult
-        .slice(0, 500)
-        .some(c => c?.id != null && c.id in evalsForCheck);
-    const isSortLoading = (needsEvalSort && filteredResult.length > 0 && (isBulkLoading || !hasEvaluationsForSort)) || isInternalLoading;
 
-    const setSortBy = useCallback((value: string) => {
-        setSortState({ sortBy: value, sortDir: (DEFAULT_SORT_DIR[value] ?? 'asc') as 'asc' | 'desc' });
-    }, [setSortState]);
-    const setSortDir = useCallback((value: 'asc' | 'desc') => {
-        setSortState({ sortDir: value });
-    }, [setSortState]);
-
-    return { courses: displayCourses, isLoading, isEnriching, isSortLoading, sortBy, setSortBy, sortDir, setSortDir, getSortDisplayValue };
+    return { courses: displayCourses, isLoading, isEnriching, getSortDisplayValue, getRatingForCourse };
 }

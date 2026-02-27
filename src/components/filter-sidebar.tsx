@@ -527,6 +527,7 @@ export function FilterSidebar() {
                         </TooltipProvider>
                     </div>
                 </div>
+
                 {/* Exclude Keywords */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pl-1 flex items-center gap-1.5">

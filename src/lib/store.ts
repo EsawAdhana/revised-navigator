@@ -79,7 +79,10 @@ function rowToCourse(row: any): Course {
     grading: row.grading || '',
     instructors: row.instructors || [],
     terms: row.terms || [],
-    sections: sections
+    sections: sections,
+    hours: row.hours != null ? Number(row.hours) : undefined,
+    quality: row.quality != null ? Number(row.quality) : undefined,
+    difficulty: row.difficulty != null ? Number(row.difficulty) : undefined,
   }
 }
 

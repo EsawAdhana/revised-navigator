@@ -17,8 +17,8 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 })
 
-const PAGE_SIZE = 500
-const CONCURRENCY = 3
+const PAGE_SIZE = 1000
+const CONCURRENCY = 6
 
 // In-memory cache (survives across requests in the same serverless instance)
 let cachedLight: any[] | null = null
@@ -37,7 +37,6 @@ async function fetchAllRows(columns: string) {
   const pages = Math.ceil(count / PAGE_SIZE)
   const rows: any[] = []
 
-  // Process pages in chunks to avoid overwhelming the DB (timeout fix)
   for (let i = 0; i < pages; i += CONCURRENCY) {
     const chunkPromises = []
     for (let j = 0; j < CONCURRENCY && (i + j) < pages; j++) {
@@ -47,7 +46,6 @@ async function fetchAllRows(columns: string) {
         supabase.from('courses').select(columns).range(from, from + PAGE_SIZE - 1)
       )
     }
-
     const chunkResults = await Promise.all(chunkPromises)
     for (const r of chunkResults) {
       if (r.error) throw r.error
@@ -94,7 +92,7 @@ export async function GET(request: Request) {
       }
 
       const rows = await fetchAllRows(
-        'course_id, subject, code, title, description, units, grading, instructors, terms, sections'
+        'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty'
       )
       const merged = mergeRows(rows)
       cachedFull = merged
@@ -113,7 +111,7 @@ export async function GET(request: Request) {
     }
 
     const rows = await fetchAllRows(
-      'course_id, subject, code, title, units, instructors, terms, grading'
+      'course_id, subject, code, title, units, instructors, terms, grading, hours, quality, difficulty'
     )
     const merged = mergeRows(rows)
     cachedLight = merged

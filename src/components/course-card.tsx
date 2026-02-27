@@ -4,15 +4,24 @@ import { getDepartmentUrl, unitsLabel, parseUnitsOptions, decodeHtmlEntities } f
 import { Calendar, Users } from 'lucide-react';
 import { InstructorList } from './instructor-list';
 
+function getRatingColor(rating: number): string {
+  if (rating >= 4.5) return 'text-emerald-600 dark:text-emerald-400';
+  if (rating >= 3.5) return 'text-amber-600 dark:text-amber-400';
+  if (rating >= 2.5) return 'text-orange-500 dark:text-orange-400';
+  return 'text-red-500 dark:text-red-400';
+}
+
 interface CourseCardProps {
   course: Course;
-  /** When sorted by Units, Course Rating, Hours/Wk, or Difficulty, show this value under the unit count (e.g. "4.5/5.0", "3"). */
+  /** Difficulty (e.g. "3.2 hrs/unit") to show under unit count when available */
   sortDisplayValue?: string | null;
+  /** Average course rating (1-5) from evaluations, with cross-list lookup */
+  rating?: number | null;
   style?: React.CSSProperties;
   onClick?: () => void;
 }
 
-export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick }: CourseCardProps) => {
+export const CourseCard = React.memo(({ course, sortDisplayValue, rating, style, onClick }: CourseCardProps) => {
   return (
     <div style={style} className="w-full min-w-0 py-1.5">
       <div
@@ -38,9 +47,16 @@ export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick
                 );
               })()}
             </div>
-            {sortDisplayValue ? (
-              <div className="text-[11px] font-medium mt-0.5">
-                {sortDisplayValue}
+            {(sortDisplayValue || rating != null) ? (
+              <div className="flex flex-col items-end gap-0.5 mt-0.5">
+                {sortDisplayValue ? (
+                  <div className="text-[13px] font-medium">{sortDisplayValue}</div>
+                ) : null}
+                {rating != null ? (
+                  <div className={`text-[13px] font-semibold ${getRatingColor(rating)}`}>
+                    {rating.toFixed(1)}/5.0
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
