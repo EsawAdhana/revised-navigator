@@ -14,9 +14,9 @@ interface CourseCardProps {
 
 export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick }: CourseCardProps) => {
   return (
-    <div style={style} className="w-full py-1.5">
+    <div style={style} className="w-full min-w-0 py-1.5">
       <div
-        className="group relative w-full rounded-xl bg-card text-card-foreground border border-border/40 hover:border-primary/25 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(140,21,21,0.06)] transition-all duration-300 cursor-pointer pl-4 pr-4 py-4 hover:-translate-y-[1px]"
+        className="group relative w-full min-w-0 rounded-xl bg-card text-card-foreground border border-border/40 hover:border-primary/25 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(140,21,21,0.06)] transition-all duration-300 cursor-pointer px-3 py-4 sm:px-4 hover:-translate-y-[1px] overflow-hidden"
         onClick={onClick}
       >
         {/* Top row: class code (left) + unit count (right); under unit count, show sort value when applicable */}
@@ -51,14 +51,14 @@ export const CourseCard = React.memo(({ course, sortDisplayValue, style, onClick
           {decodeHtmlEntities(course.title)}
         </h3>
 
-        {/* Bottom row: instructor + term — smaller than title/code */}
-        <div className="flex items-center justify-between gap-3 text-foreground pt-2.5 border-t border-border/30">
-          <div className="flex-1 min-w-0">
+        {/* Bottom row: instructor + term — smaller than title/code; truncate to prevent overlap on mobile */}
+        <div className="flex items-center justify-between gap-2 sm:gap-3 text-foreground pt-2.5 border-t border-border/30 min-w-0">
+          <div className="flex-1 min-w-0 overflow-hidden">
             <InstructorList instructors={course.instructors} showIcon={false} size="sm" />
           </div>
           {(course.terms && course.terms.length > 0) && (
-            <div className="flex items-center gap-1.5 font-medium shrink-0 max-w-[50%]">
-              <div className="text-right text-[13px] leading-none">
+            <div className="flex items-center justify-end gap-1.5 font-medium shrink-0 min-w-0 max-w-[55%] sm:max-w-[60%]">
+              <div className="text-right text-[13px] leading-tight whitespace-normal">
                 {course.terms.map(t => t.split(' ')[0]).join(', ')}
               </div>
             </div>

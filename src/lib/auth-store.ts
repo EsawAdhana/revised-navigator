@@ -2,12 +2,16 @@ import { create } from 'zustand'
 import { supabase } from './supabase'
 import type { User, Session } from '@supabase/supabase-js'
 
+const GUEST_KEY = 'stanford-root-guest'
+
 interface AuthState {
   user: User | null
   session: Session | null
   isLoading: boolean
+  isGuest: boolean
   initialize: () => () => void
   signInWithGoogle: () => Promise<void>
+  continueAsGuest: () => void
   signOut: () => Promise<void>
 }
 
@@ -15,6 +19,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   session: null,
   isLoading: true,
+  isGuest: false, // Always false initially to match server; set from sessionStorage in initialize() after mount
 
   initialize: () => {
     // Load existing session
@@ -28,10 +33,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         return
       }
 
-      set({ user, session, isLoading: false })
+      const isGuest = typeof window !== 'undefined' && sessionStorage.getItem(GUEST_KEY) === '1'
+      set({ user, session, isLoading: false, isGuest })
     }).catch((err) => {
       console.error('Failed to get session:', err)
-      set({ user: null, session: null, isLoading: false })
+      const isGuest = typeof window !== 'undefined' && sessionStorage.getItem(GUEST_KEY) === '1'
+      set({ user: null, session: null, isLoading: false, isGuest })
     })
 
     // Listen for auth state changes (sign in, sign out, token refresh)
@@ -44,10 +51,17 @@ export const useAuthStore = create<AuthState>((set) => ({
         return
       }
 
-      set({ user, session, isLoading: false })
+      set({ user, session, isLoading: false, isGuest: false })
     })
 
     return () => subscription.unsubscribe()
+  },
+
+  continueAsGuest: () => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(GUEST_KEY, '1')
+    }
+    set({ isGuest: true })
   },
 
   signInWithGoogle: async () => {
@@ -64,6 +78,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signOut: async () => {
     await supabase.auth.signOut()
-    set({ user: null, session: null })
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem(GUEST_KEY)
+    }
+    set({ user: null, session: null, isGuest: false })
   }
 }))

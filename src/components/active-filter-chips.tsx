@@ -98,11 +98,11 @@ export function ActiveFilterChips() {
   if (chips.length === 0) return null
 
   return (
-    <div className="flex flex-wrap gap-1.5 items-center min-w-0">
+    <div className="flex flex-wrap gap-2 items-center min-w-0">
       {chips.map(({ id, label, onRemove }) => (
         <span
           key={id}
-          className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-2 rounded-md bg-primary/5 border border-primary/30 text-xs font-medium text-primary"
+          className="inline-flex items-center gap-2 h-8 sm:h-7 pl-3 pr-2.5 sm:pl-2.5 sm:pr-2 rounded-md bg-primary/5 border border-primary/30 text-xs font-medium text-primary"
         >
           <span className="whitespace-nowrap">{label}</span>
           <button

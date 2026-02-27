@@ -449,7 +449,7 @@ END:VEVENT
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto p-4 md:p-6">
+      <main className="flex-1 overflow-auto px-4 md:px-6 pt-[max(1rem,env(safe-area-inset-top,1rem))] md:pt-[max(1.5rem,env(safe-area-inset-top,1.25rem))] pb-[max(4rem,env(safe-area-inset-bottom,1rem))] md:pb-[max(5rem,env(safe-area-inset-bottom,1.25rem))]">
         <div className="min-h-full w-full max-w-[95rem] mx-auto flex flex-col">
           <CalendarView
             currentTerm={currentTerm}

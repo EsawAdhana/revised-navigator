@@ -33,7 +33,7 @@ export function InstructorList({ instructors, limit = 5, showIcon = true, label,
       {showIcon && <User size={16} strokeWidth={2.5} className="text-muted-foreground shrink-0 mt-0.5" />}
       <div className="flex items-baseline gap-2 min-w-0 flex-1">
         {label && <span className="text-[13px] font-bold text-muted-foreground uppercase tracking-tight leading-none shrink-0">{label}</span>}
-        <div className={`${textSize} font-medium text-muted-foreground leading-tight break-words min-w-0`}>
+        <div className={`${textSize} font-medium text-muted-foreground leading-tight min-w-0 ${size === 'sm' ? 'truncate' : 'break-words'}`}>
           {displayed.join(', ')}
           {remaining > 0 && <span className="opacity-60 ml-1">+{remaining} more</span>}
         </div>
