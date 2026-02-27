@@ -6,7 +6,7 @@ import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { Section } from '@/types/course';
-import { cn, getSyllabusUrl, parseUnitsOptions, hasVariableUnits, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities } from '@/lib/utils';
+import { cn, getSyllabusUrl, parseUnitsOptions, hasVariableUnits, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities, getCrossListGroupIds } from '@/lib/utils';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSyllabusValidity } from '@/hooks/use-syllabus-validity';
@@ -101,14 +101,18 @@ function InstructorSummary({ instructorName, evals }: { instructorName: string; 
 
 export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const { addItem, removeItem, hasItem, getItem } = useCartStore();
-    const { fetchCourseEvaluations, getEvaluations, isLoadingCourse } = useEvaluationStore();
+    const { courses } = useCourseStore();
+    const { fetchBulkEvaluations, getMergedEvaluations, isLoadingCourse } = useEvaluationStore();
+    const evaluationsById = useEvaluationStore(state => state.evaluations);
+
+    const crossListIds = useMemo(() => getCrossListGroupIds(course.id, courses), [course.id, courses]);
 
     useEffect(() => {
-        fetchCourseEvaluations(course.id);
-    }, [course.id, fetchCourseEvaluations]);
+        if (crossListIds.length > 0) fetchBulkEvaluations(crossListIds);
+    }, [crossListIds, fetchBulkEvaluations]);
 
-    const evaluations = getEvaluations(course.id);
-    const isLoadingEvals = isLoadingCourse(course.id);
+    const evaluations = useMemo(() => getMergedEvaluations(crossListIds), [getMergedEvaluations, crossListIds, evaluationsById]);
+    const isLoadingEvals = crossListIds.some(id => isLoadingCourse(id));
     const metrics = useMemo(() => aggregateMetrics(evaluations), [evaluations]);
 
     const cartItem = getItem(course.id);
@@ -334,7 +338,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                         <TabsContent value="overview" className="focus-visible:outline-none focus-visible:ring-0 pl-3 md:pl-4">
                             <div className="space-y-6">
                                 <div className="space-y-3">
-                                    <CourseDescription description={course.description} contextSubject={course.subject} className="text-[18px] leading-relaxed" />
+                                    <CourseDescription description={course.description} contextSubject={course.subject} className="text-[15px] leading-relaxed" />
 
                                     {/* Syllabus */}
                                     <div className="pt-2 space-y-2 group/syllabus">
@@ -414,7 +418,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                         {/* Charts Tab Content */}
                         <TabsContent value="charts" className="focus-visible:outline-none focus-visible:ring-0 pl-3 md:pl-4">
                             <CourseEvaluations
-                                courseId={course.id}
+                                courseIds={crossListIds}
                                 subject={course.subject}
                                 code={course.code}
                                 forcedTab="overview"
@@ -424,7 +428,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                         {/* Comments Tab Content */}
                         <TabsContent value="comments" className="focus-visible:outline-none focus-visible:ring-0 pl-3 md:pl-4">
                             <CourseEvaluations
-                                courseId={course.id}
+                                courseIds={crossListIds}
                                 subject={course.subject}
                                 code={course.code}
                                 forcedTab="comments"
@@ -581,10 +585,10 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                                 const uVal = opts.length > 1 ? (course.units || '') : (useCourseForDisplay ? (course.units ?? '') : (section.units ?? course.units ?? ''));
                                                                 const isVariable = opts.length > 1;
                                                                 return (
-                                                            <div className={cn("flex items-center gap-2 text-[17px] font-bold text-foreground/80 bg-secondary/40 h-10 rounded-lg border border-border/40 transition-colors group-hover/section:bg-secondary/60", isVariable ? "pl-0 pr-3" : "px-3")}>
+                                                            <div className={cn("flex items-center gap-2 text-[17px] font-bold text-foreground/80 bg-secondary/40 rounded-lg border border-border/40 transition-colors group-hover/section:bg-secondary/60", isVariable ? "pl-0 pr-3 py-2 min-h-10" : "px-3 h-10")}>
                                                                 {opts.length > 1 ? (
                                                                             <div className="flex items-center gap-2">
-                                                                                <div className="flex items-center">
+                                                                                <div className={cn("grid gap-1.5", opts.length <= 3 ? "grid-cols-3" : opts.length === 4 ? "grid-cols-4" : "grid-cols-5")}>
                                                                                     {opts.map((u) => (
                                                                                         <button
                                                                                             key={u}

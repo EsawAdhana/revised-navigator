@@ -87,7 +87,7 @@ export function CourseDescription({ description, contextSubject, className }: Co
 
     return (
         <div className={className}>
-            <p className="text-muted-foreground text-[18px] leading-relaxed font-normal">
+            <p className="text-muted-foreground text-[15px] leading-relaxed font-normal">
                 {renderDescriptionWithLinks(decodedDescription)}
             </p>
         </div>

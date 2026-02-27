@@ -256,7 +256,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
   return (
     <TooltipProvider delayDuration={150}>
       <div className="flex flex-col min-h-0 relative">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 min-h-0 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 min-h-0 items-stretch">
           <div className="flex flex-col min-h-0 gap-2 w-full min-w-0">
             <div className="rounded-xl border bg-card overflow-hidden flex flex-col shrink-0">
               <div className="grid grid-cols-[40px_1fr_40px] items-center border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 px-2 py-2">
@@ -394,7 +394,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
             </div>
           </div>
 
-          <div className="flex flex-col min-h-0 gap-3 w-full max-h-[calc(100vh-10rem)] overflow-hidden">
+          <div className="flex flex-col min-h-0 gap-3 w-full overflow-hidden">
 
             {/* Local Search Input for Calendar */}
             <div className="relative shrink-0">

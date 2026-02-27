@@ -119,10 +119,14 @@ function ScheduleContent() {
   const isOverload = totalUnitsMax > 20
   const isIgnored = ignoredOverloads[currentTerm]
 
-  const { fetchCourseEvaluations, getEvaluations, loadingCourses, evaluations } = useEvaluationStore()
+  const { fetchBulkEvaluations, getEvaluations, loadingCourses, evaluations } = useEvaluationStore()
   useEffect(() => {
-    currentTermCourses.forEach(c => fetchCourseEvaluations(c.id))
-  }, [currentTermCourses, fetchCourseEvaluations])
+    const ids = currentTermCourses.map(c => c.id)
+    if (ids.length > 0) fetchBulkEvaluations(ids)
+  }, [currentTermCourses, fetchBulkEvaluations])
+
+  const EXPECTED_HOURS_CACHE_KEY = 'expected-hours-cache'
+  const EXPECTED_HOURS_TTL = 1000 * 60 * 30 // 30 min
 
   const { expectedHoursPerWeek, expectedHoursLoading } = useMemo(() => {
     let total = 0
@@ -137,11 +141,40 @@ function ScheduleContent() {
         withData++
       }
     }
-    return {
-      expectedHoursPerWeek: withData > 0 ? total : null,
-      expectedHoursLoading: loading
+    const computed = withData > 0 ? total : null
+
+    // Cache when we have a computed value
+    if (typeof window !== 'undefined' && currentTermCourses.length > 0) {
+      const cacheKey = `expected-hours-${currentTerm}-${currentTermCourses.map(c => c.id).sort().join(',')}`
+      if (computed != null) {
+        try {
+          const raw = sessionStorage.getItem(EXPECTED_HOURS_CACHE_KEY)
+          const data: Record<string, { total: number; ts: number }> = raw ? JSON.parse(raw) : {}
+          data[cacheKey] = { total: computed, ts: Date.now() }
+          sessionStorage.setItem(EXPECTED_HOURS_CACHE_KEY, JSON.stringify(data))
+        } catch { /* ignore */ }
+      }
     }
-  }, [currentTermCourses, loadingCourses, evaluations, getEvaluations])
+
+    // Use cached value when loading to avoid flash
+    let displayValue = computed
+    if (loading && computed == null && typeof window !== 'undefined') {
+      try {
+        const cacheKey = `expected-hours-${currentTerm}-${currentTermCourses.map(c => c.id).sort().join(',')}`
+        const raw = sessionStorage.getItem(EXPECTED_HOURS_CACHE_KEY)
+        const data: Record<string, { total: number; ts: number }> = raw ? JSON.parse(raw) : {}
+        const cached = data[cacheKey]
+        if (cached && Date.now() - cached.ts < EXPECTED_HOURS_TTL) {
+          displayValue = cached.total
+        }
+      } catch { /* ignore */ }
+    }
+
+    return {
+      expectedHoursPerWeek: displayValue ?? computed,
+      expectedHoursLoading: loading && displayValue == null
+    }
+  }, [currentTermCourses, loadingCourses, evaluations, getEvaluations, currentTerm])
 
   const handleExportICS = () => {
     const exportEvents = currentTermCourses.flatMap(course => {

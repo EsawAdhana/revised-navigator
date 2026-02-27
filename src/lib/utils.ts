@@ -49,7 +49,7 @@ export function getAlternateCourseCodesFromTitle(title: string): string[] {
   const match = trimmed.match(/\s*\(([^)]+)\)\s*$/)
   if (!match) return []
   const inner = match[1].trim()
-  const courseCodeList = /^[A-Za-z]{2,4}\s+\d{1,3}[A-Za-z]?(\s*,\s*[A-Za-z]{2,4}\s+\d{1,3}[A-Za-z]?)*$/
+  const courseCodeList = /^[A-Za-z]{2,10}\s+\d{1,3}[A-Za-z]?(\s*,\s*[A-Za-z]{2,10}\s+\d{1,3}[A-Za-z]?)*$/
   if (!courseCodeList.test(inner)) return []
   return inner.split(/\s*,\s*/).map(part => part.replace(/\s+/g, '').toUpperCase())
 }
@@ -106,6 +106,26 @@ export function resolveToCanonicalPrimary(norm: string, primaryMap: Map<string, 
     current = primaryMap.get(current)!
   }
   return current
+}
+
+/**
+ * Returns all course IDs in the same cross-list group as the given course.
+ * Used to aggregate evaluations from CS 24, LINGUIST 35, BILL 99, etc. when they're the same class.
+ * Falls back to [courseId] when courses is empty (e.g. still loading) or course not in catalog.
+ */
+export function getCrossListGroupIds(courseId: string, courses: { id: string; title: string }[]): string[] {
+  if (!courses.length) return [courseId]
+  const primaryMap = getCrossListPrimaryMap(courses)
+  const norm = normalizeCourseId(courseId)
+  const canonical = resolveToCanonicalPrimary(norm, primaryMap)
+  const group: string[] = []
+  for (const c of courses) {
+    const cNorm = normalizeCourseId(c.id)
+    if (resolveToCanonicalPrimary(cNorm, primaryMap) === canonical) {
+      group.push(c.id)
+    }
+  }
+  return group.length > 0 ? group : [courseId]
 }
 
 // Very lightweight heuristic mapping for Stanford subjects.
@@ -246,11 +266,11 @@ export function parseUnitsOptions(units: string | number): number[] {
   if (typeof units === 'number') {
     return isNaN(units) ? [] : [units]
   }
-  // Strip " units" or " unit" suffix and trim
+  // Strip " units" or " unit" suffix and trim; support en-dash (–) and minus (−) in ranges
   const s = String(units).toLowerCase().replace(/\s*units?\s*$/i, '').trim()
   if (!s) return []
 
-  const rangeMatch = s.match(/^(\d+)\s*-\s*(\d+)$/)
+  const rangeMatch = s.match(/^(\d+)\s*[-–−]\s*(\d+)$/)
   if (rangeMatch) {
     const low = parseInt(rangeMatch[1], 10)
     const high = parseInt(rangeMatch[2], 10)
@@ -272,9 +292,15 @@ export function hasVariableUnits(units: string | number): boolean {
   return opts.length > 1
 }
 
-/** Use "unit" only when value is exactly 1; otherwise "units". Never use "Units" without this check. */
+/** Use "unit" only when value is exactly 1; otherwise "units". Ranges (e.g. "1-3") and "1+" always use "units". */
 export function unitsLabel(value: number | string | null | undefined): 'unit' | 'units' {
+  if (value == null || value === '') return 'units'
+  const s = String(value).trim()
+  // Ranges like "1-3", "2–4" and "1+" always use "units"
+  if (/^\d+\s*[-–−]\s*\d+/.test(s) || /\d+\+$/.test(s)) return 'units'
   if (value === 1 || value === '1') return 'unit'
+  const n = typeof value === 'number' ? value : parseFloat(s)
+  if (!isNaN(n) && n === 1) return 'unit'
   return 'units'
 }
 
@@ -287,12 +313,18 @@ export function formatUnits(min: number, max?: number): string {
 }
 
 /** Single numeric units value for a course (for sorting/display). Uses max of range or first section/course units. */
-export function getCourseUnitsNumeric(course: { units?: string; sections?: { units: string | number }[] }): number {
-  const unitsStr = course.sections?.[0]?.units ?? course.units
-  if (unitsStr == null || unitsStr === '') return 0
-  const opts = parseUnitsOptions(unitsStr)
-  if (opts.length === 0) return 0
-  return Math.max(...opts)
+export function getCourseUnitsNumeric(course: { units?: string | number; sections?: { units?: string | number }[] }): number {
+  const sources: (string | number | null | undefined)[] = [
+    course.sections?.[0]?.units,
+    course.units,
+    ...(course.sections ?? []).slice(1, 5).map(s => s.units)
+  ]
+  for (const u of sources) {
+    if (u == null || u === '') continue
+    const opts = parseUnitsOptions(u)
+    if (opts.length > 0 && Math.max(...opts) > 0) return Math.max(...opts)
+  }
+  return 0
 }
 /** Normalize a level string (e.g. "UG", "Graduate", "UNDERGRAD") to "Undergrad" or "Graduate". */
 export function formatLevel(level: string): string {

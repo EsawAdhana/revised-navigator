@@ -462,22 +462,24 @@ export function CalendarPreviewModal({
                     <div className="px-6 py-3 border-t border-border/30 flex items-center gap-3">
                         <span className="text-sm font-semibold text-muted-foreground">Units:</span>
                         <div className="flex items-center gap-2">
-                            {unitOptions.map((u) => (
-                                <button
-                                    key={u}
-                                    type="button"
-                                    onClick={() => setSelectedUnits(prev => prev === u ? undefined : u)}
-                                    className={cn(
-                                        "flex items-center justify-center w-9 h-8 font-bold rounded-md transition-all text-sm",
-                                        selectedUnits === u
-                                            ? "bg-primary text-primary-foreground shadow-sm"
-                                            : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                                    )}
-                                >
-                                    {u}
-                                </button>
-                            ))}
-                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-tight ml-1">units</span>
+                            <div className={cn("grid gap-1.5", unitOptions.length <= 3 ? "grid-cols-3" : unitOptions.length === 4 ? "grid-cols-4" : "grid-cols-5")}>
+                                {unitOptions.map((u) => (
+                                    <button
+                                        key={u}
+                                        type="button"
+                                        onClick={() => setSelectedUnits(prev => prev === u ? undefined : u)}
+                                        className={cn(
+                                            "flex items-center justify-center w-9 h-8 font-bold rounded-md transition-all text-sm",
+                                            selectedUnits === u
+                                                ? "bg-primary text-primary-foreground shadow-sm"
+                                                : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                                        )}
+                                    >
+                                        {u}
+                                    </button>
+                                ))}
+                            </div>
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-tight shrink-0">units</span>
                         </div>
                     </div>
                 )}

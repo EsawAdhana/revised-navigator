@@ -2,7 +2,28 @@ import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import type { CourseEvaluation } from '@/types/course'
 
-const BULK_CHUNK_SIZE = 100
+const EVAL_CACHE_KEY = 'evaluations-cache'
+const EVAL_CACHE_TTL = 1000 * 60 * 30 // 30 min
+
+function readEvalCache(): Record<string, CourseEvaluation[]> | null {
+  try {
+    const raw = sessionStorage.getItem(EVAL_CACHE_KEY)
+    if (!raw) return null
+    const { ts, data } = JSON.parse(raw)
+    if (Date.now() - ts > EVAL_CACHE_TTL) return null
+    return data
+  } catch {
+    return null
+  }
+}
+
+function writeEvalCache(data: Record<string, CourseEvaluation[]>) {
+  try {
+    sessionStorage.setItem(EVAL_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }))
+  } catch {
+    // sessionStorage full — skip
+  }
+}
 
 type EvaluationStore = {
   evaluations: Record<string, CourseEvaluation[]>
@@ -12,6 +33,8 @@ type EvaluationStore = {
   fetchCourseEvaluations: (courseId: string) => Promise<void>
   fetchBulkEvaluations: (courseIds: string[]) => Promise<void>
   getEvaluations: (courseId: string) => CourseEvaluation[]
+  /** Merged evaluations from all course IDs (e.g. cross-listed CS 24, LINGUIST 35). Deduplicated by term+instructor. */
+  getMergedEvaluations: (courseIds: string[]) => CourseEvaluation[]
   isLoadingCourse: (courseId: string) => boolean
   hasErrorForCourse: (courseId: string) => boolean
 }
@@ -67,7 +90,14 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
   },
 
   fetchBulkEvaluations: async (courseIds) => {
-    const { evaluations } = get()
+    let { evaluations } = get()
+    // Hydrate from cache first (instant on refresh)
+    const cached = readEvalCache()
+    if (cached) {
+      evaluations = { ...cached, ...evaluations }
+      set(state => ({ ...state, evaluations }))
+    }
+
     const toFetch = courseIds.filter(id => !evaluations[id])
     if (toFetch.length === 0) return
 
@@ -75,44 +105,60 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
 
     try {
       const allById: Record<string, CourseEvaluation[]> = { ...evaluations }
-      for (let i = 0; i < toFetch.length; i += BULK_CHUNK_SIZE) {
-        const chunk = toFetch.slice(i, i + BULK_CHUNK_SIZE)
-        const { data, error } = await supabase
-          .from('evaluations')
-          .select('course_id, term, instructor, course_code, respondents, questions, comments')
-          .in('course_id', chunk)
 
-        if (error) throw error
+      // Single API request — server fetches from Supabase (1 round-trip vs 5)
+      const res = await fetch('/api/evaluations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseIds: toFetch })
+      })
+      if (!res.ok) throw new Error(`API error: ${res.status}`)
+      const byCourse = (await res.json()) as Record<string, CourseEvaluation[]>
 
-        for (const row of data || []) {
-          const courseId = row.course_id
-          if (!courseId) continue
-          const mapped: CourseEvaluation = {
-            term: (row.term || '').replace(/(\d{4})\D.*$/, '$1'),
-            instructor: row.instructor,
-            courseCode: row.course_code,
-            respondents: row.respondents,
-            questions: row.questions,
-            comments: row.comments
-          }
-          if (!allById[courseId]) allById[courseId] = []
-          allById[courseId].push(mapped)
-        }
+      for (const [courseId, evals] of Object.entries(byCourse)) {
+        allById[courseId] = evals || []
+      }
+      for (const id of toFetch) {
+        if (!(id in allById)) allById[id] = []
       }
 
+      writeEvalCache(allById)
       set(state => ({
         evaluations: allById,
         isBulkLoading: false
       }))
     } catch (err) {
       console.error('Failed to bulk load evaluations:', err)
-      set(state => ({ ...state, isBulkLoading: false }))
+      // Mark fetched courses as empty so we don't show loading forever
+      const { evaluations: ev } = get()
+      const allById = { ...ev }
+      for (const id of toFetch) {
+        if (!(id in allById)) allById[id] = []
+      }
+      set(state => ({ ...state, evaluations: allById, isBulkLoading: false }))
     }
   },
 
   getEvaluations: (courseId) => {
     const { evaluations } = get()
     return evaluations[courseId] || []
+  },
+
+  getMergedEvaluations: (courseIds) => {
+    const { evaluations } = get()
+    const seen = new Set<string>()
+    const merged: CourseEvaluation[] = []
+    for (const id of courseIds) {
+      const evals = evaluations[id] || []
+      for (const ev of evals) {
+        const key = `${ev.term}|${ev.instructor}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          merged.push(ev)
+        }
+      }
+    }
+    return merged
   },
 
   isLoadingCourse: (courseId) => {
