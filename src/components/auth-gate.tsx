@@ -43,7 +43,7 @@ function FeatureCard({ icon: Icon, title, description }: { icon: any, title: str
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, isLoading, isGuest, initialize, signInWithGoogle, continueAsGuest } = useAuthStore()
+  const { user, isLoading, isGuest, initialize, signInWithGoogle } = useAuthStore()
   // We remove the timedOut state and logic to allow immediate rendering of the landing page
   // for better SEO and perceived performance.
 
@@ -137,22 +137,13 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 <span>Checking session...</span>
               </button>
             ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={signInWithGoogle}
-                  className="w-full relative group flex items-center justify-center gap-3 rounded-xl bg-foreground text-background px-8 py-3.5 sm:py-4 font-semibold text-[15px] shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98]"
-                >
-                  <span>Log in with Stanford</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={continueAsGuest}
-                  className="w-full flex items-center justify-center gap-3 rounded-xl border border-border bg-transparent px-8 py-3.5 sm:py-4 font-semibold text-[15px] text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-                >
-                  <span>Continue as guest</span>
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={signInWithGoogle}
+                className="w-full relative group flex items-center justify-center gap-3 rounded-xl bg-foreground text-background px-8 py-3.5 sm:py-4 font-semibold text-[15px] shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98]"
+              >
+                <span>Log in with Stanford</span>
+              </button>
             )}
           </div>
         </div>
