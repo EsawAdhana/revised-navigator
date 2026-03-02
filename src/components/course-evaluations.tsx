@@ -6,7 +6,7 @@ import {
   Loader2, ChevronDown, ChevronUp, MessageSquare,
   ExternalLink, Clock, Search, X
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, decodeHtmlEntities } from '@/lib/utils'
 import type { CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
 
 // --- Color helpers (green=good, yellow/orange=mid, red=bad) ---
@@ -270,7 +270,7 @@ function InstructorRow({ instructor, ratingCats, isExpanded, onToggle, evals }: 
       >
         <div className="min-w-0 text-left">
           <div className="text-sm font-medium text-foreground truncate">
-            {instructor.name.split(', ').reverse().join(' ')}
+            {decodeHtmlEntities(instructor.name).split(', ').reverse().join(' ')}
           </div>
           <div className="text-[10px] text-muted-foreground">
             {instructor.evalCount} {instructor.evalCount === 1 ? 'eval' : 'evals'} &middot; {instructor.terms.slice(-2).join(', ')}

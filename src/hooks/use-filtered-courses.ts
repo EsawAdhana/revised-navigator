@@ -25,6 +25,13 @@ export function useFilteredCourses() {
     const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320));
     const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
+    const [sortBy, setSortBy] = useQueryState('sort', parseAsString.withDefault('az'));
+    const [sortOrder, setSortOrder] = useQueryState('order', parseAsString);
+
+    // Default order per sort type: rating = high→low (desc), others = low→high (asc)
+    const getDefaultOrderForSort = useCallback((s: string) =>
+        (s === 'rating' ? 'desc' : 'asc') as 'asc' | 'desc', []);
+    const effectiveSortOrder = sortOrder ?? getDefaultOrderForSort(sortBy);
 
     const filteredResult = useMemo(() => {
         // O(1) Set lookups for filter membership — faster than array .includes() per course
@@ -274,20 +281,9 @@ export function useFilteredCourses() {
         return result;
     }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, cartItems, excludedWords]);
 
-    const displayCourses = useMemo(() => {
-        if (filteredResult.length === 0) return [] as Course[];
-        return [...filteredResult].sort((a, b) => {
-            const safeSubject = (x: Course) => (x?.subject ?? '').toString();
-            const safeCode = (x: Course) => (x?.code ?? '').toString();
-            const subjectCompare = safeSubject(a).localeCompare(safeSubject(b));
-            const codeCompare = compareCourseCodes(safeCode(a), safeCode(b));
-            return subjectCompare !== 0 ? subjectCompare : codeCompare;
-        });
-    }, [filteredResult]);
-
-    // Precompute difficulty/rating per course (with cross-list lookup) — O(n) total, not O(n²)
+    // Precompute difficulty/hours/rating per course (with cross-list lookup) — O(n) total, not O(n²)
     const metricsByCourseId = useMemo(() => {
-        const map = new Map<string, { difficulty?: number; quality?: number }>();
+        const map = new Map<string, { difficulty?: number; hours?: number; quality?: number }>();
         const primaryMap = getCrossListPrimaryMap(courses);
         const coursesById = new Map(courses.map(c => [c.id, c]));
 
@@ -304,24 +300,104 @@ export function useFilteredCourses() {
             const canonical = resolveToCanonicalPrimary(normalizeCourseId(course.id), primaryMap);
             const groupIds = canonicalToIds.get(canonical) ?? [course.id];
             let difficulty: number | undefined;
+            let hours: number | undefined;
             let quality: number | undefined;
             for (const id of groupIds) {
                 const c = coursesById.get(id);
                 if (c?.difficulty != null) difficulty = c.difficulty;
+                if (c?.hours != null) hours = c.hours;
                 if (c?.quality != null) quality = c.quality;
             }
-            if (difficulty != null || quality != null) {
-                map.set(course.id, { ...(difficulty != null && { difficulty }), ...(quality != null && { quality }) });
+            if (difficulty != null || hours != null || quality != null) {
+                map.set(course.id, {
+                    ...(difficulty != null && { difficulty }),
+                    ...(hours != null && { hours }),
+                    ...(quality != null && { quality }),
+                });
             }
         }
         return map;
     }, [courses]);
 
+    const displayCourses = useMemo(() => {
+        if (filteredResult.length === 0) return [] as Course[];
+        const effectiveSort = ['units', 'hrsPerWeek', 'hrsPerUnit', 'rating'].includes(sortBy) ? sortBy : 'az';
+        const mult = effectiveSortOrder === 'desc' ? -1 : 1;
+        return [...filteredResult].sort((a, b) => {
+            const safeSubject = (x: Course) => (x?.subject ?? '').toString();
+            const safeCode = (x: Course) => (x?.code ?? '').toString();
+            const subjectCompare = safeSubject(a).localeCompare(safeSubject(b));
+            const codeCompare = compareCourseCodes(safeCode(a), safeCode(b));
+            const tiebreak = subjectCompare !== 0 ? subjectCompare : codeCompare;
+
+            if (effectiveSort === 'az') {
+                return mult * (subjectCompare !== 0 ? subjectCompare : codeCompare);
+            }
+            if (effectiveSort === 'units') {
+                const optsA = parseUnitsOptions(a.units);
+                const optsB = parseUnitsOptions(b.units);
+                const hasA = optsA.length > 0;
+                const hasB = optsB.length > 0;
+                if (!hasA && !hasB) return tiebreak;
+                if (!hasA) return 1;  // a (null) goes to bottom
+                if (!hasB) return -1; // b (null) goes to bottom
+                const minA = Math.min(...optsA);
+                const minB = Math.min(...optsB);
+                if (minA !== minB) return mult * (minA - minB);
+                return tiebreak;
+            }
+            if (effectiveSort === 'hrsPerWeek') {
+                const mA = metricsByCourseId.get(a.id);
+                const mB = metricsByCourseId.get(b.id);
+                const hrsA = mA?.hours;
+                const hrsB = mB?.hours;
+                const hasA = hrsA != null;
+                const hasB = hrsB != null;
+                if (!hasA && !hasB) return tiebreak;
+                if (!hasA) return 1;
+                if (!hasB) return -1;
+                if (hrsA !== hrsB) return mult * (hrsA - hrsB);
+                return tiebreak;
+            }
+            if (effectiveSort === 'hrsPerUnit') {
+                const mA = metricsByCourseId.get(a.id);
+                const mB = metricsByCourseId.get(b.id);
+                const diffA = mA?.difficulty;
+                const diffB = mB?.difficulty;
+                const hasA = diffA != null;
+                const hasB = diffB != null;
+                if (!hasA && !hasB) return tiebreak;
+                if (!hasA) return 1;
+                if (!hasB) return -1;
+                if (diffA !== diffB) return mult * (diffA - diffB);
+                return tiebreak;
+            }
+            if (effectiveSort === 'rating') {
+                const mA = metricsByCourseId.get(a.id);
+                const mB = metricsByCourseId.get(b.id);
+                const qA = mA?.quality;
+                const qB = mB?.quality;
+                const hasA = qA != null;
+                const hasB = qB != null;
+                if (!hasA && !hasB) return tiebreak;
+                if (!hasA) return 1;
+                if (!hasB) return -1;
+                if (qA !== qB) return mult * (qA - qB);
+                return tiebreak;
+            }
+            return mult * tiebreak;
+        });
+    }, [filteredResult, sortBy, effectiveSortOrder, metricsByCourseId]);
+
     const getSortDisplayValue = useCallback((course: Course): string | null => {
         const m = metricsByCourseId.get(course.id);
-        if (m?.difficulty != null) return `${m.difficulty.toFixed(1)} hrs/unit`;
+        const effectiveSort = ['units', 'hrsPerWeek', 'hrsPerUnit', 'rating'].includes(sortBy) ? sortBy : 'az';
+        if (effectiveSort === 'hrsPerWeek' && m?.hours != null) return `${m.hours.toFixed(1)} hrs/wk`;
+        if (effectiveSort === 'hrsPerUnit' && m?.difficulty != null) return `${m.difficulty.toFixed(1)} hrs/unit`;
+        if (effectiveSort === 'rating') return null; // rating already shown on card
+        if (effectiveSort === 'az' && m?.difficulty != null) return `${m.difficulty.toFixed(1)} hrs/unit`;
         return null;
-    }, [metricsByCourseId]);
+    }, [metricsByCourseId, sortBy]);
 
     const getRatingForCourse = useCallback((course: Course): number | null => {
         const m = metricsByCourseId.get(course.id);
@@ -330,5 +406,10 @@ export function useFilteredCourses() {
 
     const isEnriching = useCourseStore(state => state.isEnriching);
 
-    return { courses: displayCourses, isLoading, isEnriching, getSortDisplayValue, getRatingForCourse };
+    const handleSetSortBy = useCallback((v: string) => {
+        setSortBy(v);
+        setSortOrder(getDefaultOrderForSort(v));
+    }, [setSortBy, setSortOrder, getDefaultOrderForSort]);
+
+    return { courses: displayCourses, isLoading, isEnriching, getSortDisplayValue, getRatingForCourse, sortBy, setSortBy: handleSetSortBy, sortOrder: effectiveSortOrder, setSortOrder };
 }

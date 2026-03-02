@@ -12,8 +12,8 @@ export function cn(...inputs: ClassValue[]) {
 export function decodeHtmlEntities(text: string): string {
   if (!text || typeof text !== 'string') return text
   let s = text
-  // Numeric decimal &#39; &#8230; (do first so we don't double-decode)
-  s = s.replace(/&#(\d+);/g, (_, num) => {
+  // Numeric decimal &#39; &#039; &#8230; (semicolon optional per HTML5)
+  s = s.replace(/&#(\d+);?/g, (_, num) => {
     const n = parseInt(num, 10)
     return n >= 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : `&#${num};`
   })

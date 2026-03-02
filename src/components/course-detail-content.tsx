@@ -58,7 +58,7 @@ function InstructorSummary({ instructorName, evals }: { instructorName: string; 
         <div className="bg-secondary/10 rounded-2xl p-4 border border-border/40 space-y-3">
             <div className="flex items-center justify-between border-b border-border/20 pb-2">
                 <h3 className="text-sm font-bold text-foreground truncate max-w-[200px]">
-                    {instructorName.split(', ').reverse().join(' ')}
+                    {decodeHtmlEntities(instructorName).split(', ').reverse().join(' ')}
                 </h3>
                 <div className="text-xs text-muted-foreground font-medium">
                     {instructorEvals.length} {instructorEvals.length === 1 ? 'Eval' : 'Evals'}
@@ -279,7 +279,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                 <h2 className="text-3xl md:text-4xl font-extrabold leading-tight text-foreground tracking-tight pl-3 md:pl-4">{decodeHtmlEntities(course.title)}</h2>
 
                 {/* Quick Info - 2x2 grid on mobile (UNITS|GRADING, LEVEL|GER), single row on md+ */}
-                <div className="grid grid-cols-2 md:flex md:flex-nowrap rounded-xl border border-border/40 bg-secondary/10 min-w-0">
+                <div className="grid grid-cols-2 md:inline-flex md:flex-nowrap rounded-xl border border-border/40 bg-secondary/10 w-fit min-w-0">
                     <div className="order-1 flex flex-col md:flex-row md:items-center gap-0.5 md:gap-2 p-3 border-r border-b md:border-b-0 border-border/40 shrink-0">
                         <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight shrink-0">UNITS:</span>
                         <span className="text-[18px] font-bold text-foreground tabular-nums">
@@ -362,19 +362,19 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                     variant="outline"
                                                     size="sm"
                                                     asChild
-                                                    disabled={isFutureTerm}
+                                                    disabled={!syllabusUrl}
                                                     className={cn(
                                                         "gap-2 w-full sm:w-auto",
-                                                        isFutureTerm && "opacity-50 cursor-not-allowed",
+                                                        !syllabusUrl && "opacity-50 cursor-not-allowed",
                                                         !isFutureTerm && isSyllabusValid === false && "border-amber-500/50 text-amber-600 dark:text-amber-400"
                                                     )}
                                                 >
                                                     <a
-                                                        href={isFutureTerm ? '#' : (syllabusUrl || '#')}
-                                                        target={isFutureTerm ? undefined : "_blank"}
-                                                        rel={isFutureTerm ? undefined : "noopener noreferrer"}
+                                                        href={syllabusUrl || '#'}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
                                                         onClick={(e) => {
-                                                            if (isFutureTerm || !syllabusUrl) {
+                                                            if (!syllabusUrl) {
                                                                 e.preventDefault()
                                                             } else {
                                                                 e.stopPropagation()
@@ -386,12 +386,12 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                         {!isFutureTerm && isSyllabusValid === false && (
                                                             <span className="text-xs ml-1">(may not be available)</span>
                                                         )}
-                                                        {!isFutureTerm && <ExternalLink size={14} className="opacity-60" />}
+                                                        <ExternalLink size={14} className="opacity-60" />
                                                     </a>
                                                 </Button>
                                                 {isFutureTerm && (
-                                                    <p className="text-xs text-muted-foreground opacity-0 group-hover/syllabus:opacity-100 transition-opacity duration-150 delay-500">
-                                                        Syllabi for {activeTerm} are not yet available on syllabus.stanford.edu.
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Note that syllabi may not be posted for {activeTerm} yet.
                                                     </p>
                                                 )}
                                                 {!isFutureTerm && isSyllabusValid === false && (

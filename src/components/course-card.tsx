@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import { Course } from '@/types/course';
 import { getDepartmentUrl, unitsLabel, parseUnitsOptions, decodeHtmlEntities } from '@/lib/utils';
 import { Calendar, Users } from 'lucide-react';
@@ -13,21 +14,22 @@ function getRatingColor(rating: number): string {
 
 interface CourseCardProps {
   course: Course;
+  /** When provided, card is a link (supports Ctrl/Cmd+click to open in new tab) */
+  href?: string;
   /** Difficulty (e.g. "3.2 hrs/unit") to show under unit count when available */
   sortDisplayValue?: string | null;
   /** Average course rating (1-5) from evaluations, with cross-list lookup */
   rating?: number | null;
   style?: React.CSSProperties;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
-export const CourseCard = React.memo(({ course, sortDisplayValue, rating, style, onClick }: CourseCardProps) => {
-  return (
-    <div style={style} className="w-full min-w-0 py-1.5">
-      <div
-        className="group relative w-full min-w-0 rounded-xl bg-card text-card-foreground border border-border/40 hover:border-primary/25 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(140,21,21,0.06)] transition-all duration-300 cursor-pointer px-3 py-4 sm:px-4 hover:-translate-y-[1px] overflow-hidden"
-        onClick={onClick}
-      >
+export const CourseCard = React.memo(({ course, href, sortDisplayValue, rating, style, onClick }: CourseCardProps) => {
+  const cardContent = (
+    <div
+      className="group relative w-full min-w-0 rounded-xl bg-card text-card-foreground border border-border/40 hover:border-primary/25 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(140,21,21,0.06)] transition-all duration-300 cursor-pointer px-3 py-4 sm:px-4 hover:-translate-y-[1px] overflow-hidden"
+      onClick={!href ? onClick : undefined}
+    >
         {/* Top row: class code (left) + unit count (right); under unit count, show sort value when applicable */}
         <div className="flex items-start justify-between gap-2 mb-1.5">
           <span className="text-[15px] font-bold tabular-nums text-destructive group-hover:text-destructive/80 transition-colors font-[family-name:var(--font-outfit)]">
@@ -81,6 +83,17 @@ export const CourseCard = React.memo(({ course, sortDisplayValue, rating, style,
           )}
         </div>
       </div>
+  );
+
+  return (
+    <div style={style} className="w-full min-w-0 py-1.5">
+      {href ? (
+        <Link href={href} onClick={onClick} className="block no-underline text-inherit">
+          {cardContent}
+        </Link>
+      ) : (
+        cardContent
+      )}
     </div>
   );
 });
