@@ -1,5 +1,6 @@
 import React from 'react';
 import { User } from 'lucide-react';
+import { decodeHtmlEntities } from '@/lib/utils';
 
 interface InstructorListProps {
   instructors: string[];
@@ -34,7 +35,7 @@ export function InstructorList({ instructors, limit = 5, showIcon = true, label,
       <div className="flex items-baseline gap-2 min-w-0 flex-1">
         {label && <span className="text-[13px] font-bold text-muted-foreground uppercase tracking-tight leading-none shrink-0">{label}</span>}
         <div className={`${textSize} font-medium text-muted-foreground leading-tight min-w-0 ${size === 'sm' ? 'truncate' : 'break-words'}`}>
-          {displayed.join(', ')}
+          {displayed.map((name) => decodeHtmlEntities(name)).join(', ')}
           {remaining > 0 && <span className="opacity-60 ml-1">+{remaining} more</span>}
         </div>
       </div>

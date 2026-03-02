@@ -4,23 +4,14 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { CourseList } from '@/components/course-list';
 import { FilterSidebar } from '@/components/filter-sidebar';
 import { AuthGate } from '@/components/auth-gate';
-import { Course } from '@/types/course';
 import { SiteHeader } from '@/components/site-header';
-import { useRouter } from 'next/navigation';
 
 function HomeContent() {
   const [mounted, setMounted] = useState(false);
-  const router = useRouter();
 
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  const handleCourseClick = (course: Course) => {
-    const params = new URLSearchParams(window.location.search);
-    const qs = params.toString();
-    router.push(`/courses/${encodeURIComponent(course.id)}${qs ? `?${qs}` : ''}`);
-  };
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">
@@ -31,7 +22,7 @@ function HomeContent() {
           <FilterSidebar />
         </aside>
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-secondary/20 relative">
-          <CourseList onCourseClick={handleCourseClick} />
+          <CourseList />
         </main>
       </div>
     </div>
