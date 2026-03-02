@@ -9,6 +9,7 @@ import { Course } from '@/types/course';
 import { SearchX, ArrowUp } from 'lucide-react';
 import { ActiveFilterChips } from './active-filter-chips';
 const SCROLL_THRESHOLD = 200;
+const SCROLL_STORAGE_KEY = 'course-list-scroll';
 
 interface CourseListProps {
   onCourseClick: (course: Course) => void;
@@ -17,8 +18,10 @@ interface CourseListProps {
 export function CourseList({ onCourseClick }: CourseListProps) {
   const { fetchCourses } = useCourseStore();
   const { courses, isLoading, getSortDisplayValue, getRatingForCourse } = useFilteredCourses();
-  const vListRef = useRef<VListHandle>(null)
-  const [scrollOffset, setScrollOffset] = useState(0)
+  const vListRef = useRef<VListHandle>(null);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const scrollOffsetRef = useRef(0);
+  const hasRestoredScroll = useRef(false);
 
   // Map letter -> first index for A-Z scrubber
   const letterToIndex = useMemo(() => {
@@ -45,9 +48,39 @@ export function CourseList({ onCourseClick }: CourseListProps) {
     }
   }, [letterToIndex])
 
+  const handleCourseClick = useCallback(
+    (course: Course) => {
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(SCROLL_STORAGE_KEY, String(scrollOffsetRef.current));
+        } catch {
+          // sessionStorage full or unavailable — ignore
+        }
+      }
+      onCourseClick(course);
+    },
+    [onCourseClick]
+  );
+
   useEffect(() => {
     fetchCourses();
   }, [fetchCourses]);
+
+  // Restore scroll position when returning via back navigation
+  useEffect(() => {
+    if (courses.length === 0 || hasRestoredScroll.current) return;
+    if (typeof window === 'undefined') return;
+    const saved = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+    if (saved == null) return;
+    hasRestoredScroll.current = true;
+    sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+    const offset = parseInt(saved, 10);
+    if (isNaN(offset) || offset < 0) return;
+    const raf = requestAnimationFrame(() => {
+      vListRef.current?.scrollTo(offset);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [courses.length]);
 
 
   if (isLoading) {
@@ -107,7 +140,10 @@ export function CourseList({ onCourseClick }: CourseListProps) {
               <VList
                 ref={vListRef}
                 className="h-full w-full scrollbar-hide pb-4 px-2 sm:px-4"
-                onScroll={(offset) => setScrollOffset(offset)}
+                onScroll={(offset) => {
+                  setScrollOffset(offset);
+                  scrollOffsetRef.current = offset;
+                }}
               >
                 {courses.map((course) => (
                   <div key={course.id} className="w-full">
@@ -115,7 +151,7 @@ export function CourseList({ onCourseClick }: CourseListProps) {
                     course={course}
                     sortDisplayValue={getSortDisplayValue(course)}
                     rating={getRatingForCourse(course)}
-                    onClick={() => onCourseClick(course)}
+                    onClick={() => handleCourseClick(course)}
                   />
                   </div>
                 ))}
