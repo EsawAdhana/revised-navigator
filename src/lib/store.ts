@@ -14,7 +14,7 @@ type CourseStore = {
 }
 
 const CACHE_KEY = 'root-courses-cache'
-const CACHE_VERSION = 8
+const CACHE_VERSION = 9
 const CACHE_TTL = 1000 * 60 * 30 // 30 minutes
 const STALE_MAX_AGE = 1000 * 60 * 60 * 24 // 24 hours — show stale cache up to this age
 
