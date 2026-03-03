@@ -26,7 +26,7 @@ export default function CoursePage() {
 
     const [query] = useQueryState('q', { defaultValue: '' });
     const { courses: filteredCourses } = useFilteredCourses();
-    const { courses, fetchCourses, hasLoaded, isEnriching } = useCourseStore();
+    const { courses, fetchCourses, hasLoaded, enrichedCourseIds, fetchCourseDetail } = useCourseStore();
     const { getItem } = useCartStore();
 
     useEffect(() => {
@@ -74,6 +74,12 @@ export default function CoursePage() {
         return found;
     }, [courses, courseId, getItem]);
 
+    useEffect(() => {
+        if (hasLoaded && course && !enrichedCourseIds.has(courseId)) {
+            fetchCourseDetail(courseId);
+        }
+    }, [hasLoaded, course, courseId, enrichedCourseIds, fetchCourseDetail]);
+
     // Redirect to primary course when this URL is an alternate (cross-listed) course
     useEffect(() => {
         if (!hasLoaded || !course || !courses.length) return;
@@ -109,7 +115,7 @@ export default function CoursePage() {
         <div className="min-h-screen bg-background flex flex-col">
             <SiteHeader />
             <main className="flex-1 bg-background">
-                {isEnriching || (!hasLoaded && !course) ? (
+                {(!hasLoaded && !course) || (hasLoaded && course && !enrichedCourseIds.has(courseId)) ? (
                     <div className="flex flex-1 items-center justify-center">
                         <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
                             <Loader2 className="h-8 w-8 animate-spin text-primary/60" />

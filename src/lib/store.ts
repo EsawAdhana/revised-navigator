@@ -8,7 +8,9 @@ type CourseStore = {
   hasLoaded: boolean
   isEnriching: boolean
   hasEnriched: boolean
+  enrichedCourseIds: Set<string>
   fetchCourses: () => Promise<void>
+  fetchCourseDetail: (courseId: string) => Promise<void>
 }
 
 const CACHE_KEY = 'root-courses-cache'
@@ -92,6 +94,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
   hasLoaded: false,
   isEnriching: false,
   hasEnriched: false,
+  enrichedCourseIds: new Set(),
 
   fetchCourses: async () => {
     const { isLoading, hasLoaded } = get()
@@ -132,7 +135,12 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
         const fullCourses = fullRows.map(rowToCourse)
 
         writeCache(fullCourses)
-        set({ courses: fullCourses, isEnriching: false, hasEnriched: true })
+        set({
+          courses: fullCourses,
+          isEnriching: false,
+          hasEnriched: true,
+          enrichedCourseIds: new Set(fullCourses.map(c => c.id)),
+        })
       } catch (err) {
         console.error('Failed to enrich courses:', err)
         // Do NOT cache light data on error, so we retry next time
@@ -143,5 +151,28 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
       console.error('Failed to fetch courses:', err)
       set({ courses: [], hasLoaded: true, isLoading: false })
     }
-  }
+  },
+
+  fetchCourseDetail: async (courseId: string) => {
+    const { enrichedCourseIds, courses } = get()
+    if (enrichedCourseIds.has(courseId)) return
+
+    try {
+      const res = await fetch(`/api/courses/${encodeURIComponent(courseId)}`)
+      if (!res.ok) throw new Error(`API error: ${res.status}`)
+      const row: any = await res.json()
+      const enriched = rowToCourse(row)
+
+      const updatedCourses = courses.map(c => c.id === courseId ? enriched : c)
+      const updatedIds = new Set(enrichedCourseIds)
+      updatedIds.add(courseId)
+      set({ courses: updatedCourses, enrichedCourseIds: updatedIds })
+    } catch (err) {
+      console.error(`Failed to fetch detail for ${courseId}:`, err)
+      // Mark as enriched anyway to avoid infinite retries
+      const updatedIds = new Set(get().enrichedCourseIds)
+      updatedIds.add(courseId)
+      set({ enrichedCourseIds: updatedIds })
+    }
+  },
 }))
