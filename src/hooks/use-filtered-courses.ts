@@ -24,6 +24,7 @@ export function useFilteredCourses() {
     const [timeMin] = useQueryState('timeMin', parseAsInteger.withDefault(420));
     const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320));
     const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
+    const [hideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false));
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
     const [sortBy, setSortBy] = useQueryState('sort', parseAsString.withDefault('az'));
     const [sortOrder, setSortOrder] = useQueryState('order', parseAsString);
@@ -248,6 +249,19 @@ export function useFilteredCourses() {
             });
         }
 
+        // Filter by Availability
+        if (hideUnavailable) {
+            result = result.filter(c => {
+                if (!c.sections || c.sections.length === 0) return true; // No data yet → keep
+                let sectionsToCheck = c.sections;
+                if (termsSet.size > 0) {
+                    sectionsToCheck = sectionsToCheck.filter(s => termsSet.has(s.term));
+                }
+                if (sectionsToCheck.length === 0) return true; // No sections for selected terms → keep
+                return sectionsToCheck.some(s => s.status?.toLowerCase() === 'open');
+            });
+        }
+
         // Filter by School
         if (schoolsSet.size > 0) {
             result = result.filter(c => {
@@ -279,7 +293,7 @@ export function useFilteredCourses() {
 
         // All filtering is done; this is the set we will sort (sort is the last step)
         return result;
-    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, cartItems, excludedWords]);
+    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, cartItems, excludedWords]);
 
     // Precompute difficulty/hours/rating per course (with cross-list lookup) — O(n) total, not O(n²)
     const metricsByCourseId = useMemo(() => {
