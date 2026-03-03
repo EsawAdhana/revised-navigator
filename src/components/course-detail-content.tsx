@@ -515,13 +515,26 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                             <div>
                                                                 <div className="font-bold text-[18px] text-foreground flex flex-wrap items-center gap-2">
                                                                     <span className="shrink-0">{compLabel} {displayNum}</span>
-                                                                    {section.status !== 'Open' && (
-                                                                        <span className="text-[12px] uppercase font-bold text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded">
+                                                                    {section.status && (
+                                                                        <span className={cn(
+                                                                            "text-[12px] uppercase font-bold px-1.5 py-0.5 rounded",
+                                                                            section.status.toLowerCase() === 'open'
+                                                                                ? "text-green-700 bg-green-50 dark:text-green-400 dark:bg-green-950/50"
+                                                                                : section.status.toLowerCase().includes('waitlist')
+                                                                                    ? "text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/50"
+                                                                                    : "text-muted-foreground bg-secondary/60"
+                                                                        )}>
                                                                             {section.status}
                                                                         </span>
                                                                     )}
                                                                 </div>
                                                                 <div className="text-[15px] text-muted-foreground mt-0.5 font-medium tracking-tight">ID: {section.classId}</div>
+                                                                {section.capacity > 0 && (
+                                                                    <div className="text-[13px] text-muted-foreground mt-0.5">
+                                                                        {section.enrolled} / {section.capacity} enrolled
+                                                                        {section.waitlist > 0 && ` · ${section.waitlist} / ${section.waitlistMax} on waitlist`}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </div>
 

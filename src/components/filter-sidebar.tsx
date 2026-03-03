@@ -84,6 +84,7 @@ export function FilterSidebar() {
     const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']));
     const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
+    const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
 
     // New Filters
@@ -522,6 +523,27 @@ export function FilterSidebar() {
                                 </TooltipTrigger>
                                 <TooltipContent side="top" align="start" className="max-w-[240px]">
                                     Include courses that overlap with courses on your schedule.
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </div>
+                    <div className="flex items-center gap-2 min-h-8">
+                        <input
+                            type="checkbox"
+                            id="hideUnavailable"
+                            checked={hideUnavailable}
+                            onChange={(e) => setHideUnavailable(e.target.checked)}
+                            className="h-4 w-4 shrink-0 rounded border-input text-primary accent-primary outline-none"
+                        />
+                        <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <label htmlFor="hideUnavailable" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
+                                        Hide closed &amp; waitlisted
+                                    </label>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" align="start" className="max-w-[240px]">
+                                    Hide courses with no open sections in the selected term.
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>
