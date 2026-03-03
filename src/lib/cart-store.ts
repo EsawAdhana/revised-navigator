@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { Course } from '@/types/course'
 import { makeMeetingKey } from '@/lib/schedule-utils'
 
-type CartItem = Course & {
+export type CartItem = Course & {
   selectedTerm?: string
   selectedSectionId?: number
 }
