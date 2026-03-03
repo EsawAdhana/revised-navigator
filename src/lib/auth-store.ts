@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from './supabase'
 import type { User, Session } from '@supabase/supabase-js'
+import { pullAndMerge, cancelDebouncedPush, clearKeyCache } from './schedule-sync'
 
 const GUEST_KEY = 'stanford-root-guest'
 
@@ -35,6 +36,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       const isGuest = typeof window !== 'undefined' && sessionStorage.getItem(GUEST_KEY) === '1'
       set({ user, session, isLoading: false, isGuest })
+      if (user?.email) {
+        pullAndMerge(user.email, user.id)
+      }
     }).catch((err) => {
       console.error('Failed to get session:', err)
       const isGuest = typeof window !== 'undefined' && sessionStorage.getItem(GUEST_KEY) === '1'
@@ -42,7 +46,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     })
 
     // Listen for auth state changes (sign in, sign out, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const user = session?.user ?? null
 
       if (user && !user.email?.endsWith('@stanford.edu')) {
@@ -52,6 +56,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       set({ user, session, isLoading: false, isGuest: false })
+
+      if (event === 'SIGNED_IN' && user?.email) {
+        pullAndMerge(user.email, user.id)
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -77,6 +85,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signOut: async () => {
+    cancelDebouncedPush()
+    clearKeyCache()
     await supabase.auth.signOut()
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem(GUEST_KEY)

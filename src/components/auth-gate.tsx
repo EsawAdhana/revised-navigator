@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { useAuthStore } from '@/lib/auth-store'
+import { useSyncSchedule } from '@/hooks/use-sync-schedule'
 import { Logo } from './logo'
 import { Loader2 } from 'lucide-react'
 import Link from 'next/link'
@@ -44,6 +45,7 @@ function FeatureCard({ icon: Icon, title, description }: { icon: any, title: str
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isLoading, isGuest, initialize, signInWithGoogle } = useAuthStore()
+  useSyncSchedule()
   // We remove the timedOut state and logic to allow immediate rendering of the landing page
   // for better SEO and perceived performance.
 
