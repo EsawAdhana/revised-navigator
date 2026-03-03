@@ -158,12 +158,25 @@ function parseSection(sectionNode, courseNode) {
         grading: courseNode?.grading || '',
         classLevel: textVal(sectionNode?.classLevel) || '',
         instructionalMode: sectionNode?.instructionalMode || '',
-        status: sectionNode?.currentlyEnrolled || '',
         enrolled: parseInt(sectionNode?.currentClassSize, 10) || 0,
         capacity: parseInt(sectionNode?.maxClassSize, 10) || 0,
         waitlist: parseInt(sectionNode?.currentWaitlistSize, 10) || 0,
         waitlistMax: parseInt(sectionNode?.maxWaitlistSize, 10) || 0,
         openSeats: Math.max(0, (parseInt(sectionNode?.maxClassSize, 10) || 0) - (parseInt(sectionNode?.currentClassSize, 10) || 0)),
+        status: (() => {
+            const es = (sectionNode?.enrollStatus || '').toLowerCase();
+            if (es === 'open') return 'Open';
+            if (es.includes('waitlist')) return 'Waitlist';
+            if (es === 'closed') return 'Closed';
+            // Fallback: derive from enrollment numbers
+            const capacity = parseInt(sectionNode?.maxClassSize, 10) || 0;
+            const enrolled = parseInt(sectionNode?.currentClassSize, 10) || 0;
+            const waitlist = parseInt(sectionNode?.currentWaitlistSize, 10) || 0;
+            if (capacity > 0 && enrolled < capacity) return 'Open';
+            if (waitlist > 0) return 'Waitlist';
+            if (capacity > 0) return 'Closed';
+            return '';
+        })(),
         startDate: sectionNode?.startDate || '',
         endDate: sectionNode?.endDate || '',
         meetings,
