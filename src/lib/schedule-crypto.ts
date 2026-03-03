@@ -16,7 +16,7 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-function base64ToUint8(b64: string): Uint8Array {
+function base64ToUint8(b64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(b64)
   const bytes = new Uint8Array(new ArrayBuffer(binary.length))
   for (let i = 0; i < binary.length; i++) {
