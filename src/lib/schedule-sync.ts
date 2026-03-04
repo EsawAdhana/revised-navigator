@@ -182,13 +182,20 @@ async function pushSchedule(email: string, userId: string): Promise<void> {
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let lastItemCount = -1
 
 export function debouncedPush(email: string, userId: string) {
   if (debounceTimer) clearTimeout(debounceTimer)
-  if (useCartStore.getState().items.length === 0) {
+  const currentCount = useCartStore.getState().items.length
+
+  // Push immediately on removal or empty cart
+  if (currentCount === 0 || (lastItemCount >= 0 && currentCount < lastItemCount)) {
+    lastItemCount = currentCount
     pushSchedule(email, userId)
     return
   }
+
+  lastItemCount = currentCount
   debounceTimer = setTimeout(() => {
     debounceTimer = null
     pushSchedule(email, userId)
