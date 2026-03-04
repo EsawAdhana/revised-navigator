@@ -1,15 +1,20 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryState } from 'nuqs';
 import { useCourseStore } from '@/lib/store';
 import { SiteHeader } from '@/components/site-header';
-import { CourseDetailContent } from '@/components/course-detail-content';
 import { useCartStore } from '@/lib/cart-store';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
 import { getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
+
+const CourseDetailContent = dynamic(
+  () => import('@/components/course-detail-content').then(m => ({ default: m.CourseDetailContent })),
+  { ssr: false }
+);
 
 export default function CoursePage() {
     const params = useParams();
@@ -26,16 +31,12 @@ export default function CoursePage() {
 
     const [query] = useQueryState('q', { defaultValue: '' });
     const { courses: filteredCourses } = useFilteredCourses();
-    const { courses, fetchCourses, hasLoaded, enrichedCourseIds, fetchCourseDetail } = useCourseStore();
+    const { courses, hasLoaded, enrichedCourseIds, fetchCourseDetail } = useCourseStore();
     const { getItem } = useCartStore();
 
     useEffect(() => {
         setMounted(true);
     }, []);
-
-    useEffect(() => {
-        fetchCourses();
-    }, [fetchCourses]);
 
     // Only jump to a new course if the query changes *while* we are remaining on the same course page.
     // This prevents spurious redirects on initial link load or back/forward navigation.

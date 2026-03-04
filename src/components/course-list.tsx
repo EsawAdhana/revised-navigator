@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VList, VListHandle } from 'virtua';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useCourseStore } from '@/lib/store';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
 import { CourseCard } from './course-card';
 import { Course } from '@/types/course';
@@ -21,7 +20,6 @@ const SCROLL_THRESHOLD = 200;
 const SCROLL_STORAGE_KEY = 'course-list-scroll';
 
 export function CourseList() {
-  const { fetchCourses } = useCourseStore();
   const { courses, isLoading, getSortDisplayValue, getRatingForCourse, sortBy, setSortBy, sortOrder, setSortOrder } = useFilteredCourses();
   const vListRef = useRef<VListHandle>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -66,10 +64,6 @@ export function CourseList() {
       }
     }
   }, []);
-
-  useEffect(() => {
-    fetchCourses();
-  }, [fetchCourses]);
 
   // Restore scroll position when returning via back navigation
   useEffect(() => {

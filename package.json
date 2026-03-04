@@ -10,6 +10,7 @@
     "lint": "eslint . --max-warnings 0",
     "split:courses": "node scripts/split-courses-by-quarter.js",
     "scrape:evals": "node scripts/scrape-evaluations.js",
+    "scrape:evals:backfill": "node --env-file=.env.local scripts/scrape-evaluations.js --backfill",
     "upload:evals": "node scripts/upload-evaluations.js",
     "upload:courses": "node scripts/upload-courses.js",
     "scrape:final-exams": "node scripts/scrape-final-exams.js",

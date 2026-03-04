@@ -176,3 +176,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
     }
   },
 }))
+
+if (typeof window !== 'undefined') {
+  useCourseStore.getState().fetchCourses()
+}

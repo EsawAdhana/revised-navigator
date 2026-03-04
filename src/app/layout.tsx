@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
-import { LoadingToast } from "@/components/loading-toast";
-import { FeedbackDialog } from "@/components/feedback-dialog";
+import { DeferredShell } from '@/components/deferred-shell';
 import { Toaster } from 'sonner';
 import "./globals.css";
 
@@ -25,8 +24,7 @@ export default function RootLayout({
         <NuqsAdapter>
           {children}
           <Toaster />
-          <LoadingToast />
-          <FeedbackDialog />
+          <DeferredShell />
         </NuqsAdapter>
       </body>
     </html>

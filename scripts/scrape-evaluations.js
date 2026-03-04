@@ -20,6 +20,7 @@
  *   --course X      Scrape a single course by code, e.g. "CS 106A"
  *   --find-missing  Identify which evaluations are missing (no extraction, just lists them)
  *   --retry-missing Search by individual course code to find & extract only what's missing
+ *   --backfill      For courses with zero evals in Supabase, find & upload their most recent historical term
  *   --concurrency N Number of parallel HTTP requests (default: 20)
  *   --workers N     Number of parallel term searches (default: 5, use 2 for resume)
  */
@@ -28,6 +29,10 @@ const puppeteer = require('puppeteer')
 const cheerio = require('cheerio')
 const fs = require('fs')
 const path = require('path')
+const { createClient } = require('@supabase/supabase-js')
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const BASE_URL = 'https://stanford.evaluationkit.com'
 const SEARCH_URL = `${BASE_URL}/Report/Public/Results`
@@ -63,7 +68,7 @@ function sleep(ms) {
 
 function parseArgs() {
   const args = process.argv.slice(2)
-  const opts = { resume: false, limit: null, course: null, concurrency: DEFAULT_CONCURRENCY, workers: null, findMissing: false, retryMissing: false }
+  const opts = { resume: false, limit: null, course: null, concurrency: DEFAULT_CONCURRENCY, workers: null, findMissing: false, retryMissing: false, backfill: false }
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--resume') opts.resume = true
@@ -73,6 +78,7 @@ function parseArgs() {
     if (args[i] === '--workers' && args[i + 1]) opts.workers = parseInt(args[i + 1], 10)
     if (args[i] === '--find-missing') opts.findMissing = true
     if (args[i] === '--retry-missing') opts.retryMissing = true
+    if (args[i] === '--backfill') opts.backfill = true
   }
 
   return opts
@@ -558,6 +564,164 @@ function matchResultToCourse(result, termCode, courseLookup) {
 }
 
 /**
+ * Convert a term string like "Fall 2022" or "Winter 2019" to a numeric sort key.
+ * Higher = more recent. Returns -Infinity for unparseable strings.
+ */
+function termToSortKey(termString) {
+  if (!termString) return -Infinity
+  const match = termString.match(/(fall|autumn|winter|spring|summer)\s+(\d{4})/i)
+  if (!match) return -Infinity
+  const season = match[1].toLowerCase()
+  const year = parseInt(match[2], 10)
+  const weights = { winter: 1, spring: 2, summer: 3, fall: 4, autumn: 4 }
+  return year * 10 + (weights[season] ?? 0)
+}
+
+/**
+ * Given a list of search results (each with a `term` field), return only those
+ * belonging to the single most recent term found in the list.
+ */
+function mostRecentTermGroup(results) {
+  if (results.length === 0) return []
+  let bestKey = -Infinity
+  let bestTerm = null
+  for (const r of results) {
+    const key = termToSortKey(r.term)
+    if (key > bestKey) {
+      bestKey = key
+      bestTerm = r.term
+    }
+  }
+  if (bestTerm === null) return results // unparseable terms — return all
+  return results.filter(r => r.term === bestTerm)
+}
+
+/**
+ * Backfill mode: query Supabase for courses with zero evaluations, search
+ * EvaluationKit for any historical data, and upload the most recent term found.
+ */
+async function runBackfill(cookieString, concurrency) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('Backfill requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.')
+    console.error('Run with: node --env-file=.env.local scripts/scrape-evaluations.js --backfill')
+    process.exit(1)
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+
+  console.log('\n=== BACKFILL MODE ===')
+  console.log('Querying Supabase for courses with zero evaluations...')
+
+  // Collect all course_ids that already have evaluations
+  const evCourseIds = new Set()
+  let offset = 0
+  const PAGE = 1000
+  while (true) {
+    const { data, error } = await supabase.from('evaluations').select('course_id').range(offset, offset + PAGE - 1)
+    if (error) throw new Error(`Supabase evaluations query: ${error.message}`)
+    if (!data || data.length === 0) break
+    for (const r of data) evCourseIds.add(r.course_id)
+    if (data.length < PAGE) break
+    offset += PAGE
+  }
+
+  // Collect all courses
+  const allCourses = []
+  offset = 0
+  while (true) {
+    const { data, error } = await supabase.from('courses').select('course_id, subject, code').range(offset, offset + PAGE - 1)
+    if (error) throw new Error(`Supabase courses query: ${error.message}`)
+    if (!data || data.length === 0) break
+    allCourses.push(...data)
+    if (data.length < PAGE) break
+    offset += PAGE
+  }
+
+  const missing = allCourses.filter(c => !evCourseIds.has(c.course_id))
+  console.log(`${allCourses.length} total courses | ${evCourseIds.size} with evaluations | ${missing.length} to backfill`)
+
+  if (missing.length === 0) {
+    console.log('Nothing to backfill — all courses already have evaluation data!')
+    return
+  }
+
+  let backfilled = 0
+  let notFound = 0
+  let errors = 0
+
+  // Cap batch size: each search is heavier (returns results across all terms)
+  const BATCH = Math.min(concurrency, 15)
+
+  for (let i = 0; i < missing.length; i += BATCH) {
+    const batch = missing.slice(i, Math.min(i + BATCH, missing.length))
+
+    await Promise.all(batch.map(async (course) => {
+      const subj = course.subject.replace(/\s+/g, '')
+      const code = course.code.replace(/\s+/g, '')
+      const searchQuery = `${subj} ${code}`
+
+      const results = await searchCourseHTTP(searchQuery, cookieString)
+
+      // Filter to results that actually match this specific course (not substring matches)
+      const matching = results.filter(r => {
+        for (const seg of r.courseCode.split('/')) {
+          const parts = seg.trim().split('-')
+          if (parts.length >= 3 && parts[1] === subj && parts[2] === code) return true
+        }
+        return false
+      })
+
+      if (matching.length === 0) {
+        notFound++
+        return
+      }
+
+      // Take only the most recent term's reports
+      const toExtract = mostRecentTermGroup(matching)
+
+      const extracted = await extractBatchViaHTTP(toExtract, cookieString)
+
+      const rows = []
+      for (const { evalData } of extracted) {
+        if (evalData) {
+          rows.push({
+            course_id: course.course_id,
+            term: evalData.term,
+            instructor: evalData.instructor,
+            course_code: evalData.courseCode,
+            respondents: evalData.respondents,
+            questions: evalData.questions,
+            comments: evalData.comments,
+          })
+        }
+      }
+
+      if (rows.length > 0) {
+        const { error } = await supabase.from('evaluations').insert(rows)
+        if (error) {
+          errors++
+          console.error(`\n  ❌ ${course.course_id}: ${error.message}`)
+        } else {
+          backfilled++
+          console.log(`\n  ✅ ${course.course_id}: ${rows.length} eval(s) from ${toExtract[0]?.term}`)
+        }
+      } else {
+        notFound++
+      }
+    }))
+
+    const done = Math.min(i + BATCH, missing.length)
+    process.stdout.write(`\r[${done}/${missing.length}] backfilled: ${backfilled} | not found: ${notFound} | errors: ${errors}  `)
+    await sleep(100)
+  }
+
+  console.log(`\n\nBackfill complete!`)
+  console.log(`  Courses backfilled: ${backfilled}`)
+  console.log(`  Not found on EvaluationKit: ${notFound}`)
+  console.log(`  Errors: ${errors}`)
+}
+
+/**
  * Main scraping function
  */
 async function main() {
@@ -668,6 +832,13 @@ async function main() {
   console.log(`Extracted ${cookieString.split(';').length} session cookies for HTTP extraction`)
 
   const { concurrency } = opts
+
+  // === BACKFILL MODE ===
+  if (opts.backfill) {
+    await runBackfill(cookieString, concurrency)
+    await browser.close()
+    return
+  }
 
   // === RETRY-MISSING MODE ===
   // Search for each course that has 0 evaluations, by course code (e.g., "CS 106A").
