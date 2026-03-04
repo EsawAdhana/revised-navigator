@@ -9,16 +9,15 @@ export function useSyncSchedule() {
   const user = useAuthStore(state => state.user)
 
   useEffect(() => {
-    if (!user?.email) return
+    if (!user?.id) return
 
-    const email = user.email
     const id = user.id
-    const unsub = useCartStore.subscribe(() => debouncedPush(email, id))
+    const unsub = useCartStore.subscribe(() => debouncedPush(id))
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') flushAndPush(email, id)
+      if (document.visibilityState === 'hidden') flushAndPush(id)
     }
-    const handleBeforeUnload = () => flushAndPush(email, id)
+    const handleBeforeUnload = () => flushAndPush(id)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('beforeunload', handleBeforeUnload)
 
@@ -27,5 +26,5 @@ export function useSyncSchedule() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [user?.id, user?.email])
+  }, [user?.id])
 }

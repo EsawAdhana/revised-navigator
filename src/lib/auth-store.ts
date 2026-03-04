@@ -2,9 +2,8 @@ import { create } from 'zustand'
 import { supabase } from './supabase'
 import type { User, Session } from '@supabase/supabase-js'
 import {
-  pullAndMerge,
+  pullSchedule,
   cancelDebouncedPush,
-  clearKeyCache,
 } from './schedule-sync'
 import { useCartStore } from './cart-store'
 
@@ -49,8 +48,8 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       set({ user, session, isLoading: false })
 
-      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && user?.email) {
-        pullAndMerge(user.email, user.id)
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && user) {
+        pullSchedule(user.id)
       }
     })
 
@@ -71,7 +70,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signOut: async () => {
     cancelDebouncedPush()
-    clearKeyCache()
     useCartStore.getState().clearCart()
     await supabase.auth.signOut()
     set({ user: null, session: null })
