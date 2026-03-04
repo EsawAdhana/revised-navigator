@@ -1,18 +1,26 @@
 'use client';
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { CourseList } from '@/components/course-list';
-import { FilterSidebar } from '@/components/filter-sidebar';
 import { AuthGate } from '@/components/auth-gate';
 import { SiteHeader } from '@/components/site-header';
 
+const FilterSidebar = dynamic(
+  () => import('@/components/filter-sidebar').then(m => ({ default: m.FilterSidebar })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="p-4 space-y-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-8 rounded bg-muted/30 animate-pulse" />
+        ))}
+      </div>
+    ),
+  }
+);
+
 function HomeContent() {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">
       <SiteHeader />

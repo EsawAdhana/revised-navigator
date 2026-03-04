@@ -1,7 +1,12 @@
 'use client';
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
-import { CalendarView } from '@/components/calendar-view';
+import dynamic from 'next/dynamic';
+
+const CalendarView = dynamic(
+  () => import('@/components/calendar-view').then(m => ({ default: m.CalendarView })),
+  { ssr: false }
+);
 import { Button } from '@/components/ui/button';
 import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Download, Upload } from 'lucide-react';
 import NextImage from 'next/image';
@@ -26,12 +31,8 @@ import { toast } from 'sonner';
 
 function ScheduleContent() {
   const { items } = useCartStore()
-  const { courses, fetchCourses } = useCourseStore()
+  const { courses } = useCourseStore()
   const [ignoredOverloads, setIgnoredOverloads] = useState<Record<string, boolean>>({})
-
-  useEffect(() => {
-    fetchCourses()
-  }, [fetchCourses])
   const searchParams = useSearchParams()
 
   const backHref = useMemo(() => {
