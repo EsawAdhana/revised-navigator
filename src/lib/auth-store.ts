@@ -49,7 +49,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       set({ user, session, isLoading: false })
 
-      if (event === 'SIGNED_IN' && user?.email) {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && user?.email) {
         pullAndMerge(user.email, user.id)
       }
     })
