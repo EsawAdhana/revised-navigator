@@ -73,7 +73,8 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
               ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
               : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
           )}
-          title="Yes, the syllabus is avaiable"
+          title="Yes, the syllabus is available"
+          aria-label="Yes, the syllabus is available"
         >
           <ThumbsUp size={12} />
           {votes.up > 0 && <span className="tabular-nums">{votes.up}</span>}
@@ -88,6 +89,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
               : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
           )}
           title="No, the syllabus is not available"
+          aria-label="No, the syllabus is not available"
         >
           <ThumbsDown size={12} />
           {votes.down > 0 && <span className="tabular-nums">{votes.down}</span>}
@@ -129,6 +131,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
                 <button
                   type="button"
                   onClick={() => voteOnSubmission(sub.id, 1, courseId, term)}
+                  aria-label="Upvote this link"
                   className={cn(
                     'p-1 rounded transition-colors',
                     sub.userVote === 1
@@ -147,6 +150,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
                 <button
                   type="button"
                   onClick={() => voteOnSubmission(sub.id, -1, courseId, term)}
+                  aria-label="Downvote this link"
                   className={cn(
                     'p-1 rounded transition-colors',
                     sub.userVote === -1

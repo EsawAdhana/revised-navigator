@@ -8,7 +8,8 @@ import type { Course } from '@/types/course';
 import { searchCourses } from '@/lib/search-utils';
 
 export function useFilteredCourses() {
-    const { courses, isLoading } = useCourseStore();
+    const courses = useCourseStore(state => state.courses);
+    const isLoading = useCourseStore(state => state.isLoading);
     const cartItems = useCartStore(state => state.items);
 
     const [query] = useQueryState('q', { defaultValue: '' });
@@ -34,6 +35,8 @@ export function useFilteredCourses() {
         (s === 'rating' ? 'desc' : 'asc') as 'asc' | 'desc', []);
     const effectiveSortOrder = sortOrder ?? getDefaultOrderForSort(sortBy);
 
+    const primaryMap = useMemo(() => getCrossListPrimaryMap(courses), [courses]);
+
     const filteredResult = useMemo(() => {
         // O(1) Set lookups for filter membership — faster than array .includes() per course
         const deptsSet = new Set(selectedDepts ?? []);
@@ -46,9 +49,6 @@ export function useFilteredCourses() {
 
         // Start with all courses, excluding those without a grade basis (invalid)
         let result = courses.filter(c => c.grading && c.grading.trim() !== '' && c.grading !== 'TBD');
-
-        // Cross-list: hide courses that are alternates; when A and B list each other, show only the canonical (alphabetically first)
-        const primaryMap = getCrossListPrimaryMap(courses);
         result = result.filter(c => {
             const norm = normalizeCourseId(c.id);
             const canonical = resolveToCanonicalPrimary(norm, primaryMap);
@@ -277,7 +277,6 @@ export function useFilteredCourses() {
             // If the user searched for an alternate course code (e.g. "cs 238v"), include the primary course so it shows up
             const queryNorm = normalizeCourseId(query.trim().replace(/\s+/g, ''));
             if (queryNorm) {
-                const primaryMap = getCrossListPrimaryMap(courses);
                 if (primaryMap.has(queryNorm)) {
                     const canonicalNorm = resolveToCanonicalPrimary(queryNorm, primaryMap);
                     // Prefer primary from beforeSearch (so it passed term/dept etc.); fallback to full list so search always finds the course
@@ -293,12 +292,11 @@ export function useFilteredCourses() {
 
         // All filtering is done; this is the set we will sort (sort is the last step)
         return result;
-    }, [courses, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, cartItems, excludedWords]);
+    }, [courses, primaryMap, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, cartItems, excludedWords]);
 
     // Precompute difficulty/hours/rating per course (with cross-list lookup) — O(n) total, not O(n²)
     const metricsByCourseId = useMemo(() => {
         const map = new Map<string, { difficulty?: number; hours?: number; quality?: number }>();
-        const primaryMap = getCrossListPrimaryMap(courses);
         const coursesById = new Map(courses.map(c => [c.id, c]));
 
         // Build canonical -> courseIds in group (one pass)
@@ -331,7 +329,7 @@ export function useFilteredCourses() {
             }
         }
         return map;
-    }, [courses]);
+    }, [courses, primaryMap]);
 
     const displayCourses = useMemo(() => {
         if (filteredResult.length === 0) return [] as Course[];

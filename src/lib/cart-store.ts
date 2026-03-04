@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Course } from '@/types/course'
 import { makeMeetingKey } from '@/lib/schedule-utils'
+import { setCartHydrated } from '@/lib/cart-hydration'
 
 export type CartItem = Course & {
   selectedTerm?: string
@@ -15,6 +16,7 @@ type CartStore = {
   hasItem: (courseId: string) => boolean
   getItem: (courseId: string) => CartItem | undefined
   toggleOptionalMeeting: (courseId: string, day: string, startTime: string, endTime: string) => void
+  clearCart: () => void
 }
 
 export const useCartStore = create<CartStore>()(
@@ -87,11 +89,15 @@ export const useCartStore = create<CartStore>()(
         }
 
         set({ items: newItems })
-      }
+      },
+      clearCart: () => set({ items: [] })
     }),
     {
       name: 'navigator-cart',
-      version: 1
+      version: 1,
+      onRehydrateStorage: () => (_state, _err) => {
+        setCartHydrated()
+      }
     }
   )
 )

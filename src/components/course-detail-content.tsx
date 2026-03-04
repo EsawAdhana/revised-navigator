@@ -214,7 +214,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
             if (terms.includes('Spring 2026')) setActiveTerm('Spring 2026');
             else setActiveTerm(terms[0]);
         }
-    }, [course.id, cartItem?.selectedTerm, terms.length]); // eslint-disable-line
+    }, [course.id, cartItem?.selectedTerm, terms.length]); // eslint-disable-line react-hooks/exhaustive-deps -- activeTerm omitted to avoid loop; setActiveTerm is stable
 
     const isFutureTerm = activeTerm === 'Spring 2026' || activeTerm === 'Summer 2026'
 

@@ -39,7 +39,6 @@ export function CourseList() {
 
   // Only letters that have courses, sorted (# first, then A-Z)
   const existingLetters = useMemo(() => {
-    if (!letterToIndex) return []
     const letters = Array.from(letterToIndex.keys())
     return letters.sort((a, b) => (a === '#' ? -1 : b === '#' ? 1 : a.localeCompare(b)))
   }, [letterToIndex])
@@ -167,7 +166,7 @@ export function CourseList() {
                 </Select>
               </div>
               <span className="h-8 flex items-center text-xs tabular-nums font-semibold text-foreground/70 whitespace-nowrap shrink-0 ml-auto">
-                {courses.length.toLocaleString()} {courses.length === 1 ? 'class' : 'classes'}
+                {courses.length.toLocaleString('en-US')} {courses.length === 1 ? 'class' : 'classes'}
               </span>
             </div>
             {/* Row 2: Filters only */}

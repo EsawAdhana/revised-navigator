@@ -127,7 +127,7 @@ function layoutDayEvents(events: CalendarEvent[]) {
 
 export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMin, totalUnitsMax, isOverload, onIgnoreOverload, expectedHoursPerWeek, expectedHoursLoading }: CalendarViewProps) {
   const { items, addItem, removeItem, toggleOptionalMeeting } = useCartStore()
-  const { courses } = useCourseStore()
+  const courses = useCourseStore(state => state.courses)
   const router = useRouter()
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -153,19 +153,21 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
   }, [])
 
   // Merge cart items with full course data from store (cart may have light data without sections)
+  const courseMap = useMemo(() => new Map(courses.map(c => [c.id, c])), [courses])
+
   const currentTermCourses = useMemo(() => {
     const filtered = items.filter(c =>
       c.selectedTerm ? c.selectedTerm === currentTerm :
         (c.terms && currentTerm && c.terms.includes(currentTerm))
     )
     return filtered.map(item => {
-      const fullCourse = courses.find(c => c.id === item.id)
+      const fullCourse = courseMap.get(item.id)
       if (fullCourse?.sections && fullCourse.sections.length > 0) {
         return { ...fullCourse, ...item, sections: fullCourse.sections } as typeof item
       }
       return item
     })
-  }, [items, currentTerm, courses])
+  }, [items, currentTerm, courseMap])
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return []
@@ -284,20 +286,10 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                     className="calendar-grid grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] relative"
                     style={{
                       '--hour-height': `${HOUR_HEIGHT}px`,
-                      '--start-minutes': startMinutes,
-                    } as any}
+                      '--start-minutes': `${startMinutes}`,
+                      height: `calc(((${endMinutes} - ${startMinutes}) / 60) * var(--current-hour-height))`,
+                    } as React.CSSProperties & Record<string, string>}
                   >
-                    <style jsx>{`
-                  .calendar-grid {
-                    --current-hour-height: ${HOUR_HEIGHT}px;
-                    height: calc(((${endMinutes} - ${startMinutes}) / 60) * var(--current-hour-height));
-                  }
-                  @media (max-width: 640px) {
-                    .calendar-grid {
-                      --current-hour-height: ${MOBILE_HOUR_HEIGHT}px;
-                    }
-                  }
-                `}</style>
 
                     {/* Time rail - left column, labels right-justified in box */}
                     <div className="relative border-r bg-background/50">

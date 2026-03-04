@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect } from 'react'
 import { useAuthStore } from '@/lib/auth-store'
 import { useSyncSchedule } from '@/hooks/use-sync-schedule'
 import { Logo } from './logo'
@@ -31,23 +31,9 @@ function MarqueeRow({ items, duration, reverse = false }: { items: string[], dur
   )
 }
 
-function FeatureCard({ icon: Icon, title, description }: { icon: any, title: string, description: string }) {
-  return (
-    <div className="flex flex-col items-start p-6 rounded-2xl bg-secondary/10 border border-border/40 hover:bg-secondary/20 transition-colors">
-      <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 text-primary">
-        <Icon className="h-5 w-5" />
-      </div>
-      <h3 className="text-lg font-semibold mb-2">{title}</h3>
-      <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
-    </div>
-  )
-}
-
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, isLoading, isGuest, initialize, signInWithGoogle } = useAuthStore()
+  const { user, isLoading, initialize, signInWithGoogle } = useAuthStore()
   useSyncSchedule()
-  // We remove the timedOut state and logic to allow immediate rendering of the landing page
-  // for better SEO and perceived performance.
 
   useEffect(() => {
     const unsubscribe = initialize()
@@ -56,14 +42,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [initialize])
 
-  // Show loading spinner ONLY if we are fairly certain a user MIGHT be logged in
-  // checking local storage or cookie existence syncronously would be ideal but simple approach:
-  // if isLoading is true, we simply render the landing page. The "flicker" of landing page -> app
-  // is better than spinner -> app for new users, and for existing users auth is usually fast.
-  // HOWEVER, for a smoother experience, we can keep a small loading state IF we want,
-  // but for Google Verification, showing the content immediately is safer.
-
-  if (user || isGuest) {
+  if (user) {
     return <>{children}</>
   }
 
@@ -164,7 +143,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             Terms of Service
           </Link>
 
-          <span className="">
+          <span className="" suppressHydrationWarning>
             &copy; {new Date().getFullYear()} Stanford Root
           </span>
         </div>

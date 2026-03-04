@@ -170,7 +170,6 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
       }))
     } catch (err) {
       console.error(`Failed to fetch detail for ${courseId}:`, err)
-      set(state => ({ enrichedCourseIds: new Set([...state.enrichedCourseIds, courseId]) }))
     }
   },
 }))

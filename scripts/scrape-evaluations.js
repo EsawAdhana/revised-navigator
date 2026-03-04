@@ -20,7 +20,7 @@
  *   --course X      Scrape a single course by code, e.g. "CS 106A"
  *   --find-missing  Identify which evaluations are missing (no extraction, just lists them)
  *   --retry-missing Search by individual course code to find & extract only what's missing
- *   --backfill      For courses with zero evals in Supabase, find & upload their most recent historical term
+ *   --backfill      For courses with zero evals in Supabase, find & upload (term-based, fast). Use --resume and --limit for incremental runs.
  *   --concurrency N Number of parallel HTTP requests (default: 20)
  *   --workers N     Number of parallel term searches (default: 5, use 2 for resume)
  */
@@ -40,6 +40,7 @@ const SEARCH_URL = `${BASE_URL}/Report/Public/Results`
 const REPORT_URL = `${BASE_URL}/Reports/StudentReport.aspx`
 const OUTPUT_FILE = path.join(__dirname, '..', 'public', 'data', 'evaluations.json')
 const PROGRESS_FILE = path.join(__dirname, '..', '.eval-scrape-progress.json')
+const BACKFILL_PROGRESS_FILE = path.join(__dirname, '..', '.eval-backfill-progress.json')
 
 // Delay between requests to avoid rate limiting (ms)
 const REQUEST_DELAY = 300
@@ -49,17 +50,37 @@ const SEARCH_DELAY = 500
 // HTTP fetches are lightweight, so we can safely run many more in parallel
 const DEFAULT_CONCURRENCY = 20
 
-// Recent academic terms to scrape (Fall 2023 onward)
+// Academic terms to scrape (2021–2026). Backfill processes most recent first.
 const RECENT_TERMS = [
-  { code: 'F23', label: 'Fall 2023' },
-  { code: 'W24', label: 'Winter 2024' },
-  { code: 'Sp24', label: 'Spring 2024' },
-  { code: 'Su24', label: 'Summer 2024' },
-  { code: 'F24', label: 'Fall 2024' },
+  // 2025–26
+  { code: 'F25', label: 'Fall 2025' },
+  { code: 'W26', label: 'Winter 2026' },
+  { code: 'Sp26', label: 'Spring 2026' },
+  { code: 'Su26', label: 'Summer 2026' },
+  { code: 'F26', label: 'Fall 2026' },
+  // 2024–25
   { code: 'W25', label: 'Winter 2025' },
   { code: 'Sp25', label: 'Spring 2025' },
   { code: 'Su25', label: 'Summer 2025' },
-  { code: 'F25', label: 'Fall 2025' },
+  { code: 'F24', label: 'Fall 2024' },
+  // 2023–24
+  { code: 'W24', label: 'Winter 2024' },
+  { code: 'Sp24', label: 'Spring 2024' },
+  { code: 'Su24', label: 'Summer 2024' },
+  { code: 'F23', label: 'Fall 2023' },
+  // 2022–23
+  { code: 'W23', label: 'Winter 2023' },
+  { code: 'Sp23', label: 'Spring 2023' },
+  { code: 'Su23', label: 'Summer 2023' },
+  { code: 'F22', label: 'Fall 2022' },
+  // 2021–22
+  { code: 'W22', label: 'Winter 2022' },
+  { code: 'Sp22', label: 'Spring 2022' },
+  { code: 'Su22', label: 'Summer 2022' },
+  { code: 'F21', label: 'Fall 2021' },
+  { code: 'W21', label: 'Winter 2021' },
+  { code: 'Sp21', label: 'Spring 2021' },
+  { code: 'Su21', label: 'Summer 2021' },
 ]
 
 function sleep(ms) {
@@ -597,10 +618,41 @@ function mostRecentTermGroup(results) {
 }
 
 /**
- * Backfill mode: query Supabase for courses with zero evaluations, search
- * EvaluationKit for any historical data, and upload the most recent term found.
+ * Load backfill progress for --resume.
+ * Returns { completedCourseIds: Set }.
  */
-async function runBackfill(cookieString, concurrency) {
+function loadBackfillProgress() {
+  const completedCourseIds = new Set()
+  if (fs.existsSync(BACKFILL_PROGRESS_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(BACKFILL_PROGRESS_FILE, 'utf-8'))
+      if (data.completedCourseIds) {
+        for (const id of data.completedCourseIds) completedCourseIds.add(id)
+      }
+    } catch (err) {
+      console.warn('Warning: Could not parse backfill progress file')
+    }
+  }
+  return { completedCourseIds }
+}
+
+/**
+ * Save backfill progress (completed course IDs).
+ */
+function saveBackfillProgress(completedCourseIds) {
+  fs.writeFileSync(BACKFILL_PROGRESS_FILE, JSON.stringify({
+    completedCourseIds: Array.from(completedCourseIds),
+    lastUpdated: new Date().toISOString()
+  }))
+}
+
+/**
+ * Backfill mode: per-course search. For each course with zero evals in Supabase,
+ * search EvaluationKit by course code (e.g. "CS 106A"), take only the most recent
+ * term's evaluations (1 quarter), extract and insert. Insert as we go. Supports
+ * --resume and --limit for incremental runs.
+ */
+async function runBackfill(cookieString, concurrency, opts) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     console.error('Backfill requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.')
     console.error('Run with: node --env-file=.env.local scripts/scrape-evaluations.js --backfill')
@@ -609,7 +661,7 @@ async function runBackfill(cookieString, concurrency) {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
 
-  console.log('\n=== BACKFILL MODE ===')
+  console.log('\n=== BACKFILL MODE (per-course) ===')
   console.log('Querying Supabase for courses with zero evaluations...')
 
   // Collect all course_ids that already have evaluations
@@ -625,23 +677,46 @@ async function runBackfill(cookieString, concurrency) {
     offset += PAGE
   }
 
-  // Collect all courses
-  const allCourses = []
+  // Collect all courses and deduplicate by course_id (courses table has one row per quarter)
+  const allCoursesRaw = []
   offset = 0
   while (true) {
     const { data, error } = await supabase.from('courses').select('course_id, subject, code').range(offset, offset + PAGE - 1)
     if (error) throw new Error(`Supabase courses query: ${error.message}`)
     if (!data || data.length === 0) break
-    allCourses.push(...data)
+    allCoursesRaw.push(...data)
     if (data.length < PAGE) break
     offset += PAGE
   }
 
-  const missing = allCourses.filter(c => !evCourseIds.has(c.course_id))
-  console.log(`${allCourses.length} total courses | ${evCourseIds.size} with evaluations | ${missing.length} to backfill`)
+  const missingByCourseId = new Map()
+  for (const c of allCoursesRaw) {
+    if (evCourseIds.has(c.course_id)) continue
+    if (!missingByCourseId.has(c.course_id)) {
+      missingByCourseId.set(c.course_id, c)
+    }
+  }
+  let missing = Array.from(missingByCourseId.values())
+
+  // Apply resume: skip already-completed
+  const { completedCourseIds } = opts.resume ? loadBackfillProgress() : { completedCourseIds: new Set() }
+  if (opts.resume && completedCourseIds.size > 0) {
+    missing = missing.filter(c => !completedCourseIds.has(c.course_id))
+    console.log(`Resuming: ${completedCourseIds.size} already backfilled, ${missing.length} remaining`)
+  }
+
+  // Apply limit
+  if (opts.limit && opts.limit > 0) {
+    missing = missing.slice(0, opts.limit)
+    console.log(`Limit: processing at most ${opts.limit} courses this run`)
+  }
+
+  const totalMissing = missingByCourseId.size
+  console.log(`${allCoursesRaw.length} total course rows | ${evCourseIds.size} with evaluations | ${totalMissing} to backfill | processing ${missing.length}`)
+  console.log('Strategy: search each missing course by code → take latest term only → insert as we go\n')
 
   if (missing.length === 0) {
-    console.log('Nothing to backfill — all courses already have evaluation data!')
+    console.log('Nothing to backfill — all target courses already have evaluation data!')
     return
   }
 
@@ -649,21 +724,22 @@ async function runBackfill(cookieString, concurrency) {
   let notFound = 0
   let errors = 0
 
-  // Cap batch size: each search is heavier (returns results across all terms)
   const BATCH = Math.min(concurrency, 15)
+  const keepAliveTimer = setInterval(() => {
+    fetch(`${BASE_URL}/Report/Public`, { headers: getHTTPHeaders(cookieString) }).catch(() => {})
+  }, 3 * 60 * 1000)
 
   for (let i = 0; i < missing.length; i += BATCH) {
     const batch = missing.slice(i, Math.min(i + BATCH, missing.length))
 
     await Promise.all(batch.map(async (course) => {
-      const subj = course.subject.replace(/\s+/g, '')
-      const code = course.code.replace(/\s+/g, '')
+      const subj = (course.subject || '').replace(/\s+/g, '')
+      const code = (course.code || '').replace(/\s+/g, '')
       const searchQuery = `${subj} ${code}`
 
       const results = await searchCourseHTTP(searchQuery, cookieString)
 
-      // Filter to results that actually match this specific course (not substring matches)
-      const matching = results.filter(r => {
+      const matching = results.filter((r) => {
         for (const seg of r.courseCode.split('/')) {
           const parts = seg.trim().split('-')
           if (parts.length >= 3 && parts[1] === subj && parts[2] === code) return true
@@ -676,9 +752,7 @@ async function runBackfill(cookieString, concurrency) {
         return
       }
 
-      // Take only the most recent term's reports
       const toExtract = mostRecentTermGroup(matching)
-
       const extracted = await extractBatchViaHTTP(toExtract, cookieString)
 
       const rows = []
@@ -702,18 +776,23 @@ async function runBackfill(cookieString, concurrency) {
           errors++
           console.error(`\n  ❌ ${course.course_id}: ${error.message}`)
         } else {
+          completedCourseIds.add(course.course_id)
           backfilled++
-          console.log(`\n  ✅ ${course.course_id}: ${rows.length} eval(s) from ${toExtract[0]?.term}`)
+          console.log(`  ✅ ${course.course_id}: ${rows.length} eval(s) from ${toExtract[0]?.term}`)
         }
       } else {
         notFound++
       }
     }))
 
+    saveBackfillProgress(completedCourseIds)
+
     const done = Math.min(i + BATCH, missing.length)
     process.stdout.write(`\r[${done}/${missing.length}] backfilled: ${backfilled} | not found: ${notFound} | errors: ${errors}  `)
     await sleep(100)
   }
+
+  clearInterval(keepAliveTimer)
 
   console.log(`\n\nBackfill complete!`)
   console.log(`  Courses backfilled: ${backfilled}`)
@@ -835,7 +914,7 @@ async function main() {
 
   // === BACKFILL MODE ===
   if (opts.backfill) {
-    await runBackfill(cookieString, concurrency)
+    await runBackfill(cookieString, concurrency, opts)
     await browser.close()
     return
   }
