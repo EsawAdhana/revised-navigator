@@ -16,7 +16,6 @@ import {
   timeToMinutes,
   parseTimeStringToMinutes,
   parseMeetingTimes,
-  getWeeklyContactHours,
 } from '../src/lib/schedule-utils'
 import type { Course, Section } from '../src/types/course'
 
@@ -234,32 +233,18 @@ function main() {
       )
     }
 
-    // Target 4: getWeeklyContactHours (uses parseMeetingTimes + timeToMinutes)
-    const r4 = runWithTimeout(() => getWeeklyContactHours(course))
-    if (!r4.ok) {
-      crashes++
-      crashLog.push(
-        { target: 'getWeeklyContactHours', input: { days: daysMutated, time: timeMutated }, error: r4.error }
-      )
-    }
-
-    // Target 5 & 6: Malformed Course structure (~20% of iterations)
+    // Target 4: Malformed Course structure (~20% of iterations)
     if (randomInt(5) === 0) {
       const malformed = createMalformedCourse()
-      const r5 = runWithTimeout(() => parseMeetingTimes(malformed))
-      if (!r5.ok) {
+      const r4 = runWithTimeout(() => parseMeetingTimes(malformed))
+      if (!r4.ok) {
         crashes++
-        crashLog.push({ target: 'parseMeetingTimes (malformed)', input: malformed, error: r5.error })
+        crashLog.push({ target: 'parseMeetingTimes (malformed)', input: malformed, error: r4.error })
       }
-      const r6 = runWithTimeout(() => getWeeklyContactHours(malformed))
-      if (!r6.ok) {
-        crashes++
-        crashLog.push({ target: 'getWeeklyContactHours (malformed)', input: malformed, error: r6.error })
-      }
-      executed += 2
+      executed += 1
     }
 
-    executed += 4
+    executed += 3
     if ((i + 1) % 10000 === 0) {
       process.stdout.write(`\r  ${(i + 1).toLocaleString()} iterations, ${crashes} crashes`)
     }

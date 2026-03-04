@@ -2,15 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
-import { ExternalLink, MapPin, Clock, Check, Plus, FileText, AlertCircle, Loader2, Palette, Info, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ExternalLink, MapPin, Clock, Check, FileText, AlertCircle, Loader2, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { Section } from '@/types/course';
-import { cn, getSyllabusUrl, parseUnitsOptions, hasVariableUnits, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities, getCrossListGroupIds } from '@/lib/utils';
+import { cn, getSyllabusUrl, parseUnitsOptions, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities, getCrossListGroupIds } from '@/lib/utils';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSyllabusValidity } from '@/hooks/use-syllabus-validity';
-import { CourseEvaluations, ScoreBadge, barFill, scoreColor, CATEGORY_LABELS, QuestionCategory, aggregateMetrics } from './course-evaluations';
+import { CourseEvaluations, ScoreBadge, barFill, CATEGORY_LABELS, QuestionCategory, aggregateMetrics } from './course-evaluations';
 import { SyllabusVoting } from './syllabus-voting';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Course, CourseEvaluation } from '@/types/course';

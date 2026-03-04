@@ -213,16 +213,3 @@ export function parseMeetingTimes(course: Course, term?: string): ParsedMeeting[
   return parsed
 }
 
-/** Weekly contact hours from scheduled meetings (first section / term). Returns 0 if no meetings or TBA. */
-export function getWeeklyContactHours(course: Course, term?: string): number {
-  const meetings = parseMeetingTimes(course, term)
-  let totalHours = 0
-  for (const m of meetings) {
-    if (!m.endTime) continue
-    const startMins = timeToMinutes(m.startTime)
-    const endMins = timeToMinutes(m.endTime)
-    const durationHours = Math.max(0, endMins - startMins) / 60
-    totalHours += durationHours * m.days.length
-  }
-  return totalHours
-}

@@ -1,8 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Course } from '@/types/course';
-import { getDepartmentUrl, unitsLabel, parseUnitsOptions, decodeHtmlEntities } from '@/lib/utils';
-import { Calendar, Users } from 'lucide-react';
+import { unitsLabel, parseUnitsOptions, decodeHtmlEntities } from '@/lib/utils';
 import { InstructorList } from './instructor-list';
 
 function getRatingColor(rating: number): string {

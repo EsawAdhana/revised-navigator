@@ -165,7 +165,7 @@ async function _pullAndMerge(email: string, userId: string): Promise<void> {
  * Encrypts the current cart and upserts to Supabase.
  * Errors are swallowed — local state is always the source of truth.
  */
-export async function pushSchedule(email: string, userId: string): Promise<void> {
+async function pushSchedule(email: string, userId: string): Promise<void> {
   try {
     const items = toScheduleItems()
     const key = await getKey(email, userId)
