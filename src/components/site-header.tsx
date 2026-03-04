@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 export function SiteHeader() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const { user, isGuest, signInWithGoogle, signOut } = useAuthStore();
+    const { user, signOut } = useAuthStore();
 
     const scheduleHref = useMemo(() => {
         const params = new URLSearchParams(searchParams.toString());
@@ -86,29 +86,6 @@ export function SiteHeader() {
                     </Link>
                 </Button>
 
-                {isGuest && !user && (
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <button className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
-                                Guest
-                            </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-48 p-1" align="end" sideOffset={8}>
-                            <button
-                                onClick={signInWithGoogle}
-                                className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-secondary/50 rounded-sm transition-colors"
-                            >
-                                Sign in with Stanford
-                            </button>
-                            <button
-                                onClick={signOut}
-                                className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground hover:bg-secondary/50 hover:text-foreground rounded-sm transition-colors"
-                            >
-                                Exit guest mode
-                            </button>
-                        </PopoverContent>
-                    </Popover>
-                )}
                 {user && (
                     <div className="flex items-center gap-1.5 ml-1">
                         <Popover>

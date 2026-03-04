@@ -7,7 +7,6 @@ import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsIn
 import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, formatComponent, isAllowedGer, formatLevel, parseUnitsOptions, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
 import { searchCourses } from '@/lib/search-utils';
 import { isWimCourse } from '@/lib/wim-courses';
-import { useEvaluationStore } from '@/lib/evaluation-store';
 import { parseMeetingTimes, timeToMinutes, formatMinutes, isMeetingOptional, parseTimeStringToMinutes } from '@/lib/schedule-utils';
 import { CheckboxItem, FilterGroup } from '@/components/ui/filter-components';
 import { Input } from '@/components/ui/input';
@@ -76,7 +75,7 @@ const FilterSection = ({
 
 
 export function FilterSidebar() {
-    const { courses } = useCourseStore();
+    const courses = useCourseStore(state => state.courses);
     const cartItems = useCartStore(state => state.items);
 
     // State
@@ -109,13 +108,12 @@ export function FilterSidebar() {
     const [localTimeMin, setLocalTimeMin] = useState(timeMin);
     const [localTimeMax, setLocalTimeMax] = useState(timeMax);
 
-    // Sync global -> local when external clear/reset happens,
-    // but avoid overwriting local during active dragging.
-    // We achieve this safely by reacting to global changes:
-    React.useEffect(() => { setLocalUnitMin(unitMin); }, [unitMin]);
-    React.useEffect(() => { setLocalUnitMax(unitMax); }, [unitMax]);
-    React.useEffect(() => { setLocalTimeMin(timeMin); }, [timeMin]);
-    React.useEffect(() => { setLocalTimeMax(timeMax); }, [timeMax]);
+    React.useEffect(() => {
+        setLocalUnitMin(unitMin);
+        setLocalUnitMax(unitMax);
+        setLocalTimeMin(timeMin);
+        setLocalTimeMax(timeMax);
+    }, [unitMin, unitMax, timeMin, timeMax]);
 
     // Debounce pushing Local -> Global
     React.useEffect(() => {
@@ -133,8 +131,7 @@ export function FilterSidebar() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [waysExpanded, setWaysExpanded] = useState(false);
 
-    const getEvaluations = useEvaluationStore(state => state.getEvaluations);
-    const evaluations = useEvaluationStore(state => state.evaluations);
+    const primaryMap = useMemo(() => getCrossListPrimaryMap(courses), [courses]);
 
     // Helper to filter courses based on all active filters except a specific one
     // This ensures facet counts match the visible course list
@@ -143,9 +140,6 @@ export function FilterSidebar() {
 
         // Apply invalid course filter (no grade basis)
         filtered = filtered.filter(c => c.grading && c.grading.trim() !== '' && c.grading !== 'TBD');
-
-        // Cross-list: show only canonical course per group (same as main list)
-        const primaryMap = getCrossListPrimaryMap(courses);
         filtered = filtered.filter(c => {
             const norm = normalizeCourseId(c.id);
             const canonical = resolveToCanonicalPrimary(norm, primaryMap);
@@ -449,7 +443,7 @@ export function FilterSidebar() {
             gers: Array.from(gers.entries()).sort((a, b) => a[0].localeCompare(b[0])),
             schools,
         };
-    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, cartItems, evaluations, getEvaluations]);
+    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, cartItems]);
 
     const filteredDepts = useMemo(() => {
         if (!deptQuery) return facets.depts;

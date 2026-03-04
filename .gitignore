@@ -13,8 +13,10 @@ tsconfig.tsbuildinfo
 
 # Scraper temp files
 .eval-scrape-progress.json
+.eval-backfill-progress.json
 .auth.json
 .sections-scrape-progress.json
+.final-exam-scrape-progress.json
 
 # Generated per-course evaluation files
 public/data/evals/

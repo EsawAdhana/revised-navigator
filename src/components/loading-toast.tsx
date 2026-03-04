@@ -6,35 +6,22 @@ import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
 
 export function LoadingToast() {
-    const { isLoading, isEnriching } = useCourseStore()
-    // Show if either loading (initial) or enriching (fetching full data).
-    // But strictly, the user said "First Load", which is `isLoading`.
-    // `isEnriching` happens in background and is less critical to block UI for.
-    // We'll stick to `isLoading` for the blocking modal feel, or maybe just `isLoading`.
-    // Let's stick to `isLoading` as that's the "cache empty" state.
-
+    const { isLoading } = useCourseStore()
     const show = isLoading
 
     const [isVisible, setIsVisible] = React.useState(false)
+    const enterTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+    const exitTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
 
     React.useEffect(() => {
-        let enterTimeout: NodeJS.Timeout
-        let exitTimeout: NodeJS.Timeout
-
         if (show) {
-            // Delay showing to prevent flash on fast loads (cache hits)
-            enterTimeout = setTimeout(() => {
-                setIsVisible(true)
-            }, 500)
+            if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current)
+            enterTimeoutRef.current = setTimeout(() => setIsVisible(true), 500)
         } else {
-            // If loading finishes, clear the enter timeout so we never show if it was fast
-            clearTimeout(enterTimeout!)
-
-            // Delay hiding to allow animation to finish or just be visible for a moment
-            // Only set exit timeout if we are currently visible
+            if (enterTimeoutRef.current) clearTimeout(enterTimeoutRef.current)
             setIsVisible(prev => {
                 if (prev) {
-                    exitTimeout = setTimeout(() => setIsVisible(false), 800)
+                    exitTimeoutRef.current = setTimeout(() => setIsVisible(false), 800)
                     return true
                 }
                 return false
@@ -42,8 +29,8 @@ export function LoadingToast() {
         }
 
         return () => {
-            clearTimeout(enterTimeout)
-            clearTimeout(exitTimeout)
+            if (enterTimeoutRef.current) clearTimeout(enterTimeoutRef.current)
+            if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current)
         }
     }, [show])
 
@@ -52,11 +39,15 @@ export function LoadingToast() {
     if (!isVisible) return null
 
     return (
-        <div className={cn(
-            "fixed inset-0 z-[100] flex items-end justify-center pb-12 px-4 pointer-events-none",
-            "transition-opacity duration-500",
-            show ? "opacity-100" : "opacity-0"
-        )}>
+        <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+                "fixed inset-0 z-[100] flex items-end justify-center pb-12 px-4 pointer-events-none",
+                "transition-opacity duration-500",
+                show ? "opacity-100" : "opacity-0"
+            )}
+        >
             <div className={cn(
                 "bg-background/80 backdrop-blur-xl border border-border/40 shadow-2xl rounded-2xl p-6 max-w-[340px] text-center",
                 "transform transition-all duration-500",

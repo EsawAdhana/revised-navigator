@@ -1,18 +1,19 @@
 import { create } from 'zustand'
 import { supabase } from './supabase'
 import type { User, Session } from '@supabase/supabase-js'
-import { pullAndMerge, cancelDebouncedPush, clearKeyCache } from './schedule-sync'
-
-const GUEST_KEY = 'stanford-root-guest'
+import {
+  pullAndMerge,
+  cancelDebouncedPush,
+  clearKeyCache,
+} from './schedule-sync'
+import { useCartStore } from './cart-store'
 
 interface AuthState {
   user: User | null
   session: Session | null
   isLoading: boolean
-  isGuest: boolean
   initialize: () => () => void
   signInWithGoogle: () => Promise<void>
-  continueAsGuest: () => void
   signOut: () => Promise<void>
 }
 
@@ -20,32 +21,23 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   session: null,
   isLoading: true,
-  isGuest: false, // Always false initially to match server; set from sessionStorage in initialize() after mount
 
   initialize: () => {
-    // Load existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
       const user = session?.user ?? null
 
-      // Reject non-Stanford emails
       if (user && !user.email?.endsWith('@stanford.edu')) {
         supabase.auth.signOut()
         set({ user: null, session: null, isLoading: false })
         return
       }
 
-      const isGuest = typeof window !== 'undefined' && sessionStorage.getItem(GUEST_KEY) === '1'
-      set({ user, session, isLoading: false, isGuest })
-      if (user?.email) {
-        pullAndMerge(user.email, user.id)
-      }
+      set({ user, session, isLoading: false })
     }).catch((err) => {
       console.error('Failed to get session:', err)
-      const isGuest = typeof window !== 'undefined' && sessionStorage.getItem(GUEST_KEY) === '1'
-      set({ user: null, session: null, isLoading: false, isGuest })
+      set({ user: null, session: null, isLoading: false })
     })
 
-    // Listen for auth state changes (sign in, sign out, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const user = session?.user ?? null
 
@@ -55,21 +47,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         return
       }
 
-      set({ user, session, isLoading: false, isGuest: false })
+      set({ user, session, isLoading: false })
 
-      if (event === 'SIGNED_IN' && user?.email) {
+      if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && user?.email) {
         pullAndMerge(user.email, user.id)
       }
     })
 
     return () => subscription.unsubscribe()
-  },
-
-  continueAsGuest: () => {
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(GUEST_KEY, '1')
-    }
-    set({ isGuest: true })
   },
 
   signInWithGoogle: async () => {
@@ -78,7 +63,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       options: {
         redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
         queryParams: {
-          hd: 'stanford.edu' // Hint Google to only show Stanford accounts
+          hd: 'stanford.edu'
         }
       }
     })
@@ -87,10 +72,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   signOut: async () => {
     cancelDebouncedPush()
     clearKeyCache()
+    useCartStore.getState().clearCart()
     await supabase.auth.signOut()
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem(GUEST_KEY)
-    }
-    set({ user: null, session: null, isGuest: false })
+    set({ user: null, session: null })
   }
 }))

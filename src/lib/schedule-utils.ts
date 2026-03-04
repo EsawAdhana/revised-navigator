@@ -32,7 +32,7 @@ function normalizeDayToken(token: string) {
   return ''
 }
 
-function parseDays(daysStr: string) {
+export function parseDays(daysStr: string) {
   if (!daysStr) return []
   const raw = daysStr.trim()
   if (!raw || raw.toLowerCase().includes('tba')) return []

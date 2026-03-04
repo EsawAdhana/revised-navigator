@@ -61,19 +61,6 @@ export function normalizeCourseId(id: string): string {
 }
 
 /**
- * Returns the set of normalized course ids that appear as alternates in some course's title.
- * Those courses should be hidden from the list (we show only the "primary" course that lists them).
- */
-export function getCrossListAlternateIds(courses: { id: string; title: string }[]): Set<string> {
-  const set = new Set<string>()
-  for (const c of courses) {
-    const alts = getAlternateCourseCodesFromTitle(c.title)
-    alts.forEach(a => set.add(a))
-  }
-  return set
-}
-
-/**
  * Map from normalized alternate id -> normalized primary id.
  * Used to redirect /courses/CS137A to /courses/AA174A when they're the same course.
  * Note: When courses mutually list each other (A lists B, B lists A), both end up in the map.
@@ -304,28 +291,6 @@ export function unitsLabel(value: number | string | null | undefined): 'unit' | 
   return 'units'
 }
 
-/** Formats a unit value or range (e.g. "1 unit", "3 units", "3-4 units"). */
-export function formatUnits(min: number, max?: number): string {
-  if (max === undefined || min === max) {
-    return `${min} ${unitsLabel(min)}`
-  }
-  return `${min}–${max} units`
-}
-
-/** Single numeric units value for a course (for sorting/display). Uses max of range or first section/course units. */
-export function getCourseUnitsNumeric(course: { units?: string | number; sections?: { units?: string | number }[] }): number {
-  const sources: (string | number | null | undefined)[] = [
-    course.sections?.[0]?.units,
-    course.units,
-    ...(course.sections ?? []).slice(1, 5).map(s => s.units)
-  ]
-  for (const u of sources) {
-    if (u == null || u === '') continue
-    const opts = parseUnitsOptions(u)
-    if (opts.length > 0 && Math.max(...opts) > 0) return Math.max(...opts)
-  }
-  return 0
-}
 /** Normalize a level string (e.g. "UG", "Graduate", "UNDERGRAD") to "Undergrad" or "Graduate". */
 export function formatLevel(level: string): string {
   if (!level || !String(level).trim()) return 'N/A';

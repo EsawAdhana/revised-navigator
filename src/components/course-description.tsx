@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { useCourseStore } from '@/lib/store';
 import { decodeHtmlEntities } from '@/lib/utils';
@@ -13,30 +13,27 @@ interface CourseDescriptionProps {
 }
 
 export function CourseDescription({ description, contextSubject, className }: CourseDescriptionProps) {
-    const { courses } = useCourseStore();
+    const courses = useCourseStore(s => s.courses);
 
-    if (!description) return null;
+    const courseMap = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const c of courses) {
+            map.set(`${c.subject}|${c.code}`, c.id);
+        }
+        return map;
+    }, [courses]);
 
-    // Decode all HTML entities first so we never show raw &nbsp; &amp; etc.
-    const decodedDescription = decodeHtmlEntities(description);
+    const renderedParts = useMemo(() => {
+        if (!description) return null;
 
-    // Helper to render description with clickable course links
-    const renderDescriptionWithLinks = (text: string) => {
-        if (!text) return [];
-
-        // Text is already decoded; use as-is for matching
-        const decodedText = text;
-
-        // Match: "SUBJ CODE" or "SUBJCODE" (e.g. "CS 106A", "CS106B", "MATH 51") or bare code with context (e.g. "30" in a CS course).
-        // Added negative lookbehind (for browsers that support it) or just ensuring we don't match after &#
+        const decodedText = decodeHtmlEntities(description);
         const courseRegex = /\b(?:([A-Z]{2,4})\s*(\d{1,3}[A-Z]?)|(\d{2,3}[A-Z]?))\b/g;
 
-        const parts = [];
+        const parts: React.ReactNode[] = [];
         let lastIndex = 0;
         let match;
 
         while ((match = courseRegex.exec(decodedText)) !== null) {
-            // Basic check to avoid matching inside an entity-like string if any remain
             const precedingText = decodedText.substring(0, match.index);
             if (precedingText.endsWith('&#') || (match[3] && precedingText.match(/&#\d*$/))) {
                 continue;
@@ -56,17 +53,15 @@ export function CourseDescription({ description, contextSubject, className }: Co
                 continue;
             }
 
-            const targetCourse = courses.find(c => c.subject === subject && c.code === code);
+            const courseId = courseMap.get(`${subject}|${code}`);
 
-            if (targetCourse) {
+            if (courseId) {
                 parts.push(
                     <Link
                         key={`${match.index}-${fullCode}`}
-                        href={`/courses/${encodeURIComponent(targetCourse.id)}`}
+                        href={`/courses/${encodeURIComponent(courseId)}`}
                         className="text-primary font-bold hover:underline"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                        }}
+                        onClick={(e) => { e.stopPropagation(); }}
                     >
                         {fullCode}
                     </Link>
@@ -83,12 +78,14 @@ export function CourseDescription({ description, contextSubject, className }: Co
         }
 
         return parts;
-    };
+    }, [description, contextSubject, courseMap]);
+
+    if (!renderedParts) return null;
 
     return (
         <div className={className}>
             <p className="text-muted-foreground text-[15px] leading-relaxed font-normal">
-                {renderDescriptionWithLinks(decodedDescription)}
+                {renderedParts}
             </p>
         </div>
     )

@@ -104,9 +104,6 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
     set(state => ({ ...state, isBulkLoading: true }))
 
     try {
-      const allById: Record<string, CourseEvaluation[]> = { ...evaluations }
-
-      // Single API request — server fetches from Supabase (1 round-trip vs 5)
       const res = await fetch('/api/evaluations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -115,27 +112,30 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
       if (!res.ok) throw new Error(`API error: ${res.status}`)
       const byCourse = (await res.json()) as Record<string, CourseEvaluation[]>
 
+      const fetched: Record<string, CourseEvaluation[]> = {}
       for (const [courseId, evals] of Object.entries(byCourse)) {
-        allById[courseId] = evals || []
+        fetched[courseId] = evals || []
       }
       for (const id of toFetch) {
-        if (!(id in allById)) allById[id] = []
+        if (!(id in fetched)) fetched[id] = []
       }
 
-      writeEvalCache(allById)
-      set(state => ({
-        evaluations: allById,
-        isBulkLoading: false
-      }))
+      set(state => {
+        const merged = { ...state.evaluations, ...fetched }
+        writeEvalCache(merged)
+        return { evaluations: merged, isBulkLoading: false }
+      })
     } catch (err) {
       console.error('Failed to bulk load evaluations:', err)
-      // Mark fetched courses as empty so we don't show loading forever
-      const { evaluations: ev } = get()
-      const allById = { ...ev }
-      for (const id of toFetch) {
-        if (!(id in allById)) allById[id] = []
-      }
-      set(state => ({ ...state, evaluations: allById, isBulkLoading: false }))
+      set(state => {
+        const updated = { ...state.evaluations }
+        const errors = { ...state.errorCourses }
+        for (const id of toFetch) {
+          if (!(id in updated)) updated[id] = []
+          errors[id] = true
+        }
+        return { evaluations: updated, errorCourses: errors, isBulkLoading: false }
+      })
     }
   },
 
