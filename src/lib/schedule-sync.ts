@@ -1,23 +1,16 @@
 import { supabase } from './supabase'
-import { deriveKey, encryptSchedule, decryptSchedule, type ScheduleItem } from './schedule-crypto'
 import { useCartStore } from './cart-store'
 import { useCourseStore } from './store'
 import { cartHydrated } from './cart-hydration'
 
-// Module-level key cache — avoids re-running 100k PBKDF2 iterations on every cart change
-let cachedKey: CryptoKey | null = null
-let cachedUserId: string | null = null
-
-async function getKey(email: string, userId: string): Promise<CryptoKey> {
-  if (cachedKey && cachedUserId === userId) return cachedKey
-  cachedKey = await deriveKey(email, userId)
-  cachedUserId = userId
-  return cachedKey
-}
-
-export function clearKeyCache() {
-  cachedKey = null
-  cachedUserId = null
+// Minimal payload stored server-side — no full Course catalog data
+export type ScheduleItem = {
+  id: string
+  selectedTerm?: string
+  selectedSectionId?: number
+  selectedUnits?: number
+  color?: string
+  optionalMeetings?: string[]
 }
 
 function toScheduleItems(): ScheduleItem[] {
@@ -100,114 +93,15 @@ function reHydrateOnEnrichment(syncedIds: Set<string>) {
 }
 
 /**
- * Merges local and server schedule items (local wins on ID conflict),
- * hydrates from catalog, and updates the cart store.
- * Returns true if a merge produced changes that should be pushed back.
+ * Upserts current cart to Supabase as plaintext JSONB.
+ * Errors are swallowed — local state remains visible to user.
  */
-async function mergeAndHydrate(
-  localItems: ScheduleItem[],
-  serverItems: ScheduleItem[],
-  logPrefix = ''
-): Promise<boolean> {
-  if (localItems.length === 0 && serverItems.length > 0) {
-    await waitForCourses()
-    const hydrated = hydrateItems(serverItems, logPrefix)
-    if (hydrated.length > 0) {
-      useCartStore.setState({ items: hydrated })
-      const syncedIds = new Set(serverItems.map(s => s.id))
-      // Eagerly fetch full section data in parallel with Phase 2 catalog fetch
-      useCourseStore.getState().fetchCourseDetails([...syncedIds])
-      reHydrateOnEnrichment(syncedIds)
-    }
-    return false
-  }
-
-  if (localItems.length > 0 && serverItems.length > 0) {
-    const merged = [...localItems]
-    for (const serverItem of serverItems) {
-      if (!merged.find(l => l.id === serverItem.id)) {
-        merged.push(serverItem)
-      }
-    }
-    await waitForCourses()
-    const hydrated = hydrateItems(merged, logPrefix)
-    if (hydrated.length > 0) {
-      useCartStore.setState({ items: hydrated })
-      const syncedIds = new Set(merged.map(s => s.id))
-      // Eagerly fetch full section data in parallel with Phase 2 catalog fetch
-      useCourseStore.getState().fetchCourseDetails([...syncedIds])
-      reHydrateOnEnrichment(syncedIds)
-    }
-    return true
-  }
-
-  return localItems.length > 0
-}
-
-let pullInFlight: Promise<void> | null = null
-
-/**
- * On sign-in: fetch server schedule, merge with local cart (local wins on conflict),
- * then push merged result to server. Hydration waits for course catalog to be ready.
- * Serialized: concurrent calls await the in-flight request instead of interleaving.
- */
-export async function pullAndMerge(email: string, userId: string): Promise<void> {
-  if (pullInFlight) return pullInFlight
-  pullInFlight = _pullAndMerge(email, userId).finally(() => { pullInFlight = null })
-  return pullInFlight
-}
-
-async function _pullAndMerge(email: string, userId: string): Promise<void> {
+async function pushSchedule(userId: string): Promise<void> {
   try {
-    cancelDebouncedPush()
-    await cartHydrated
-
-    const { data, error } = await supabase
-      .from('user_schedules')
-      .select('ciphertext, iv')
-      .eq('user_id', userId)
-      .single()
-
-    if (error && error.code !== 'PGRST116') {
-      console.error('Failed to fetch schedule from Supabase:', error)
-      return
-    }
-
-    const localItems = toScheduleItems()
-
-    if (!data) {
-      if (localItems.length > 0) await pushSchedule(email, userId)
-      return
-    }
-
-    let serverItems: ScheduleItem[]
-    try {
-      const key = await getKey(email, userId)
-      serverItems = await decryptSchedule(data.ciphertext, data.iv, key)
-    } catch (err) {
-      console.error('Failed to decrypt schedule — leaving local cart intact:', err)
-      return
-    }
-
-    const shouldPush = await mergeAndHydrate(localItems, serverItems)
-    if (shouldPush) await pushSchedule(email, userId)
-  } catch (err) {
-    console.error('pullAndMerge error:', err)
-  }
-}
-
-/**
- * Encrypts the current cart and upserts to Supabase.
- * Errors are swallowed — local state is always the source of truth.
- */
-async function pushSchedule(email: string, userId: string): Promise<void> {
-  try {
-    const items = toScheduleItems()
-    const key = await getKey(email, userId)
-    const { ciphertext, iv } = await encryptSchedule(items, key)
+    const schedule = toScheduleItems()
     const { error } = await supabase
       .from('user_schedules')
-      .upsert({ user_id: userId, ciphertext, iv }, { onConflict: 'user_id' })
+      .upsert({ user_id: userId, schedule }, { onConflict: 'user_id' })
     if (error) {
       console.error('Failed to push schedule:', error)
     }
@@ -216,24 +110,72 @@ async function pushSchedule(email: string, userId: string): Promise<void> {
   }
 }
 
+let pullInFlight: Promise<void> | null = null
+
+/**
+ * On sign-in: fetch server schedule (server wins). If server has data, hydrate
+ * cart from it. If server is empty but local has items, push local to server.
+ * Serialized: concurrent calls await the in-flight request instead of interleaving.
+ */
+export async function pullSchedule(userId: string): Promise<void> {
+  if (pullInFlight) return pullInFlight
+  pullInFlight = _pullSchedule(userId).finally(() => { pullInFlight = null })
+  return pullInFlight
+}
+
+async function _pullSchedule(userId: string): Promise<void> {
+  try {
+    cancelDebouncedPush()
+    await cartHydrated
+
+    const { data, error } = await supabase
+      .from('user_schedules')
+      .select('schedule')
+      .eq('user_id', userId)
+      .single()
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Failed to fetch schedule from Supabase:', error)
+      return
+    }
+
+    if (data?.schedule && Array.isArray(data.schedule) && data.schedule.length > 0) {
+      const serverItems = data.schedule as ScheduleItem[]
+      await waitForCourses()
+      const hydrated = hydrateItems(serverItems)
+      if (hydrated.length > 0) {
+        useCartStore.setState({ items: hydrated })
+        const syncedIds = new Set(serverItems.map(s => s.id))
+        useCourseStore.getState().fetchCourseDetails([...syncedIds])
+        reHydrateOnEnrichment(syncedIds)
+      }
+    } else {
+      const localItems = toScheduleItems()
+      if (localItems.length > 0) await pushSchedule(userId)
+    }
+  } catch (err) {
+    console.error('pullSchedule error:', err)
+  }
+}
+
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let lastItemCount = -1
 
-export function debouncedPush(email: string, userId: string) {
+export function debouncedPush(userId: string) {
   if (debounceTimer) clearTimeout(debounceTimer)
   const currentCount = useCartStore.getState().items.length
 
   // Push immediately on removal or empty cart
   if (currentCount === 0 || (lastItemCount >= 0 && currentCount < lastItemCount)) {
     lastItemCount = currentCount
-    pushSchedule(email, userId)
+    pushSchedule(userId)
     return
   }
 
   lastItemCount = currentCount
   debounceTimer = setTimeout(() => {
     debounceTimer = null
-    pushSchedule(email, userId)
+    pushSchedule(userId)
   }, 1500)
 }
 
@@ -245,7 +187,7 @@ export function cancelDebouncedPush() {
 }
 
 /** Immediately push to server (flushes debounce). */
-export async function flushAndPush(email: string, userId: string): Promise<void> {
+export async function flushAndPush(userId: string): Promise<void> {
   cancelDebouncedPush()
-  await pushSchedule(email, userId)
+  await pushSchedule(userId)
 }

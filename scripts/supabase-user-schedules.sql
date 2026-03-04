@@ -1,12 +1,10 @@
 -- Run this in the Supabase SQL Editor to create the user schedules table.
--- Table: user_schedules — stores AES-GCM encrypted schedule data per user.
--- The payload is encrypted client-side (schedule-crypto.ts); only ciphertext
--- and IV are stored here. The server never sees plaintext course selections.
+-- Table: user_schedules — stores schedule data as plaintext JSONB per user.
+-- Server is the source of truth; server wins on conflict.
 
 create table if not exists public.user_schedules (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  ciphertext text not null,
-  iv text not null,
+  schedule jsonb not null default '[]'::jsonb,
   updated_at timestamptz not null default now()
 );
 
