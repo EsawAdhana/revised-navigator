@@ -139,17 +139,24 @@ async function _pullSchedule(userId: string): Promise<void> {
       return
     }
 
-    if (data?.schedule && Array.isArray(data.schedule) && data.schedule.length > 0) {
-      const serverItems = data.schedule as ScheduleItem[]
-      await waitForCourses()
-      const hydrated = hydrateItems(serverItems)
-      if (hydrated.length > 0) {
-        useCartStore.setState({ items: hydrated })
-        const syncedIds = new Set(serverItems.map(s => s.id))
-        useCourseStore.getState().fetchCourseDetails([...syncedIds])
-        reHydrateOnEnrichment(syncedIds)
+    if (data) {
+      // Server row exists — server wins (even if empty)
+      const serverItems = (Array.isArray(data.schedule) ? data.schedule : []) as ScheduleItem[]
+      if (serverItems.length > 0) {
+        await waitForCourses()
+        const hydrated = hydrateItems(serverItems)
+        if (hydrated.length > 0) {
+          useCartStore.setState({ items: hydrated })
+          const syncedIds = new Set(serverItems.map(s => s.id))
+          useCourseStore.getState().fetchCourseDetails([...syncedIds])
+          reHydrateOnEnrichment(syncedIds)
+        }
+      } else {
+        // Server has empty schedule — clear local cart to match
+        useCartStore.setState({ items: [] })
       }
     } else {
+      // No server row (PGRST116) — first-time user, push local if any
       const localItems = toScheduleItems()
       if (localItems.length > 0) await pushSchedule(userId)
     }
