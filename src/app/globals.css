@@ -322,16 +322,6 @@ input[type="range"].filter-range::-moz-range-thumb {
   border-radius: var(--radius);
 }
 
-/* ── Calendar grid responsive hour height ── */
-.calendar-grid {
-  --current-hour-height: var(--hour-height, 52px);
-}
-@media (max-width: 640px) {
-  .calendar-grid {
-    --current-hour-height: 42px;
-  }
-}
-
 /* ── Noise texture overlay ── */
 .noise::before {
   content: '';

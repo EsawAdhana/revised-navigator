@@ -67,7 +67,6 @@ const DAYS: Array<{ key: CalendarEvent['day'], label: string }> = [
 ]
 
 const HOUR_HEIGHT = 52
-const MOBILE_HOUR_HEIGHT = 42
 const DEFAULT_START_MINUTES = 8 * 60   // 8 AM
 const DEFAULT_END_MINUTES = 20 * 60    // 8 PM
 
@@ -283,12 +282,8 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                     ))}
                   </div>
                   <div
-                    className="calendar-grid grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] relative"
-                    style={{
-                      '--hour-height': `${HOUR_HEIGHT}px`,
-                      '--start-minutes': `${startMinutes}`,
-                      height: `calc(((${endMinutes} - ${startMinutes}) / 60) * var(--current-hour-height))`,
-                    } as React.CSSProperties & Record<string, string>}
+                    className="grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] relative"
+                    style={{ height: `${((endMinutes - startMinutes) / 60) * HOUR_HEIGHT}px` }}
                   >
 
                     {/* Time rail - left column, labels right-justified in box */}
@@ -297,7 +292,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                         <div
                           key={h}
                           className="absolute left-0 right-0"
-                          style={{ top: `calc(${idx} * var(--current-hour-height))` }}
+                          style={{ top: `${idx * HOUR_HEIGHT}px` }}
                         >
                           {idx !== hours.length - 1 && (
                             <div className={cn(
@@ -330,8 +325,8 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                                 ev.isOptional && 'opacity-55 border-dashed grayscale'
                               )}
                               style={{
-                                top: `calc((${ev.start} - var(--start-minutes)) / 60 * var(--current-hour-height))`,
-                                height: `calc((${ev.end} - ${ev.start}) / 60 * var(--current-hour-height))`,
+                                top: `${((ev.start - startMinutes) / 60) * HOUR_HEIGHT}px`,
+                                height: `${((ev.end - ev.start) / 60) * HOUR_HEIGHT}px`,
                                 left: `calc(${leftPct}% + ${gutter}px)`,
                                 width: `calc(${colWidth}% - ${gutter * 2}px)`,
                                 minHeight: '18px'
@@ -376,7 +371,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                         <div
                           key={idx}
                           className="absolute left-0 right-0 border-t border-border/40"
-                          style={{ top: `calc(${idx} * var(--current-hour-height))` }}
+                          style={{ top: `${idx * HOUR_HEIGHT}px` }}
                         />
                       ))}
                     </div>
