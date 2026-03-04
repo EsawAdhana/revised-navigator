@@ -114,7 +114,10 @@ async function mergeAndHydrate(
     const hydrated = hydrateItems(serverItems, logPrefix)
     if (hydrated.length > 0) {
       useCartStore.setState({ items: hydrated })
-      reHydrateOnEnrichment(new Set(serverItems.map(s => s.id)))
+      const syncedIds = new Set(serverItems.map(s => s.id))
+      // Eagerly fetch full section data in parallel with Phase 2 catalog fetch
+      useCourseStore.getState().fetchCourseDetails([...syncedIds])
+      reHydrateOnEnrichment(syncedIds)
     }
     return false
   }
@@ -130,7 +133,10 @@ async function mergeAndHydrate(
     const hydrated = hydrateItems(merged, logPrefix)
     if (hydrated.length > 0) {
       useCartStore.setState({ items: hydrated })
-      reHydrateOnEnrichment(new Set(merged.map(s => s.id)))
+      const syncedIds = new Set(merged.map(s => s.id))
+      // Eagerly fetch full section data in parallel with Phase 2 catalog fetch
+      useCourseStore.getState().fetchCourseDetails([...syncedIds])
+      reHydrateOnEnrichment(syncedIds)
     }
     return true
   }
