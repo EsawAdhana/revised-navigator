@@ -144,46 +144,6 @@ export function getSchoolFromSubject(subject: string) {
   return 'Humanities & Sciences'
 }
 
-export function getDepartmentUrl(code: string) {
-  const c = (code || '').toUpperCase()
-
-  const map: Record<string, string> = {
-    AA: 'https://aa.stanford.edu/',
-    BIOE: 'https://bioengineering.stanford.edu/',
-    CEE: 'https://cee.stanford.edu/',
-    CHEM: 'https://chemistry.stanford.edu/',
-    CHEMENG: 'https://cheme.stanford.edu/',
-    CLASSICS: 'https://classics.stanford.edu/',
-    COMM: 'https://comm.stanford.edu/',
-    CS: 'https://cs.stanford.edu/',
-    ECON: 'https://economics.stanford.edu/',
-    EDUC: 'https://ed.stanford.edu/',
-    EE: 'https://ee.stanford.edu/',
-    ENGLISH: 'https://english.stanford.edu/',
-    GSBGEN: 'https://www.gsb.stanford.edu/',
-    HISTORY: 'https://history.stanford.edu/',
-    LAW: 'https://law.stanford.edu/',
-    LINGUIST: 'https://linguistics.stanford.edu/',
-    MATH: 'https://mathematics.stanford.edu/',
-    MATSCI: 'https://mse.stanford.edu/',
-    ME: 'https://me.stanford.edu/',
-    MED: 'https://med.stanford.edu/',
-    MUSIC: 'https://music.stanford.edu/',
-    'MS&E': 'https://msande.stanford.edu/',
-    PHIL: 'https://philosophy.stanford.edu/',
-    PHYSICS: 'https://physics.stanford.edu/',
-    POLISCI: 'https://politicalscience.stanford.edu/',
-    PSYCH: 'https://psychology.stanford.edu/',
-    SOC: 'https://sociology.stanford.edu/',
-    STATS: 'https://statistics.stanford.edu/',
-    TAPS: 'https://taps.stanford.edu/'
-  }
-
-  if (map[c]) return map[c]
-
-  return `https://www.stanford.edu/search/?q=${encodeURIComponent(`${code} department`)}`
-}
-
 function convertTermToCode(term: string): string {
   // Convert "Winter 2026" -> "W26", "Autumn 2025" -> "F25", etc.
   if (!term) return ''
@@ -271,12 +231,6 @@ export function parseUnitsOptions(units: string | number): number[] {
   if (plusMatch) return [parseInt(plusMatch[1], 10)]
   const single = parseFloat(s)
   return isNaN(single) ? [] : [single]
-}
-
-/** True when the course/section can be taken for more than one unit value (e.g. "3-4"). */
-export function hasVariableUnits(units: string | number): boolean {
-  const opts = parseUnitsOptions(units)
-  return opts.length > 1
 }
 
 /** Use "unit" only when value is exactly 1; otherwise "units". Ranges (e.g. "1-3") and "1+" always use "units". */

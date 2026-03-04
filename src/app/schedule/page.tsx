@@ -152,6 +152,15 @@ function ScheduleContent() {
       if (metrics.hours !== undefined && !Number.isNaN(metrics.hours)) {
         total += metrics.hours
         withData++
+      } else if (!loadingCourses[c.id]) {
+        // Fallback: estimate hours as units * 3 when no eval data
+        const effectiveUnits = c.selectedUnits
+          ?? (() => {
+            const opts = parseUnitsOptions(c.units ?? '')
+            return opts.length > 0 ? opts[Math.floor(opts.length / 2)] : 0
+          })()
+        total += effectiveUnits * 3
+        withData++
       }
     }
     const computed = withData > 0 ? total : null

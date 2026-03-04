@@ -11,7 +11,7 @@ import type { CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
 
 // --- Color helpers (green=good, yellow/orange=mid, red=bad) ---
 
-export function scoreColor(score: number): string {
+function scoreColor(score: number): string {
   if (score >= 4.5) return 'text-emerald-600'
   if (score >= 4.0) return 'text-green-600'
   if (score >= 3.5) return 'text-yellow-600'
@@ -116,14 +116,6 @@ export function aggregateMetrics(evals: CourseEvaluation[]) {
   } catch {
     return {}
   }
-}
-
-/** Median of quality, learning, organization (the three chart ratings excluding hours). Used for sorting. */
-export function getOverallEvalScore(metrics: Partial<Record<QuestionCategory, number>> | null): number | null {
-  if (!metrics) return null
-  const vals = [metrics.quality, metrics.learning, metrics.organization].filter((v): v is number => v != null)
-  if (vals.length === 0) return null
-  return median(vals)
 }
 
 function computeInstructorStats(evals: CourseEvaluation[]) {
