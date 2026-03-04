@@ -11,6 +11,7 @@ type CourseStore = {
   enrichedCourseIds: Set<string>
   fetchCourses: () => Promise<void>
   fetchCourseDetail: (courseId: string) => Promise<void>
+  fetchCourseDetails: (courseIds: string[]) => Promise<void>
 }
 
 const CACHE_KEY = 'root-courses-cache'
@@ -150,6 +151,33 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
     } catch (err) {
       console.error('Failed to fetch courses:', err)
       set({ courses: [], hasLoaded: true, isLoading: false })
+    }
+  },
+
+  fetchCourseDetails: async (courseIds: string[]) => {
+    const toFetch = courseIds.filter(id => !get().enrichedCourseIds.has(id))
+    if (toFetch.length === 0) return
+
+    try {
+      const res = await fetch('/api/courses/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: toFetch }),
+      })
+      if (!res.ok) throw new Error(`API error: ${res.status}`)
+      const rows: any[] = await res.json()
+      const enriched = rows.map(rowToCourse)
+
+      set(state => {
+        const courseMap = new Map(state.courses.map(c => [c.id, c]))
+        for (const c of enriched) courseMap.set(c.id, c)
+        return {
+          courses: Array.from(courseMap.values()),
+          enrichedCourseIds: new Set([...state.enrichedCourseIds, ...enriched.map(c => c.id)]),
+        }
+      })
+    } catch (err) {
+      console.error('Failed to batch fetch course details:', err)
     }
   },
 

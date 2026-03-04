@@ -36,12 +36,9 @@ function ScheduleContent() {
   // Eagerly fetch sections for cart items instead of waiting for the full Phase 2 catalog fetch
   useEffect(() => {
     if (!hasLoaded) return
-    const { enrichedCourseIds, fetchCourseDetail } = useCourseStore.getState()
-    items.forEach(item => {
-      if (!enrichedCourseIds.has(item.id)) {
-        fetchCourseDetail(item.id)
-      }
-    })
+    const { enrichedCourseIds, fetchCourseDetails } = useCourseStore.getState()
+    const ids = items.map(item => item.id).filter(id => !enrichedCourseIds.has(id))
+    if (ids.length > 0) fetchCourseDetails(ids)
   }, [items, hasLoaded])
   const searchParams = useSearchParams()
 
