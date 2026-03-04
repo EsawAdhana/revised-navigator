@@ -77,6 +77,29 @@ function hydrateItems(scheduleItems: ScheduleItem[], logPrefix = '') {
 }
 
 /**
+ * After hydrating cart items with Phase 1 (light) course data, subscribes to
+ * re-hydrate those items when Phase 2 enrichment completes so section/time
+ * data is correct. Only touches courses from the original sync — preserves
+ * any items the user added after the initial sync.
+ */
+function reHydrateOnEnrichment(syncedIds: Set<string>) {
+  if (useCourseStore.getState().hasEnriched) return
+  const unsub = useCourseStore.subscribe((state) => {
+    if (!state.hasEnriched) return
+    unsub()
+    const courseMap = new Map(state.courses.map(c => [c.id, c]))
+    useCartStore.setState((cartState) => ({
+      items: cartState.items.map(item => {
+        if (!syncedIds.has(item.id)) return item
+        const enriched = courseMap.get(item.id)
+        if (!enriched) return item
+        return { ...enriched, selectedTerm: item.selectedTerm, selectedSectionId: item.selectedSectionId, selectedUnits: item.selectedUnits, color: item.color, optionalMeetings: item.optionalMeetings }
+      })
+    }))
+  })
+}
+
+/**
  * Merges local and server schedule items (local wins on ID conflict),
  * hydrates from catalog, and updates the cart store.
  * Returns true if a merge produced changes that should be pushed back.
@@ -89,7 +112,10 @@ async function mergeAndHydrate(
   if (localItems.length === 0 && serverItems.length > 0) {
     await waitForCourses()
     const hydrated = hydrateItems(serverItems, logPrefix)
-    if (hydrated.length > 0) useCartStore.setState({ items: hydrated })
+    if (hydrated.length > 0) {
+      useCartStore.setState({ items: hydrated })
+      reHydrateOnEnrichment(new Set(serverItems.map(s => s.id)))
+    }
     return false
   }
 
@@ -102,7 +128,10 @@ async function mergeAndHydrate(
     }
     await waitForCourses()
     const hydrated = hydrateItems(merged, logPrefix)
-    if (hydrated.length > 0) useCartStore.setState({ items: hydrated })
+    if (hydrated.length > 0) {
+      useCartStore.setState({ items: hydrated })
+      reHydrateOnEnrichment(new Set(merged.map(s => s.id)))
+    }
     return true
   }
 
