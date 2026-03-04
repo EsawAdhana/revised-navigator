@@ -154,8 +154,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
   },
 
   fetchCourseDetail: async (courseId: string) => {
-    const { enrichedCourseIds, courses } = get()
-    if (enrichedCourseIds.has(courseId)) return
+    if (get().enrichedCourseIds.has(courseId)) return
 
     try {
       const res = await fetch(`/api/courses/${encodeURIComponent(courseId)}`)
@@ -163,16 +162,15 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
       const row: any = await res.json()
       const enriched = rowToCourse(row)
 
-      const updatedCourses = courses.map(c => c.id === courseId ? enriched : c)
-      const updatedIds = new Set(enrichedCourseIds)
-      updatedIds.add(courseId)
-      set({ courses: updatedCourses, enrichedCourseIds: updatedIds })
+      // Use functional set to read fresh state — parallel calls would otherwise
+      // each overwrite with their own stale snapshot of courses/enrichedCourseIds
+      set(state => ({
+        courses: state.courses.map(c => c.id === courseId ? enriched : c),
+        enrichedCourseIds: new Set([...state.enrichedCourseIds, courseId]),
+      }))
     } catch (err) {
       console.error(`Failed to fetch detail for ${courseId}:`, err)
-      // Mark as enriched anyway to avoid infinite retries
-      const updatedIds = new Set(get().enrichedCourseIds)
-      updatedIds.add(courseId)
-      set({ enrichedCourseIds: updatedIds })
+      set(state => ({ enrichedCourseIds: new Set([...state.enrichedCourseIds, courseId]) }))
     }
   },
 }))

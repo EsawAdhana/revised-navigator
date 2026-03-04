@@ -31,8 +31,19 @@ import { toast } from 'sonner';
 
 function ScheduleContent() {
   const { items } = useCartStore()
-  const { courses } = useCourseStore()
+  const { courses, hasLoaded } = useCourseStore()
   const [ignoredOverloads, setIgnoredOverloads] = useState<Record<string, boolean>>({})
+
+  // Eagerly fetch sections for cart items instead of waiting for the full Phase 2 catalog fetch
+  useEffect(() => {
+    if (!hasLoaded) return
+    const { enrichedCourseIds, fetchCourseDetail } = useCourseStore.getState()
+    items.forEach(item => {
+      if (!enrichedCourseIds.has(item.id)) {
+        fetchCourseDetail(item.id)
+      }
+    })
+  }, [items, hasLoaded])
   const searchParams = useSearchParams()
 
   const backHref = useMemo(() => {
