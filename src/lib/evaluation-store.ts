@@ -64,16 +64,26 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
 
       if (error) throw error
 
-      // Map snake_case DB columns back to camelCase for the frontend
-      const mapped: CourseEvaluation[] = (data || []).map(row => ({
-        // Clean term: "Spring 2024Computer Science" -> "Spring 2024"
-        term: row.term.replace(/(\d{4})\D.*$/, '$1'),
-        instructor: row.instructor,
-        courseCode: row.course_code,
-        respondents: row.respondents,
-        questions: row.questions,
-        comments: row.comments
-      }))
+      const mapped: CourseEvaluation[] = (data || []).map(row => {
+        const questions = (row.questions || []) as { text?: string; median?: number }[]
+        let onlineAttendancePct: number | undefined
+        let inPersonAttendancePct: number | undefined
+        for (const q of questions) {
+          const t = (q.text || '').toLowerCase()
+          if (t.includes('percent') && t.includes('online') && (q.median ?? 0) > 0) onlineAttendancePct = q.median
+          if (t.includes('percent') && t.includes('in person') && (q.median ?? 0) > 0) inPersonAttendancePct = q.median
+        }
+        return {
+          term: row.term.replace(/(\d{4})\D.*$/, '$1'),
+          instructor: row.instructor,
+          courseCode: row.course_code,
+          respondents: row.respondents,
+          questions: row.questions,
+          comments: row.comments,
+          ...(onlineAttendancePct != null && { onlineAttendancePct }),
+          ...(inPersonAttendancePct != null && { inPersonAttendancePct }),
+        }
+      })
 
       set(state => ({
         evaluations: { ...state.evaluations, [courseId]: mapped },

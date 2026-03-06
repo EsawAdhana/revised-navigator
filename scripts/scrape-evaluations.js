@@ -5,11 +5,13 @@
  *
  * Fully headless approach — Puppeteer is used ONLY for login:
  *   - Puppeteer: login (handles Stanford 2FA/SSO), then steals session cookies
- *   - HTTP + Cheerio: search, pagination, AND report data extraction
+ *   - HTTP + Cheerio: search results parsing
+ *   - HTTP + regex: report data extraction (no DOM construction)
  *
- * Search uses the /AppApi/Report/PublicReport pagination endpoint.
+ * Search uses the /AppApi/Report/PublicReport pagination endpoint
+ * with parallel page fetching (6 pages per batch).
  * Reports are fetched from /Reports/StudentReport.aspx via direct HTTP.
- * Both run with high parallelism (~20 concurrent requests) for maximum speed.
+ * Connection pooling via undici (50 connections), ~20+ concurrent requests.
  *
  * Usage:
  *   node scripts/scrape-evaluations.js [--resume] [--limit N] [--course "CS 106A"]
@@ -21,6 +23,7 @@
  *   --find-missing  Identify which evaluations are missing (no extraction, just lists them)
  *   --retry-missing Search by individual course code to find & extract only what's missing
  *   --backfill      For courses with zero evals in Supabase, find & upload (term-based, fast). Use --resume and --limit for incremental runs.
+ *   --enrich        For courses with zero evals, scrape the most recent term from EvaluationKit (typically pre-2023). Supports --resume and --limit.
  *   --concurrency N Number of parallel HTTP requests (default: 20)
  *   --workers N     Number of parallel term searches (default: 5, use 2 for resume)
  */
@@ -30,6 +33,12 @@ const cheerio = require('cheerio')
 const fs = require('fs')
 const path = require('path')
 const { createClient } = require('@supabase/supabase-js')
+
+// Boost connection pool for high-throughput scraping (undici ships with Node 18+)
+try {
+  const { Agent, setGlobalDispatcher } = require('undici')
+  setGlobalDispatcher(new Agent({ connections: 50, keepAliveTimeout: 30_000, pipelining: 1 }))
+} catch { /* default fetch behavior is fine */ }
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -41,11 +50,10 @@ const REPORT_URL = `${BASE_URL}/Reports/StudentReport.aspx`
 const OUTPUT_FILE = path.join(__dirname, '..', 'public', 'data', 'evaluations.json')
 const PROGRESS_FILE = path.join(__dirname, '..', '.eval-scrape-progress.json')
 const BACKFILL_PROGRESS_FILE = path.join(__dirname, '..', '.eval-backfill-progress.json')
+const ENRICH_PROGRESS_FILE = path.join(__dirname, '..', '.eval-enrich-progress.json')
 
-// Delay between requests to avoid rate limiting (ms)
-const REQUEST_DELAY = 300
-// Delay between search pages
-const SEARCH_DELAY = 500
+const REQUEST_DELAY = 100
+const SEARCH_DELAY = 100
 // Number of parallel report extractions (adjustable via --concurrency flag)
 // HTTP fetches are lightweight, so we can safely run many more in parallel
 const DEFAULT_CONCURRENCY = 20
@@ -89,7 +97,7 @@ function sleep(ms) {
 
 function parseArgs() {
   const args = process.argv.slice(2)
-  const opts = { resume: false, limit: null, course: null, concurrency: DEFAULT_CONCURRENCY, workers: null, findMissing: false, retryMissing: false, backfill: false }
+  const opts = { resume: false, limit: null, course: null, concurrency: DEFAULT_CONCURRENCY, workers: null, findMissing: false, retryMissing: false, backfill: false, enrich: false }
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--resume') opts.resume = true
@@ -100,6 +108,7 @@ function parseArgs() {
     if (args[i] === '--find-missing') opts.findMissing = true
     if (args[i] === '--retry-missing') opts.retryMissing = true
     if (args[i] === '--backfill') opts.backfill = true
+    if (args[i] === '--enrich') opts.enrich = true
   }
 
   return opts
@@ -296,13 +305,28 @@ function parseReportData(rawQuestions, pageMetadata) {
     })
   }
 
+  // Extract attendance percentages as top-level fields for easy querying
+  let onlineAttendancePct = null
+  let inPersonAttendancePct = null
+  for (const q of questions) {
+    const t = q.text.toLowerCase()
+    if (t.includes('percent') && t.includes('online') && q.median > 0) {
+      onlineAttendancePct = q.median
+    }
+    if (t.includes('percent') && t.includes('in person') && q.median > 0) {
+      inPersonAttendancePct = q.median
+    }
+  }
+
   return {
     term: pageMetadata.term || '',
     instructor: pageMetadata.instructor || '',
     courseCode: pageMetadata.courseCode || '',
     respondents: pageMetadata.respondents || '',
     questions,
-    comments
+    comments,
+    ...(onlineAttendancePct != null && { onlineAttendancePct }),
+    ...(inPersonAttendancePct != null && { inPersonAttendancePct }),
   }
 }
 
@@ -347,18 +371,65 @@ function parseSearchResultsHTML(html) {
 }
 
 /**
- * Search for courses and extract report links entirely via HTTP (no browser needed).
- * Page 1: fetches the full search results HTML page.
- * Page 2+: uses the /AppApi/Report/PublicReport pagination endpoint.
- *
- * The API may return raw HTML fragments OR JSON wrapping HTML (common with
- * ASP.NET Web API endpoints). We try both parsing strategies.
+ * Decode HTML entities in a string (for regex-extracted attribute values).
  */
-async function searchCourseHTTP(courseQuery, cookieString, instructorQuery = '') {
+function decodeHtmlEntities(text) {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+}
+
+/**
+ * Fetch a single search pagination page and parse results.
+ * Retries up to 3 times with exponential backoff on server errors.
+ */
+async function fetchSearchPage(courseQuery, instructorQuery, page, cookieString) {
+  const apiUrl = `${BASE_URL}/AppApi/Report/PublicReport?Course=${encodeURIComponent(courseQuery)}&Instructor=${encodeURIComponent(instructorQuery)}&Search=true&page=${page}&_=${Date.now()}`
+
+  let response
+  for (let attempt = 0; attempt < 3; attempt++) {
+    response = await fetch(apiUrl, {
+      headers: { ...getHTTPHeaders(cookieString), 'X-Requested-With': 'XMLHttpRequest', 'Accept': '*/*' }
+    })
+    if (response.ok) break
+    await sleep(1000 * Math.pow(2, attempt))
+  }
+
+  if (!response.ok) return { page, reports: [], hasMore: false, failed: true }
+
+  const rawData = await response.text()
+  let reports = []
+  let hasMore = true
+
+  try {
+    const json = JSON.parse(rawData)
+    if (json.results && Array.isArray(json.results)) {
+      reports = parseSearchResultsHTML(json.results.join(''))
+      if (json.hasMore === false) hasMore = false
+    } else if (typeof json === 'string') {
+      reports = parseSearchResultsHTML(json)
+    } else {
+      reports = parseSearchResultsHTML(rawData)
+    }
+  } catch {
+    reports = parseSearchResultsHTML(rawData)
+  }
+
+  return { page, reports, hasMore }
+}
+
+/**
+ * Search for courses via HTTP. Page 1 is a full HTML fetch;
+ * pages 2+ are fetched in parallel batches of PAGE_BATCH for 3-5x speedup.
+ */
+async function searchCourseHTTP(courseQuery, cookieString, instructorQuery = '', quiet = false) {
   const allReports = []
 
-  // Page 1: fetch the initial search results page (full HTML)
-  // Matches the browser URL pattern exactly (no Sort param — server uses default)
   const searchUrl = `${SEARCH_URL}?Course=${encodeURIComponent(courseQuery)}&Instructor=${encodeURIComponent(instructorQuery)}&Search=true`
 
   const initialResponse = await fetch(searchUrl, {
@@ -366,109 +437,44 @@ async function searchCourseHTTP(courseQuery, cookieString, instructorQuery = '')
   })
 
   if (!initialResponse.ok) {
-    console.warn(`  Search returned HTTP ${initialResponse.status}`)
+    if (!quiet) console.warn(`  Search returned HTTP ${initialResponse.status}`)
     return []
   }
 
   const initialHTML = await initialResponse.text()
   const firstBatch = parseSearchResultsHTML(initialHTML)
   allReports.push(...firstBatch)
-  console.log(`    Page 1: ${firstBatch.length} results`)
+  if (!quiet) console.log(`    Page 1: ${firstBatch.length} results`)
 
   if (firstBatch.length === 0) return allReports
 
-  // Page 2+: paginate using the lightweight API endpoint
-  // URL pattern matches exactly what the "Show More" button fires:
-  //   /AppApi/Report/PublicReport?Course=f23&Instructor=&Search=true&page=2&_=timestamp
-  let page = 2
-  let consecutiveEmpty = 0
-  while (true) {
-    const apiUrl = `${BASE_URL}/AppApi/Report/PublicReport?Course=${encodeURIComponent(courseQuery)}&Instructor=${encodeURIComponent(instructorQuery)}&Search=true&page=${page}&_=${Date.now()}`
+  // Parallel pagination: fetch pages in batches of PAGE_BATCH
+  const PAGE_BATCH = 6
+  let startPage = 2
+  let done = false
 
-    // Retry up to 3 times on HTTP errors (server gets overwhelmed during parallel searches)
-    let response
-    let retries = 0
-    const MAX_RETRIES = 3
-    while (retries <= MAX_RETRIES) {
-      response = await fetch(apiUrl, {
-        headers: {
-          ...getHTTPHeaders(cookieString),
-          'X-Requested-With': 'XMLHttpRequest',
-          'Accept': '*/*'
-        }
-      })
+  while (!done) {
+    const pages = Array.from({ length: PAGE_BATCH }, (_, i) => startPage + i)
+    const pageResults = await Promise.all(
+      pages.map(p => fetchSearchPage(courseQuery, instructorQuery, p, cookieString))
+    )
 
-      if (response.ok) break
-
-      retries++
-      if (retries > MAX_RETRIES) {
-        console.log(`    Page ${page}: HTTP ${response.status} after ${MAX_RETRIES} retries — stopping pagination`)
-        break
+    let batchHadResults = false
+    for (const result of pageResults.sort((a, b) => a.page - b.page)) {
+      if (result.failed) { done = true; break }
+      if (result.reports.length > 0) {
+        allReports.push(...result.reports)
+        batchHadResults = true
       }
-      // Exponential backoff: 1s, 2s, 4s
-      const backoff = 1000 * Math.pow(2, retries - 1)
-      await sleep(backoff)
+      if (!result.hasMore) { done = true; break }
     }
 
-    if (!response.ok) break
+    if (!batchHadResults) done = true
 
-    const rawData = await response.text()
-
-    // The API returns JSON: { "hasMore": bool, "results": ["<li>...</li>", ...] }
-    // Each element in "results" is an HTML string for one course row.
-    let reports = []
-    try {
-      const json = JSON.parse(rawData)
-
-      if (json.results && Array.isArray(json.results)) {
-        // Join all HTML fragments into one string and parse with cheerio
-        const combinedHTML = json.results.join('')
-        reports = parseSearchResultsHTML(combinedHTML)
-
-        // Use the server's hasMore flag to know if we should keep going
-        if (!json.hasMore && reports.length > 0) {
-          allReports.push(...reports)
-          console.log(`    Page ${page}: +${reports.length} results (${allReports.length} total) [last page]`)
-          break
-        }
-      } else if (typeof json === 'string') {
-        reports = parseSearchResultsHTML(json)
-      } else {
-        // Unknown JSON structure — try treating entire response as HTML
-        reports = parseSearchResultsHTML(rawData)
-      }
-    } catch {
-      // Not JSON — treat as raw HTML
-      reports = parseSearchResultsHTML(rawData)
+    startPage += PAGE_BATCH
+    if (!quiet && (startPage - 2) % 30 === 0) {
+      console.log(`    Page ${startPage - 1}: ${allReports.length} total results so far`)
     }
-
-    if (reports.length === 0) {
-      consecutiveEmpty++
-      // Log first empty page for debugging
-      if (consecutiveEmpty === 1) {
-        const preview = rawData.substring(0, 200).replace(/\n/g, ' ')
-        console.log(`    Page ${page}: 0 results (${rawData.length} chars) — preview: ${preview}`)
-      }
-      // Stop after 2 consecutive empty pages (safety valve)
-      if (consecutiveEmpty >= 2) {
-        console.log(`    Pagination ended at page ${page}`)
-        break
-      }
-      page++
-      await sleep(50)
-      continue
-    }
-
-    consecutiveEmpty = 0
-    allReports.push(...reports)
-
-    // Log progress every 10 pages
-    if (page % 10 === 0) {
-      console.log(`    Page ${page}: +${reports.length} results (${allReports.length} total)`)
-    }
-
-    page++
-    await sleep(50)
   }
 
   return allReports
@@ -525,15 +531,14 @@ async function fetchReportHTTP(reportIdString, cookieString, metadata) {
 
     const html = await response.text()
 
-    // Use cheerio to extract hdnReportData (handles HTML entity decoding automatically)
-    const $ = cheerio.load(html)
-    const reportDataRaw = $('#hdnReportData').val()
-
-    if (!reportDataRaw || reportDataRaw.length < 10) {
+    // Regex extraction: ~10-50x faster than constructing a Cheerio DOM
+    const match = html.match(/id="hdnReportData"[^>]*\bvalue="([^"]*)"/)
+    if (!match || match[1].length < 10) {
       console.warn(`  hdnReportData empty for ${metadata.courseCode}`)
       return null
     }
 
+    const reportDataRaw = decodeHtmlEntities(match[1])
     const rawQuestions = JSON.parse(reportDataRaw)
     return parseReportData(rawQuestions, metadata)
   } catch (err) {
@@ -731,6 +736,8 @@ async function runBackfill(cookieString, concurrency, opts) {
 
   for (let i = 0; i < missing.length; i += BATCH) {
     const batch = missing.slice(i, Math.min(i + BATCH, missing.length))
+    const allRows = []
+    const batchCourseIds = []
 
     await Promise.all(batch.map(async (course) => {
       const subj = (course.subject || '').replace(/\s+/g, '')
@@ -755,10 +762,10 @@ async function runBackfill(cookieString, concurrency, opts) {
       const toExtract = mostRecentTermGroup(matching)
       const extracted = await extractBatchViaHTTP(toExtract, cookieString)
 
-      const rows = []
+      let courseHasData = false
       for (const { evalData } of extracted) {
         if (evalData) {
-          rows.push({
+          allRows.push({
             course_id: course.course_id,
             term: evalData.term,
             instructor: evalData.instructor,
@@ -767,23 +774,31 @@ async function runBackfill(cookieString, concurrency, opts) {
             questions: evalData.questions,
             comments: evalData.comments,
           })
+          courseHasData = true
         }
       }
 
-      if (rows.length > 0) {
-        const { error } = await supabase.from('evaluations').insert(rows)
-        if (error) {
-          errors++
-          console.error(`\n  ❌ ${course.course_id}: ${error.message}`)
-        } else {
-          completedCourseIds.add(course.course_id)
-          backfilled++
-          console.log(`  ✅ ${course.course_id}: ${rows.length} eval(s) from ${toExtract[0]?.term}`)
-        }
+      if (courseHasData) {
+        batchCourseIds.push({ id: course.course_id, count: extracted.filter(e => e.evalData).length, term: toExtract[0]?.term })
       } else {
         notFound++
       }
     }))
+
+    // Single bulk insert for the entire batch — reduces Supabase round-trips
+    if (allRows.length > 0) {
+      const { error } = await supabase.from('evaluations').insert(allRows)
+      if (error) {
+        errors += batchCourseIds.length
+        console.error(`\n  ❌ Batch insert failed (${allRows.length} rows): ${error.message}`)
+      } else {
+        for (const c of batchCourseIds) {
+          completedCourseIds.add(c.id)
+          backfilled++
+          console.log(`  ✅ ${c.id}: ${c.count} eval(s) from ${c.term}`)
+        }
+      }
+    }
 
     saveBackfillProgress(completedCourseIds)
 
@@ -796,6 +811,186 @@ async function runBackfill(cookieString, concurrency, opts) {
 
   console.log(`\n\nBackfill complete!`)
   console.log(`  Courses backfilled: ${backfilled}`)
+  console.log(`  Not found on EvaluationKit: ${notFound}`)
+  console.log(`  Errors: ${errors}`)
+}
+
+/**
+ * Enrich mode: find courses that have zero evaluations in Supabase, search
+ * each on EvaluationKit, and insert the most recent term's evaluation.
+ *
+ * Since the main scraper already covers Fall 2023+, these will typically be
+ * pre-2023 evaluations. Attendance data is included automatically because
+ * parseReportData captures all question types.
+ *
+ * Supports --resume and --limit.
+ */
+async function runEnrich(cookieString, concurrency, opts) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('Enrich requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.')
+    console.error('Run with: node --env-file=.env.local scripts/scrape-evaluations.js --enrich')
+    process.exit(1)
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+
+  console.log('\n=== ENRICH MODE (pre-2023 backfill for courses with zero evals) ===')
+  console.log('Loading courses and evaluations from Supabase...')
+
+  // ── 1. Load all courses (deduplicate by course_id) ──
+  const allCoursesRaw = []
+  let offset = 0
+  const PAGE = 1000
+  while (true) {
+    const { data, error } = await supabase.from('courses').select('course_id, subject, code').range(offset, offset + PAGE - 1)
+    if (error) throw new Error(`courses query: ${error.message}`)
+    if (!data || data.length === 0) break
+    allCoursesRaw.push(...data)
+    if (data.length < PAGE) break
+    offset += PAGE
+  }
+  const courseMap = new Map()
+  for (const c of allCoursesRaw) {
+    if (!courseMap.has(c.course_id)) courseMap.set(c.course_id, c)
+  }
+  const allCourses = Array.from(courseMap.values())
+
+  // ── 2. Collect course_ids that already have any evaluation ──
+  const evalCourseIds = new Set()
+  offset = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('evaluations')
+      .select('course_id')
+      .range(offset, offset + PAGE - 1)
+    if (error) throw new Error(`evaluations query: ${error.message}`)
+    if (!data || data.length === 0) break
+    for (const row of data) evalCourseIds.add(row.course_id)
+    if (data.length < PAGE) break
+    offset += PAGE
+  }
+
+  // ── 3. Build work list: courses with zero evals ──
+  let toProcess = allCourses.filter(c => !evalCourseIds.has(c.course_id))
+
+  // Resume support
+  const completedIds = new Set()
+  if (opts.resume && fs.existsSync(ENRICH_PROGRESS_FILE)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(ENRICH_PROGRESS_FILE, 'utf-8'))
+      if (saved.completedIds) for (const id of saved.completedIds) completedIds.add(id)
+    } catch { /* ignore */ }
+    toProcess = toProcess.filter(c => !completedIds.has(c.course_id))
+    console.log(`Resuming: ${completedIds.size} already processed`)
+  }
+
+  if (opts.limit && opts.limit > 0) {
+    toProcess = toProcess.slice(0, opts.limit)
+  }
+
+  console.log(`Total courses: ${allCourses.length}`)
+  console.log(`Already have evaluations: ${evalCourseIds.size} (skipped)`)
+  console.log(`Missing evaluations: ${allCourses.length - evalCourseIds.size}`)
+  console.log(`Processing ${toProcess.length} courses this run\n`)
+
+  if (toProcess.length === 0) {
+    console.log('Nothing to enrich — all courses already have evaluation data!')
+    return
+  }
+
+  let inserted = 0
+  let notFound = 0
+  let errors = 0
+
+  // Enrich searches are lightweight (most return 0 results), so allow larger batches
+  const BATCH = concurrency
+  const keepAliveTimer = setInterval(() => {
+    fetch(`${BASE_URL}/Report/Public`, { headers: getHTTPHeaders(cookieString) }).catch(() => {})
+  }, 3 * 60 * 1000)
+
+  for (let i = 0; i < toProcess.length; i += BATCH) {
+    const batch = toProcess.slice(i, Math.min(i + BATCH, toProcess.length))
+    const insertRows = []
+    const insertCourseInfo = []
+
+    await Promise.all(batch.map(async (course) => {
+      const subj = (course.subject || '').replace(/\s+/g, '')
+      const code = (course.code || '').replace(/\s+/g, '')
+      const searchQuery = `${subj} ${code}`
+
+      const results = await searchCourseHTTP(searchQuery, cookieString, '', true)
+
+      const matching = results.filter((r) => {
+        for (const seg of r.courseCode.split('/')) {
+          const parts = seg.trim().split('-')
+          if (parts.length >= 3 && parts[1] === subj && parts[2] === code) return true
+        }
+        return false
+      })
+
+      if (matching.length === 0) {
+        notFound++
+        completedIds.add(course.course_id)
+        return
+      }
+
+      // Take only the most recent term's evaluations
+      const toExtract = mostRecentTermGroup(matching)
+      const extracted = await extractBatchViaHTTP(toExtract, cookieString)
+
+      let courseRowCount = 0
+      for (const { evalData } of extracted) {
+        if (evalData) {
+          insertRows.push({
+            course_id: course.course_id,
+            term: evalData.term,
+            instructor: evalData.instructor,
+            course_code: evalData.courseCode,
+            respondents: evalData.respondents,
+            questions: evalData.questions,
+            comments: evalData.comments,
+          })
+          courseRowCount++
+        }
+      }
+
+      if (courseRowCount > 0) {
+        insertCourseInfo.push({ id: course.course_id, count: courseRowCount, term: toExtract[0]?.term })
+      } else {
+        notFound++
+      }
+      completedIds.add(course.course_id)
+    }))
+
+    // Bulk insert
+    if (insertRows.length > 0) {
+      const { error } = await supabase.from('evaluations').insert(insertRows)
+      if (error) {
+        errors++
+        console.error(`\n  ❌ Batch insert failed (${insertRows.length} rows): ${error.message}`)
+      } else {
+        for (const c of insertCourseInfo) {
+          inserted++
+          console.log(`  ✅ ${c.id}: ${c.count} eval(s) from ${c.term}`)
+        }
+      }
+    }
+
+    // Save progress
+    fs.writeFileSync(ENRICH_PROGRESS_FILE, JSON.stringify({
+      completedIds: Array.from(completedIds),
+      lastUpdated: new Date().toISOString()
+    }))
+
+    const done = Math.min(i + BATCH, toProcess.length)
+    process.stdout.write(`\r[${done}/${toProcess.length}] inserted: ${inserted} | not found: ${notFound} | errors: ${errors}  `)
+    await sleep(100)
+  }
+
+  clearInterval(keepAliveTimer)
+
+  console.log(`\n\nEnrich complete!`)
+  console.log(`  Courses with new evals: ${inserted}`)
   console.log(`  Not found on EvaluationKit: ${notFound}`)
   console.log(`  Errors: ${errors}`)
 }
@@ -915,6 +1110,13 @@ async function main() {
   // === BACKFILL MODE ===
   if (opts.backfill) {
     await runBackfill(cookieString, concurrency, opts)
+    await browser.close()
+    return
+  }
+
+  // === ENRICH MODE ===
+  if (opts.enrich) {
+    await runEnrich(cookieString, concurrency, opts)
     await browser.close()
     return
   }
@@ -1094,8 +1296,11 @@ async function main() {
         }
       }
 
-      // Save progress after every batch (crash protection for long runs)
-      saveProgress(evaluations, completed)
+      // Save progress every 5th batch (balances crash safety vs I/O overhead on large files)
+      const batchNum = Math.floor(i / concurrency)
+      if (batchNum % 5 === 0 || i + concurrency >= matchedResults.length) {
+        saveProgress(evaluations, completed)
+      }
 
       // Brief delay between batches to avoid overwhelming the server
       if (i + concurrency < matchedResults.length) {

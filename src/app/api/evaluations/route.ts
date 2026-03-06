@@ -35,8 +35,11 @@ export async function POST(request: Request) {
 
     if (error) throw error
 
-    // Group by course_id, map to camelCase for client
-    const byCourse: Record<string, Array<{ term: string; instructor: string; courseCode: string; respondents: string; questions: unknown; comments: unknown }>> = {}
+    const byCourse: Record<string, Array<{
+      term: string; instructor: string; courseCode: string; respondents: string;
+      questions: unknown; comments: unknown;
+      onlineAttendancePct?: number; inPersonAttendancePct?: number;
+    }>> = {}
     for (const id of ids) {
       byCourse[id] = []
     }
@@ -44,13 +47,25 @@ export async function POST(request: Request) {
       const courseId = row.course_id
       if (!courseId) continue
       if (!byCourse[courseId]) byCourse[courseId] = []
+
+      const questions = (row.questions || []) as { text?: string; median?: number }[]
+      let onlineAttendancePct: number | undefined
+      let inPersonAttendancePct: number | undefined
+      for (const q of questions) {
+        const t = (q.text || '').toLowerCase()
+        if (t.includes('percent') && t.includes('online') && (q.median ?? 0) > 0) onlineAttendancePct = q.median
+        if (t.includes('percent') && t.includes('in person') && (q.median ?? 0) > 0) inPersonAttendancePct = q.median
+      }
+
       byCourse[courseId].push({
         term: (row.term || '').replace(/(\d{4})\D.*$/, '$1'),
         instructor: row.instructor,
         courseCode: row.course_code,
         respondents: row.respondents,
         questions: row.questions,
-        comments: row.comments
+        comments: row.comments,
+        ...(onlineAttendancePct != null && { onlineAttendancePct }),
+        ...(inPersonAttendancePct != null && { inPersonAttendancePct }),
       })
     }
 
