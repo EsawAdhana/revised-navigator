@@ -50,8 +50,6 @@ export interface Course {
   quality?: number;
   /** Precomputed: hours / units */
   difficulty?: number;
-  /** Precomputed: median in-person attendance <50% across evaluations */
-  asyncFriendly?: boolean;
 }
 
 // --- Course Evaluation Types ---

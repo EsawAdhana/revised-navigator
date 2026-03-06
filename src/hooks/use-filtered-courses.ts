@@ -27,7 +27,6 @@ export function useFilteredCourses() {
     const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
     const [hideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false));
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
-    const [asyncFriendly] = useQueryState('asyncFriendly', parseAsBoolean.withDefault(false));
     const [sortBy, setSortBy] = useQueryState('sort', parseAsString.withDefault('az'));
     const [sortOrder, setSortOrder] = useQueryState('order', parseAsString);
 
@@ -263,11 +262,6 @@ export function useFilteredCourses() {
             });
         }
 
-        // Filter by Async Friendly (median in-person attendance <50%)
-        if (asyncFriendly) {
-            result = result.filter(c => c.asyncFriendly === true);
-        }
-
         // Filter by School
         if (schoolsSet.size > 0) {
             result = result.filter(c => {
@@ -298,7 +292,7 @@ export function useFilteredCourses() {
 
         // All filtering is done; this is the set we will sort (sort is the last step)
         return result;
-    }, [courses, primaryMap, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, asyncFriendly, cartItems, excludedWords]);
+    }, [courses, primaryMap, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, cartItems, excludedWords]);
 
     // Precompute difficulty/hours/rating per course (with cross-list lookup) — O(n) total, not O(n²)
     const metricsByCourseId = useMemo(() => {
