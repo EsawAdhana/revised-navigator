@@ -111,22 +111,61 @@ async function pushSchedule(userId: string): Promise<void> {
 }
 
 let pullInFlight: Promise<void> | null = null
+let _pullActive = false
+let _lastPulledUserId: string | null = null
 
 /**
  * On sign-in: fetch server schedule (server wins). If server has data, hydrate
  * cart from it. If server is empty but local has items, push local to server.
- * Serialized: concurrent calls await the in-flight request instead of interleaving.
+ *
+ * Guards:
+ *  - Only pulls once per user per module lifetime (page navigations that
+ *    remount AuthGate won't re-pull and clobber local state).
+ *  - Flushes any pending debounced push before fetching so local changes
+ *    reach the server before we read from it.
+ *  - Detects cart mutations made while the fetch is in-flight and preserves
+ *    local state when they occur.
+ *  - Sets `_pullActive` to suppress `debouncedPush` during the pull to
+ *    prevent pull's own `setState` from triggering a redundant push.
  */
 export async function pullSchedule(userId: string): Promise<void> {
+  if (_lastPulledUserId === userId) return
   if (pullInFlight) return pullInFlight
+  _lastPulledUserId = userId
   pullInFlight = _pullSchedule(userId).finally(() => { pullInFlight = null })
   return pullInFlight
 }
 
+/** Reset sync state (call on sign-out so the next sign-in pulls fresh). */
+export function resetSyncState() {
+  _lastPulledUserId = null
+  lastItemCount = -1
+}
+
+function cartItemIds(): Set<string> {
+  return new Set(useCartStore.getState().items.map(i => i.id))
+}
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const id of a) if (!b.has(id)) return false
+  return true
+}
+
 async function _pullSchedule(userId: string): Promise<void> {
+  _pullActive = true
   try {
-    cancelDebouncedPush()
+    // Flush (not cancel) any pending local changes so the server has them
+    // before we read. This prevents the pull from overwriting un-pushed adds.
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+      await pushSchedule(userId)
+    }
+
     await cartHydrated
+
+    const snapshotIds = cartItemIds()
 
     const { data, error } = await supabase
       .from('user_schedules')
@@ -136,6 +175,12 @@ async function _pullSchedule(userId: string): Promise<void> {
 
     if (error && error.code !== 'PGRST116') {
       console.error('Failed to fetch schedule from Supabase:', error)
+      return
+    }
+
+    // If the user changed the cart while we were fetching, their intent wins
+    if (!setsEqual(snapshotIds, cartItemIds())) {
+      await pushSchedule(userId)
       return
     }
 
@@ -162,6 +207,8 @@ async function _pullSchedule(userId: string): Promise<void> {
     }
   } catch (err) {
     console.error('pullSchedule error:', err)
+  } finally {
+    _pullActive = false
   }
 }
 
@@ -169,6 +216,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let lastItemCount = -1
 
 export function debouncedPush(userId: string) {
+  if (_pullActive) return
   if (debounceTimer) clearTimeout(debounceTimer)
   const currentCount = useCartStore.getState().items.length
 

@@ -4,6 +4,7 @@ import type { User, Session } from '@supabase/supabase-js'
 import {
   pullSchedule,
   cancelDebouncedPush,
+  resetSyncState,
 } from './schedule-sync'
 import { useCartStore } from './cart-store'
 
@@ -70,6 +71,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signOut: async () => {
     cancelDebouncedPush()
+    resetSyncState()
     useCartStore.getState().clearCart()
     await supabase.auth.signOut()
     set({ user: null, session: null })

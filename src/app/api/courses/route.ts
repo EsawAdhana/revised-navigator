@@ -18,7 +18,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 })
 
 const PAGE_SIZE = 1000
-const CONCURRENCY = 6
+const CONCURRENCY = 2
 
 // In-memory cache (survives across requests in the same serverless instance)
 let cachedLight: any[] | null = null

@@ -1,57 +1,80 @@
 # Stanford Root — Claude Code Context
 
-## Project
-Stanford Root is a course discovery app for Stanford students. Users can search for classes and view course reviews and details.
+## 🚨 CRITICAL RULES & COMMUNICATION
+- **NEVER delete files or drop database tables** without explicit confirmation.
+- **NEVER commit `.env.local`** or any file containing secrets.
+- **Keep responses brief and direct.** Lead with the action or answer, skip the preamble.
+- **Show only changed/relevant code.** - **Flag UX tradeoffs** before implementing any feature.
+- **Do not modify `src/components/ui/`** (shadcn components) directly.
+- **Do not introduce new state management libraries.** Use existing Zustand or nuqs patterns.
 
-## Tech Stack
-- **Frontend**: Next.js (App Router, `src/` directory)
-- **Backend**: Supabase (Postgres + Auth)
-- **Deployment**: Vercel
-- **State**: Zustand (per-feature stores), nuqs (URL query state)
-- **Styling**: Tailwind CSS, shadcn/ui (Radix UI primitives), `cn()` utility
-- **Icons**: lucide-react
-- **Toasts**: sonner
-- **Auth**: Supabase Auth (Google OAuth provider, `@stanford.edu` emails only)
-- **Types**: TypeScript strict mode
+## Project Overview
+Stanford Root is a course discovery and schedule-planning app for Stanford University students (restricted to `@stanford.edu` Google accounts).
 
-## Project Structure
-```
-src/
-├── app/          # Next.js App Router pages + API routes
-├── components/   # React components (kebab-case filenames)
-│   └── ui/       # shadcn/ui components — don't modify directly
-├── lib/          # Supabase client, Zustand stores, utilities
-├── hooks/        # Custom React hooks
-└── types/        # Shared TypeScript interfaces (course.ts)
-```
+**Key user flows:**
+- **Catalog browsing:** Virtualized list, faceted filtering (nuqs), full-text search.
+- **Course detail:** Tabbed view with evaluation histograms and syllabus voting.
+- **Schedule builder:** Interactive weekly grid, conflict detection, ICS import/export.
+- **GER progress:** Tracks requirements based on cart contents.
+- **Schedule sync:** User schedules persist to Supabase and sync across devices.
 
-## Conventions
-- **Files**: kebab-case (`course-card.tsx`, `auth-store.ts`)
-- **Components**: PascalCase exports, `React.memo()` for perf-sensitive ones
-- **Functions/vars**: camelCase; constants `UPPER_SNAKE_CASE`
-- **Imports**: Use `@/*` path alias (e.g., `import { cn } from '@/lib/utils'`)
-- **Types**: Defined in `src/types/`, imported with `import type { ... }`
-- **Supabase browser**: `createBrowserClient()` from `@supabase/ssr`
-- **Supabase server/API**: service role key, `persistSession: false`
-- **RLS**: Always consider Row Level Security policies when creating or modifying database interactions
-- **Styling**: Tailwind classes inline; `cn()` for conditionals; CVA for variants
-- **Error handling**: try/catch with `console.error`, set safe fallback state
-- **Data loading**: Two-phase pattern (light load → background enrichment), session storage cache with TTL
+## Tech Stack & Infrastructure
 
-## Do's
-- Reuse existing stores, hooks, and utilities before creating new ones
-- Keep components memoized where appropriate (`React.memo`, `useMemo`, `useCallback`)
-- Use nuqs for any filter/search state that should be URL-shareable
-- Follow existing shadcn/ui patterns for new UI components
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (App Router, Turbopack dev) |
+| Language | TypeScript (strict mode, `@/*` path alias) |
+| Backend & Auth | Supabase (Postgres + Auth + RLS) |
+| Deployment | Vercel |
+| State | Zustand 5 (persist middleware) + nuqs 2.x (URL state) |
+| Styling | Tailwind CSS 3 + shadcn/ui + CVA |
 
-## Don'ts
-- **Never delete files or drop database tables** — destructive actions require explicit confirmation
-- Don't break or modify the Supabase auth flow without clear instruction
-- Don't make changes that harm the user experience — flag UX tradeoffs before implementing
-- Don't modify `src/components/ui/` shadcn components directly
-- Don't add unnecessary complexity or abstractions
+*Note: Check `src/types/` for up-to-date database schemas and TypeScript interfaces.*
 
-## Communication
-- Keep responses brief and direct
-- Lead with the action or answer, skip preamble
-- Show only changed/relevant code
+## Build & Run Commands
+```bash
+npm install
+npm run dev               # Binds to 0.0.0.0 for network access
+npm run lint              # Uses ESLint directly (Next 16 CLI workaround)
+npx tsc --noEmit          # Type check
+npm run build
+npm run start
+
+NEXT_PUBLIC_SUPABASE_URL=[https://your-project.supabase.co](https://your-project.supabase.co)
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key # Server-side only
+
+Code Style & Conventions
+Naming: kebab-case.tsx for files, PascalCase for components, camelCase for functions, UPPER_SNAKE_CASE for constants.
+
+Imports: Always use @/* alias. Group: React/Next → third-party → components → lib → hooks → types.
+
+Components: Use React.memo() for perf-sensitive components. Prefer next/dynamic ({ ssr: false }) for heavy client components.
+
+Styling: Inline Tailwind. Use cn() for conditional classes. Design tokens are HSL CSS variables in globals.css.
+
+Accessibility: Ensure aria-label on icon-only buttons, aria-live="polite" for loading states, and keyboard-first interactions.
+
+Development Philosophy (HCI Focus)
+Frontend UX is paramount: Use optimistic updates, skeleton loaders, and stale-while-revalidate patterns to eliminate perceived latency. Never show a blank screen.
+
+Handle backend boilerplate autonomously: Implement API/Supabase plumbing correctly and quickly so human focus can remain on the UI/UX experience.
+
+Respect information hierarchy: Primary data (course code, title, rating) must be scannable. Progressive disclosure for secondary details.
+
+Functional animations only: Animations must communicate state change or guide attention. No purely decorative animations.
+
+Graceful degradation: If external data (evaluations/sync) fails, keep the local UI functional.
+
+Known Quirks & Gotchas
+Auth Enforcement: No middleware.ts. @stanford.edu restriction is enforced client-side (AuthGate) and via OAuth hd param.
+
+Course ID Normalization: Course IDs contain spaces. Always use normalizeCourseId() to strip spaces and uppercase for comparison.
+
+WIM GERs: WIM courses are not tagged in catalog data. They are hardcoded in wim-courses.ts and injected at load time.
+
+Cart Hydration: zustand/persist rehydrates asynchronously. Await cartHydrated (from cart-hydration.ts) before pulling server state.
+
+In-Memory Cache: API routes use module-level variables for caching (15m TTL). First request after a cold start will be slow.
+
+Content Security Policy: next.config.mjs has a strict CSP. Do not add external resources without updating this header.
