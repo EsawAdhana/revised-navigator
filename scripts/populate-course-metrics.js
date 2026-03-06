@@ -136,30 +136,27 @@ async function main() {
   const rows = []
   let qualityCount = 0
   let hoursCount = 0
-  let asyncCount = 0
   for (const [courseId, evals] of evalsByCourse) {
     const metrics = aggregateMetrics(evals)
     const hours = metrics.hours
     const quality = getOverallEvalScore(metrics)
     const units = unitsByCourse.get(courseId) || 1
-    const attendanceInPerson = metrics.attendance_in_person
 
     const update = { course_id: courseId }
     if (quality != null) { update.quality = quality; qualityCount++ }
     if (hours != null && hours > 0) { update.hours = hours; hoursCount++ }
     if (hours != null && hours > 0 && units > 0) update.difficulty = hours / units
-    if (attendanceInPerson != null) { update.async_friendly = attendanceInPerson < 50; asyncCount++ }
 
     // Only queue an update if there's at least one metric to write
     const hasFields = Object.keys(update).length > 1
     if (hasFields) rows.push(update)
   }
 
-  console.log(`Computed metrics for ${rows.length} courses (${qualityCount} quality, ${hoursCount} hours, ${asyncCount} async).`)
+  console.log(`Computed metrics for ${rows.length} courses (${qualityCount} quality, ${hoursCount} hours).`)
   if (dryRun) {
     console.log('\n[DRY RUN] No changes written. Sample of what would be updated:\n')
-    rows.slice(0, 10).forEach(({ course_id, hours, quality, difficulty, async_friendly }) => {
-      console.log(`  ${course_id}: hours=${hours != null ? hours.toFixed(1) : 'N/A'}, quality=${quality != null ? quality.toFixed(1) : 'N/A'}, difficulty=${difficulty != null ? difficulty.toFixed(1) : 'N/A'}, async_friendly=${async_friendly ?? 'N/A'}`)
+    rows.slice(0, 10).forEach(({ course_id, hours, quality, difficulty }) => {
+      console.log(`  ${course_id}: hours=${hours != null ? hours.toFixed(1) : 'N/A'}, quality=${quality != null ? quality.toFixed(1) : 'N/A'}, difficulty=${difficulty != null ? difficulty.toFixed(1) : 'N/A'}`)
     })
     if (rows.length > 10) {
       console.log(`  ... and ${rows.length - 10} more`)

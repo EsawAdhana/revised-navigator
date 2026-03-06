@@ -8,7 +8,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false }
 })
 
-const FULL_COLUMNS = 'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty, async_friendly'
+const FULL_COLUMNS = 'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty'
 
 function mergeRows(rows: any[]) {
   const merged = new Map<string, any>()

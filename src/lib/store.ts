@@ -125,7 +125,6 @@ function rowToCourse(row: any): Course {
     hours: row.hours != null ? Number(row.hours) : undefined,
     quality: row.quality != null ? Number(row.quality) : undefined,
     difficulty: row.difficulty != null ? Number(row.difficulty) : undefined,
-    asyncFriendly: row.async_friendly != null ? Boolean(row.async_friendly) : undefined,
   }
 }
 

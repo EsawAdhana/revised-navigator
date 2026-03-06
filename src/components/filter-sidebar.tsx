@@ -84,7 +84,6 @@ export function FilterSidebar() {
     const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']));
     const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
     const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false));
-    const [asyncFriendly, setAsyncFriendly] = useQueryState('asyncFriendly', parseAsBoolean.withDefault(false));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
 
     // New Filters
@@ -342,11 +341,6 @@ export function FilterSidebar() {
             });
         }
 
-        // Apply async friendly filter
-        if (asyncFriendly) {
-            filtered = filtered.filter(c => c.asyncFriendly === true);
-        }
-
         // Apply search query filter (use shared searchCourses for consistency with main list)
         if (query) {
             filtered = searchCourses(filtered, query);
@@ -449,7 +443,7 @@ export function FilterSidebar() {
             gers: Array.from(gers.entries()).sort((a, b) => a[0].localeCompare(b[0])),
             schools,
         };
-    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, asyncFriendly, cartItems]);
+    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, cartItems]);
 
     const filteredDepts = useMemo(() => {
         if (!deptQuery) return facets.depts;
@@ -544,27 +538,6 @@ export function FilterSidebar() {
                                 </TooltipTrigger>
                                 <TooltipContent side="top" align="start" className="max-w-[240px]">
                                     Hide courses with no open sections in the selected term.
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    </div>
-                    <div className="flex items-center gap-2 min-h-8">
-                        <input
-                            type="checkbox"
-                            id="asyncFriendly"
-                            checked={asyncFriendly}
-                            onChange={(e) => setAsyncFriendly(e.target.checked)}
-                            className="h-4 w-4 shrink-0 rounded border-input text-primary accent-primary outline-none"
-                        />
-                        <TooltipProvider delayDuration={300}>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <label htmlFor="asyncFriendly" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
-                                        Async friendly only
-                                    </label>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" align="start" className="max-w-[240px]">
-                                    Show only courses where &lt;50% of students attend in person, based on evaluation data.
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>
