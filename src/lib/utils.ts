@@ -290,7 +290,7 @@ export function isAllowedGer(ger: string): boolean {
   if (g.includes('COLLEGE') || g.includes('CIVIC, LIBERAL, AND GLOBAL EDUCATION')) return true
 
   // PWR
-  if (g.includes('PWR 1') || g.includes('PWR 2') || g === 'PWR') return true
+  if (g.includes('PWR 1') || g.includes('PWR 2') || g === 'PWR' || g.includes('WRITING 1') || g.includes('WRITING 2')) return true
 
   // Language
   if (g.includes('LANGUAGE') && !g.includes('GER:')) return true

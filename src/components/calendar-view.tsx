@@ -6,6 +6,7 @@ import { useCartStore } from '@/lib/cart-store';
 import { isMeetingOptional, parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
 import { cn, unitsLabel, decodeHtmlEntities } from '@/lib/utils';
 import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search } from 'lucide-react';
+import { GerProgress } from '@/components/ger-progress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -127,6 +128,7 @@ function layoutDayEvents(events: CalendarEvent[]) {
 export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMin, totalUnitsMax, isOverload, onIgnoreOverload, expectedHoursPerWeek, expectedHoursLoading }: CalendarViewProps) {
   const { items, addItem, removeItem, toggleOptionalMeeting } = useCartStore()
   const courses = useCourseStore(state => state.courses)
+  const isLoading = useCourseStore(state => state.isLoading)
   const router = useRouter()
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -172,7 +174,12 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
     if (!searchQuery.trim()) return []
     const results = searchCourses(courses, searchQuery)
     return results
-      .filter(c => c.sections && c.sections.some(s => s.term === currentTerm))
+      .filter(c => {
+        if (c.sections && c.sections.length > 0) {
+          return c.sections.some(s => s.term === currentTerm)
+        }
+        return c.terms?.includes(currentTerm) ?? false
+      })
       .sort((a, b) => {
         const subjectCompare = a.subject.localeCompare(b.subject)
         if (subjectCompare !== 0) return subjectCompare
@@ -390,7 +397,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
               </div>
               <Input
                 ref={searchInputRef}
-                placeholder={`Search to add a class for ${currentTerm}...`}
+                placeholder={isLoading ? 'Loading courses...' : `Search to add a class for ${currentTerm}...`}
                 className="pl-9 h-10 w-full rounded-xl bg-card border-border/60 shadow-sm focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-primary/50"
                 value={searchQuery}
                 onFocus={() => {
@@ -417,7 +424,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                   className="absolute z-50 top-full left-0 right-0 mt-1.5 max-h-64 overflow-y-auto bg-card border border-border/50 rounded-xl shadow-lg p-1 animate-in fade-in slide-in-from-top-2 duration-200"
                 >
                   {searchResults.length === 0 ? (
-                    <div className="p-3 text-sm text-center text-muted-foreground">No courses found matching "{searchQuery}"</div>
+                    <div className="p-3 text-sm text-center text-muted-foreground">{isLoading ? 'Loading courses...' : `No courses found matching "${searchQuery}"`}</div>
                   ) : (
                     searchResults.map(course => {
                       const isAdded = currentTermCourses.some(c => c.id === course.id);
@@ -477,6 +484,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                 <span className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">Hrs / Wk</span>
               </div>
             </div>
+            <GerProgress />
             {currentTermCourses.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground border-2 border-dashed rounded-xl bg-muted/20">
                 <Calendar className="h-10 w-10 mb-3 opacity-20" />
