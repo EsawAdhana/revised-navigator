@@ -50,6 +50,8 @@ export interface Course {
   quality?: number;
   /** Precomputed: hours / units */
   difficulty?: number;
+  /** Precomputed: median in-person attendance <50% across evaluations */
+  asyncFriendly?: boolean;
 }
 
 // --- Course Evaluation Types ---
@@ -78,4 +80,8 @@ export interface CourseEvaluation {
   respondents: string;
   questions: EvalQuestion[];
   comments: string[];
+  /** Median % of class sessions attended online (from eval survey) */
+  onlineAttendancePct?: number;
+  /** Median % of class sessions attended in person (from eval survey) */
+  inPersonAttendancePct?: number;
 }

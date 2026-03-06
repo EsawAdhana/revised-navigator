@@ -54,7 +54,7 @@ function medianFromOptions(options) {
 }
 
 function aggregateMetrics(evals) {
-  const byCat = { quality: [], learning: [], organization: [], goals: [], hours: [] }
+  const byCat = { quality: [], learning: [], organization: [], goals: [], hours: [], attendance_in_person: [] }
   for (const ev of evals || []) {
     for (const q of ev.questions || []) {
       const cat = categorizeQuestion(q?.text ?? '')
@@ -134,21 +134,32 @@ async function main() {
   }
 
   const rows = []
+  let qualityCount = 0
+  let hoursCount = 0
+  let asyncCount = 0
   for (const [courseId, evals] of evalsByCourse) {
     const metrics = aggregateMetrics(evals)
     const hours = metrics.hours
     const quality = getOverallEvalScore(metrics)
     const units = unitsByCourse.get(courseId) || 1
-    if (hours == null || hours <= 0 || quality == null || units <= 0) continue
-    const difficulty = hours / units
-    rows.push({ course_id: courseId, hours, quality, difficulty })
+    const attendanceInPerson = metrics.attendance_in_person
+
+    const update = { course_id: courseId }
+    if (quality != null) { update.quality = quality; qualityCount++ }
+    if (hours != null && hours > 0) { update.hours = hours; hoursCount++ }
+    if (hours != null && hours > 0 && units > 0) update.difficulty = hours / units
+    if (attendanceInPerson != null) { update.async_friendly = attendanceInPerson < 50; asyncCount++ }
+
+    // Only queue an update if there's at least one metric to write
+    const hasFields = Object.keys(update).length > 1
+    if (hasFields) rows.push(update)
   }
 
-  console.log(`Computed metrics for ${rows.length} courses.`)
+  console.log(`Computed metrics for ${rows.length} courses (${qualityCount} quality, ${hoursCount} hours, ${asyncCount} async).`)
   if (dryRun) {
     console.log('\n[DRY RUN] No changes written. Sample of what would be updated:\n')
-    rows.slice(0, 10).forEach(({ course_id, hours, quality, difficulty }) => {
-      console.log(`  ${course_id}: hours=${hours.toFixed(1)}, quality=${quality.toFixed(1)}, difficulty=${difficulty.toFixed(1)}`)
+    rows.slice(0, 10).forEach(({ course_id, hours, quality, difficulty, async_friendly }) => {
+      console.log(`  ${course_id}: hours=${hours != null ? hours.toFixed(1) : 'N/A'}, quality=${quality != null ? quality.toFixed(1) : 'N/A'}, difficulty=${difficulty != null ? difficulty.toFixed(1) : 'N/A'}, async_friendly=${async_friendly ?? 'N/A'}`)
     })
     if (rows.length > 10) {
       console.log(`  ... and ${rows.length - 10} more`)
@@ -161,8 +172,8 @@ async function main() {
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE)
     await Promise.all(
-      batch.map(({ course_id, hours, quality, difficulty }) =>
-        supabase.from('courses').update({ hours, quality, difficulty }).eq('course_id', course_id)
+      batch.map(({ course_id, ...fields }) =>
+        supabase.from('courses').update(fields).eq('course_id', course_id)
       )
     )
     process.stdout.write(`\r  ${Math.min(i + BATCH_SIZE, rows.length)}/${rows.length}`)

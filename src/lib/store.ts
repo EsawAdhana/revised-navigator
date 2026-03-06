@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Course } from '@/types/course'
 import { isWimCourse } from '@/lib/wim-courses'
+import { isLanguageCourse } from '@/lib/language-courses'
 
 type CourseStore = {
   courses: Course[]
@@ -100,6 +101,16 @@ function rowToCourse(row: any): Course {
     })
   }
 
+  // Inject Language GER if description/subject indicates a language course
+  if (isLanguageCourse(row.description || '', row.subject)) {
+    sections.forEach((s: any) => {
+      if (!s.gers) s.gers = []
+      if (!s.gers.includes('Language')) {
+        s.gers.push('Language')
+      }
+    })
+  }
+
   return {
     id: row.course_id,
     subject: row.subject,
@@ -114,6 +125,7 @@ function rowToCourse(row: any): Course {
     hours: row.hours != null ? Number(row.hours) : undefined,
     quality: row.quality != null ? Number(row.quality) : undefined,
     difficulty: row.difficulty != null ? Number(row.difficulty) : undefined,
+    asyncFriendly: row.async_friendly != null ? Boolean(row.async_friendly) : undefined,
   }
 }
 

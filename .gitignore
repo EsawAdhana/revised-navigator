@@ -14,6 +14,7 @@ tsconfig.tsbuildinfo
 # Scraper temp files
 .eval-scrape-progress.json
 .eval-backfill-progress.json
+.eval-enrich-progress.json
 .auth.json
 .sections-scrape-progress.json
 .final-exam-scrape-progress.json

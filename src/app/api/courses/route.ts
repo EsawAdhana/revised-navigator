@@ -92,7 +92,7 @@ export async function GET(request: Request) {
       }
 
       const rows = await fetchAllRows(
-        'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty'
+        'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty, async_friendly'
       )
       const merged = mergeRows(rows)
       cachedFull = merged
@@ -111,7 +111,7 @@ export async function GET(request: Request) {
     }
 
     const rows = await fetchAllRows(
-      'course_id, subject, code, title, units, instructors, terms, grading, hours, quality, difficulty'
+      'course_id, subject, code, title, units, instructors, terms, grading, hours, quality, difficulty, async_friendly'
     )
     const merged = mergeRows(rows)
     cachedLight = merged
