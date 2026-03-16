@@ -6,7 +6,8 @@ const AUTH_FILE = '.auth.json';
 const BASE_URL = 'http://localhost:3000';
 const TARGET_PATH = process.argv[2] || '/';
 const TARGET_URL = `${BASE_URL}${TARGET_PATH.startsWith('/') ? TARGET_PATH : `/${TARGET_PATH}`}`;
-const NUM_CLICKS = 100;
+const NUM_CLICKS = parseInt(process.argv.find((_, i, a) => a[i-1] === '--max-actions') || '100', 10);
+const RESULTS_FILE = 'random-fuzzer-results.json';
 
 async function runFuzzer() {
     console.log('🚀 Starting Smart UI Fuzzer...');
@@ -72,10 +73,22 @@ async function runFuzzer() {
     await page.waitForTimeout(2000); // Wait for initial app load and hydration
 
     const historyLog = [];
+    const statesSeen = new Set();
+    const bugs = [];
+    const timeline = [];
+    const t0 = Date.now();
 
     console.log(`\n🐒 Unleashing the Chaos Monkey for ${NUM_CLICKS} continuous actions...\n`);
 
     for (let i = 1; i <= NUM_CLICKS; i++) {
+        // Track unique states (URL + element count as rough proxy)
+        const stateKey = `${new URL(page.url()).pathname}|${await page.evaluate(() => document.querySelectorAll('button,input,a,[role]').length)}`;
+        statesSeen.add(stateKey);
+
+        if (i % 5 === 0) {
+            timeline.push({ step: i, statesDiscovered: statesSeen.size, bugsFound: bugs.length, elapsedMs: Date.now() - t0 });
+        }
+
         // Check health before doing an action
         await checkHealth(page, pageErrors, historyLog, i);
 
@@ -156,13 +169,27 @@ async function runFuzzer() {
     // Final health check
     await checkHealth(page, pageErrors, historyLog, "Final Check");
 
-    console.log('\n\n✅🎉 Fuzzer completed successfully! The UI survived 100 random interactions without crashing.');
+    const elapsed = Date.now() - t0;
+    const results = {
+        fuzzerType: 'random',
+        timestamp: new Date().toISOString(),
+        config: { maxActions: NUM_CLICKS, startUrl: TARGET_URL },
+        stats: { totalActions: NUM_CLICKS, statesDiscovered: statesSeen.size, bugsFound: bugs.length, elapsedMs: elapsed },
+        bugs,
+        coverageTimeline: timeline,
+    };
+    fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
+    console.log(`\nResults written to ${RESULTS_FILE}`);
+
+    console.log('\n\n✅🎉 Fuzzer completed successfully! The UI survived ' + NUM_CLICKS + ' random interactions without crashing.');
     process.exit(0);
 }
 
-async function checkHealth(page, pageErrors, historyLog, stepName) {
+async function checkHealth(page, pageErrors, historyLog, stepName, bugs = []) {
     if (pageErrors.length > 0) {
-        logCrash(historyLog, `React Runtime Error: ${pageErrors[0]}`, stepName);
+        const msg = `React Runtime Error: ${pageErrors[0]}`;
+        bugs.push({ step: stepName, bugType: 'js_error', message: msg, trailingActions: historyLog.slice(-15) });
+        logCrash(historyLog, msg, stepName);
         await page.screenshot({ path: 'crash_screenshot.png' });
         console.log(`📸 Saved screenshot to crash_screenshot.png`);
         process.exit(1);
@@ -170,19 +197,20 @@ async function checkHealth(page, pageErrors, historyLog, stepName) {
 
     const bodyContent = await page.content();
 
-    // Check for NextJS/React error boundaries
     if (bodyContent.includes('Application error: a client-side exception has occurred') ||
         bodyContent.includes('Something went wrong')) {
-        logCrash(historyLog, 'Next.js Error Boundary Triggered!', stepName);
+        const msg = 'Next.js Error Boundary Triggered!';
+        bugs.push({ step: stepName, bugType: 'error_boundary', message: msg, trailingActions: historyLog.slice(-15) });
+        logCrash(historyLog, msg, stepName);
         await page.screenshot({ path: 'crash_screenshot.png' });
         process.exit(1);
     }
 
-    // Check for "White Screen of Death"
-    // Heuristic: If there are fewer than 3 divs on the page, the layout crashed.
     const numDivs = await page.evaluate(() => document.querySelectorAll('div').length);
     if (numDivs < 3) {
-        logCrash(historyLog, 'Blank Screen of Death Detected (empty layout)', stepName);
+        const msg = 'Blank Screen of Death Detected (empty layout)';
+        bugs.push({ step: stepName, bugType: 'blank_screen', message: msg, trailingActions: historyLog.slice(-15) });
+        logCrash(historyLog, msg, stepName);
         await page.screenshot({ path: 'crash_screenshot.png' });
         process.exit(1);
     }
