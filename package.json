@@ -17,7 +17,11 @@
     "scrape:final-exams": "node scripts/scrape-final-exams.js",
     "update:exam-types": "node scripts/update-exam-types.js",
     "check:units": "node scripts/check-units.mjs",
-    "fuzz": "npx tsx scripts/fuzz-schedule.ts"
+    "fuzz": "npx tsx scripts/fuzz-schedule.ts",
+    "fuzz:auth": "npx tsx scripts/save-auth.ts",
+    "fuzz:random": "node scripts/smart-fuzzer.mjs",
+    "fuzz:model": "npx tsx scripts/model-fuzzer.ts",
+    "fuzz:invariant": "npx tsx scripts/invariant-fuzzer.ts"
   },
   "keywords": [],
   "author": "",
