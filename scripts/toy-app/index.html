@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Toy Course Catalog</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; display: flex; }
+    .sidebar { width: 240px; padding: 12px; border-right: 1px solid #ddd; }
+    .main { flex: 1; padding: 12px; }
+    .toggle { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+    .toggle label { font-size: 13px; cursor: pointer; }
+    input[type="checkbox"] { width: 15px; height: 15px; }
+    input[type="text"] { width: 100%; padding: 6px 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+    .divider { border-top: 1px solid #ddd; margin: 10px 0; }
+    .collapsible-trigger { display: flex; width: 100%; border: none; background: none; cursor: pointer; padding: 4px 0; }
+    .collapsible-trigger h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #888; }
+    .collapsible-content[data-state="closed"] { display: none; }
+    button.facet-btn { display: flex; align-items: center; width: 100%; border: none; background: none; cursor: pointer; padding: 4px 2px; }
+    button.facet-btn:hover { background: #f5f5f5; border-radius: 4px; }
+    span.text-sm { font-size: 13px; flex: 1; text-align: left; }
+    span.rounded-full { font-size: 11px; background: #eee; padding: 1px 6px; border-radius: 99px; }
+    .card { border: 1px solid #e5e5e5; border-radius: 6px; padding: 10px; margin-bottom: 6px; }
+    .card b { font-size: 14px; }
+    .card small { color: #666; }
+    .card .closed { color: red; }
+    .empty-state { color: #999; padding: 40px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="sidebar" id="sidebar"></div>
+  <div class="main">
+    <input type="text" id="searchInput" placeholder="Search courses..." />
+    <div><span id="countText"></span></div>
+    <div id="list"></div>
+  </div>
+
+  <script>
+    // Bug flags — control via ?bugs=all|none|conflict,leak,crash
+    var p = new URLSearchParams(location.search);
+    var b = (p.get('bugs') || 'all').split(',');
+    var BUG_CONFLICT = b.includes('all') || b.includes('conflict');
+    var BUG_LEAK     = b.includes('all') || b.includes('leak');
+    var BUG_CRASH    = b.includes('all') || b.includes('crash');
+
+    // 12 courses — 3 in cart, 4 conflict with cart, 5 independent
+    var CART = ['CS106A', 'MATH51', 'PHYS41'];
+    var courses = [
+      { id:'CS106A',  name:'Programming Methodology', fmt:'Lecture',  lvl:'Undergrad', open:true,  t:[[1,10,11],[3,10,11],[5,10,11]] },
+      { id:'MATH51',  name:'Linear Algebra',           fmt:'Lecture',  lvl:'Undergrad', open:true,  t:[[2,14,15],[4,14,15]] },
+      { id:'PHYS41',  name:'Mechanics',                fmt:'Lecture',  lvl:'Undergrad', open:true,  t:[[1,13,14],[3,13,14]] },
+      { id:'CS107',   name:'Computer Organization',    fmt:'Lecture',  lvl:'Undergrad', open:true,  t:[[1,10,11],[3,10,11]] },
+      { id:'CS229',   name:'Machine Learning',         fmt:'Seminar',  lvl:'Graduate',  open:true,  t:[[2,14,15],[4,14,15]] },
+      { id:'MATH53',  name:'Differential Equations',   fmt:'Lecture',  lvl:'Undergrad', open:false, t:[[2,14,15]] },
+      { id:'PHYS43',  name:'Electricity & Magnetism',  fmt:'Lab',      lvl:'Undergrad', open:true,  t:[[1,13,14],[3,13,14]] },
+      { id:'EE102A',  name:'Signal Processing',        fmt:'Lecture',  lvl:'Graduate',  open:true,  t:[[1,8,9],[3,8,9]] },
+      { id:'ENGR40M', name:'Electronics',              fmt:'Lab',      lvl:'Undergrad', open:true,  t:[[2,16,18]] },
+      { id:'CS161',   name:'Algorithms',               fmt:'Lecture',  lvl:'Undergrad', open:false, t:[[1,15,16],[3,15,16]] },
+      { id:'PHIL80',  name:'Philosophy of Mind',        fmt:'Seminar',  lvl:'Undergrad', open:false, t:[[2,11,12],[4,11,12]] },
+      { id:'ME101',   name:'Thermodynamics',            fmt:'Lab',      lvl:'Graduate',  open:false, t:[[1,8,10],[3,8,10]] },
+    ];
+
+    var cartCourses = courses.filter(c => CART.includes(c.id));
+
+    // State
+    var showConflicts = true;
+    var hideUnavailable = false;
+    var selectedFmts = new Set();
+    var selectedLvls = new Set();
+    var searchText = '';
+    var hideToggles = 0;
+
+    // Conflict detection
+    function conflicts(course) {
+      if (CART.includes(course.id)) return false;
+      if (BUG_CONFLICT) return false; // BUG: always says "no conflict"
+      return cartCourses.some(cc =>
+        cc.t.some(a => course.t.some(b => a[0] === b[0] && a[1] < b[2] && b[1] < a[2]))
+      );
+    }
+
+    // Filter and render
+    function update() {
+      var list = courses;
+
+      if (searchText) {
+        if (BUG_CRASH) {
+          var re = new RegExp(searchText, 'i'); // BUG: crashes on regex chars like [
+          list = list.filter(c => re.test(c.name) || re.test(c.id));
+        } else {
+          var q = searchText.toLowerCase();
+          list = list.filter(c => c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q));
+        }
+      }
+      if (!showConflicts) list = list.filter(c => !conflicts(c));
+      if (hideUnavailable) list = list.filter(c => c.open);
+      if (selectedFmts.size) list = list.filter(c => selectedFmts.has(c.fmt));
+      if (selectedLvls.size) list = list.filter(c => selectedLvls.has(c.lvl));
+
+      document.getElementById('countText').textContent =
+        list.length + ' ' + (list.length === 1 ? 'class' : 'classes');
+
+      var el = document.getElementById('list');
+      if (list.length === 0) {
+        el.innerHTML = '<div class="empty-state"><p>No courses match your filters.</p></div>';
+      } else {
+        el.innerHTML = list.map(function(c) {
+          return '<div class="card"><b>' + c.id + '</b> — ' + c.name +
+            '<br><small>' + c.fmt + ' · ' + c.lvl +
+            (c.open ? '' : ' · <span class="closed">Closed</span>') +
+            (CART.includes(c.id) ? ' · <span style="color:#36f">★ Cart</span>' : '') +
+            '</small></div>';
+        }).join('');
+      }
+
+      renderSidebar();
+    }
+
+    function renderSidebar() {
+      var pre = courses;
+      if (!showConflicts) pre = pre.filter(c => !conflicts(c));
+      if (hideUnavailable) pre = pre.filter(c => c.open);
+
+      var fmtCounts = {}, lvlCounts = {};
+      pre.forEach(function(c) {
+        fmtCounts[c.fmt] = (fmtCounts[c.fmt] || 0) + 1;
+        lvlCounts[c.lvl] = (lvlCounts[c.lvl] || 0) + 1;
+      });
+
+      document.getElementById('sidebar').innerHTML =
+        '<div class="toggle">' +
+          '<input type="checkbox" id="showConflicts"' + (showConflicts ? ' checked' : '') + '>' +
+          '<label for="showConflicts">Show conflicting classes</label>' +
+        '</div>' +
+        '<div class="toggle">' +
+          '<input type="checkbox" id="hideUnavailable"' + (hideUnavailable ? ' checked' : '') + '>' +
+          '<label for="hideUnavailable">Hide closed &amp; waitlisted</label>' +
+        '</div>' +
+        '<div class="divider"></div>' +
+        facetSection('Format', ['Lecture','Seminar','Lab'], fmtCounts, selectedFmts, 'fmt') +
+        facetSection('Class Level', ['Undergrad','Graduate'], lvlCounts, selectedLvls, 'lvl');
+
+      document.getElementById('showConflicts').onchange = function(e) {
+        showConflicts = e.target.checked;
+        update();
+      };
+      document.getElementById('hideUnavailable').onchange = function(e) {
+        hideUnavailable = e.target.checked;
+        // BUG: after 2nd toggle, hideUnavailable gets stuck on (checkbox desyncs from state)
+        if (BUG_LEAK) { hideToggles++; if (hideToggles >= 4) hideUnavailable = true; }
+        update();
+      };
+    }
+
+    function facetSection(title, values, counts, selected, type) {
+      var btns = values.map(function(v) {
+        return '<button type="button" class="facet-btn" onclick="toggleFacet(\'' + type + '\',\'' + v + '\')">' +
+          '<span class="text-sm">' + v + '</span>' +
+          '<span class="rounded-full">' + (counts[v] || 0) + '</span></button>';
+      }).join('');
+      return '<div class="collapsible">' +
+        '<button class="collapsible-trigger" onclick="toggleCol(this)"><h3>' + title + '</h3></button>' +
+        '<div data-state="open" class="collapsible-content">' + btns + '</div></div>';
+    }
+
+    function toggleFacet(type, val) {
+      var set = type === 'fmt' ? selectedFmts : selectedLvls;
+      if (set.has(val)) set.delete(val); else set.add(val);
+      update();
+    }
+
+    function toggleCol(btn) {
+      var c = btn.parentElement.querySelector('[data-state]');
+      c.setAttribute('data-state', c.getAttribute('data-state') === 'open' ? 'closed' : 'open');
+    }
+
+    document.getElementById('searchInput').oninput = function(e) {
+      searchText = e.target.value;
+      update();
+    };
+
+    update();
+  </script>
+</body>
+</html>

@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const FUZZ_MODE = process.env.NEXT_PUBLIC_FUZZ_MODE === 'true'
+const supabaseKey = FUZZ_MODE
+  ? (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
+  : (process.env.SUPABASE_SERVICE_ROLE_KEY || '')
 
-if (!supabaseServiceKey) {
+if (!FUZZ_MODE && !supabaseKey) {
   throw new Error(
     'SUPABASE_SERVICE_ROLE_KEY is not set. ' +
     'Add it to your Vercel project environment variables (Settings → Environment Variables). ' +
@@ -12,8 +15,7 @@ if (!supabaseServiceKey) {
   )
 }
 
-// bypassRLS: true — service role always ignores RLS policies
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { persistSession: false }
 })
 
