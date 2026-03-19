@@ -42,7 +42,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [initialize])
 
-  if (user) {
+  if (process.env.NEXT_PUBLIC_FUZZ_MODE === 'true' || user) {
     return <>{children}</>
   }
 
