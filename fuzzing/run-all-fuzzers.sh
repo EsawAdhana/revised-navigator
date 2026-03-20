@@ -52,10 +52,10 @@ else
 fi
 
 header "1/2  Dumb Fuzzer (crash-only baseline)"
-npx tsx scripts/dumb-fuzzer.ts --max-actions 100 || RANDOM_EXIT=$?
+npx tsx fuzzing/dumb-fuzzer.ts --max-actions 1000 || RANDOM_EXIT=$?
 
 header "2/2  Invariant Oracle Fuzzer"
-npx tsx scripts/invariant-fuzzer.ts --rounds 30 || INVARIANT_EXIT=$?
+npx tsx fuzzing/invariant-fuzzer.ts --rounds 1000 || INVARIANT_EXIT=$?
 
 header "Summary"
 

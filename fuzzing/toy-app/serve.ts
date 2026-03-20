@@ -1,7 +1,7 @@
 /**
  * Simple HTTP server for the toy catalog testbed.
  * Serves index.html on all routes so URL query params work.
- * Usage: npx tsx scripts/toy-app/serve.ts [--port N]
+ * Usage: npx tsx fuzzing/toy-app/serve.ts [--port N]
  */
 
 import http from 'http'

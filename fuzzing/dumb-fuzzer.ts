@@ -1,30 +1,35 @@
 /**
- * Dumb fuzzer — baseline for comparison against the invariant-based approach.
+ * Dumb fuzzer — baseline for comparison against the model-based approach.
  * Picks visible interactive elements at random and clicks/types adversarial inputs.
- * Crash-only oracle: detects JS errors, error boundaries, and blank screens.
- *
- * Usage: npx tsx scripts/toy-fuzzer-dumb.ts [--max-actions N] [--headed] [--bugs all]
+ * Usage: npx tsx fuzzing/dumb-fuzzer.ts [--max-actions N] [--headed] [--start /path]
  */
 
-import { chromium, type Page, type ElementHandle } from '@playwright/test'
+import { chromium, type Page, type BrowserContext, type ElementHandle } from '@playwright/test'
 import fs from 'fs'
 
-const RESULTS_FILE = 'toy-random-fuzzer-results.json'
+const AUTH_FILE = '.auth.json'
+const BASE_URL = 'http://localhost:3000'
+const RESULTS_FILE = 'random-fuzzer-results.json'
 
 const ADVERSARIAL_STRINGS = [
-  '', '  ', 'A'.repeat(500), 'CS106A',
   "Robert'); DROP TABLE Students;--",
+  'A'.repeat(500),
   '<script>alert(1)</script>',
-  'javascript:alert(1)',
+  'CS106A',
+  '  spaces  ',
+  '👍💀🔥',
+  '',
+  'undefined',
+  'null',
   '../../../etc/passwd',
-  'undefined', 'null', '👍💀🔥',
-  '[', '(', '*bad', '\\',
+  'javascript:alert(1)',
 ]
 
-const DANGER_WORDS = ['submit', 'send', 'delete', 'remove', 'save', 'logout', 'sign out']
+// Don't click anything that could mutate data or log us out (using real Stanford Root website here)
+const DANGER_WORDS = ['submit', 'send', 'delete', 'remove', 'add', 'import', 'save', 'update', 'logout', 'sign out']
 
 type BugReport = {
-  step: number
+  step: number | string
   bugType: string
   message: string
   url: string
@@ -41,14 +46,15 @@ type CoverageSnapshot = {
 
 function parseArgs() {
   const args = process.argv.slice(2)
-  let maxActions = 100, headed = false, bugs = 'all', port = 3001
+  let maxActions = 1000
+  let startPath = '/'
+  let headed = false
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--max-actions' && args[i + 1]) maxActions = parseInt(args[i + 1], 10)
+    if (args[i] === '--start' && args[i + 1]) startPath = args[i + 1]
     if (args[i] === '--headed') headed = true
-    if (args[i] === '--bugs' && args[i + 1]) bugs = args[i + 1]
-    if (args[i] === '--port' && args[i + 1]) port = parseInt(args[i + 1], 10)
   }
-  return { maxActions, headed, bugs, port }
+  return { maxActions, startPath, headed }
 }
 
 function setupErrorListeners(page: Page, errors: string[]) {
@@ -58,8 +64,14 @@ function setupErrorListeners(page: Page, errors: string[]) {
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return
     const t = msg.text()
-    if (t.includes('TypeError') || t.includes('Cannot read') ||
-        t.includes('is not a function') || t.includes('RangeError')) {
+    // Check for common React/Next.js error messages
+    if (
+      t.includes('React') || t.includes('Unhandled Runtime Error') ||
+      t.includes('Rendered more hooks') || t.includes('Invariant') ||
+      t.includes('Maximum update depth exceeded') ||
+      t.includes('Cannot read properties of') ||
+      t.includes('TypeError') || t.includes('RangeError')
+    ) {
       errors.push(`[console.error] ${t.slice(0, 300)}`)
     }
   })
@@ -71,51 +83,65 @@ async function checkOracles(page: Page, pendingErrors: string[]): Promise<{ bugT
   }
 
   const bodyText = await page.evaluate(() => document.body?.innerText || '')
-  if (bodyText.includes('Application error') || bodyText.includes('Something went wrong'))
-    return { bugType: 'error_boundary', message: 'Error boundary triggered' }
+  if (bodyText.includes('Application error: a client-side exception has occurred') ||
+      bodyText.includes('Something went wrong')) {
+    return { bugType: 'error_boundary', message: 'Next.js Error Boundary triggered' }
+  }
 
+  // Blank screen (white screen of death)
   const divCount = await page.evaluate(() => document.querySelectorAll('div').length)
-  if (divCount < 3)
+  if (divCount < 3) {
     return { bugType: 'blank_screen', message: `Blank screen (${divCount} divs)` }
+  }
 
   return null
 }
 
 
 async function run() {
-  const { maxActions, headed, bugs, port } = parseArgs()
-  const startUrl = `http://localhost:${port}/?bugs=${bugs}`
+  const { maxActions, startPath, headed } = parseArgs()
+  const startUrl = `${BASE_URL}${startPath.startsWith('/') ? startPath : `/${startPath}`}`
 
-  console.log('Dumb Fuzzer (Toy Catalog)')
+  console.log('Dumb Fuzzer')
   console.log('======================================')
   console.log(`Target: ${startUrl}  |  Actions: ${maxActions}  |  ${headed ? 'headed' : 'headless'}`)
   console.log('')
 
   const browser = await chromium.launch({ headless: !headed })
-  const page = await (await browser.newContext()).newPage()
+  let context: BrowserContext
+
+  if (fs.existsSync(AUTH_FILE)) {
+    console.log('Using saved auth session...')
+    context = await browser.newContext({ storageState: AUTH_FILE })
+  } else {
+    console.log('No .auth.json found, running without auth.')
+    context = await browser.newContext()
+  }
+
+  const page = await context.newPage()
   const pendingErrors: string[] = []
   setupErrorListeners(page, pendingErrors)
 
   try {
     await page.goto(startUrl)
   } catch {
-    console.error(`Can't connect to ${startUrl}. Is toy:serve running?`)
+    console.error(`Can't connect to ${startUrl}. Is the dev server running?`)
     process.exit(1)
   }
-  await page.waitForTimeout(1000)
+  await page.waitForTimeout(2000) // let hydration finish
 
   const historyLog: string[] = []
   const statesSeen = new Set<string>()
-  const bugs_found: BugReport[] = []
+  const bugs: BugReport[] = []
   const timeline: CoverageSnapshot[] = []
   const t0 = Date.now()
 
   for (let i = 1; i <= maxActions; i++) {
-    const stateKey = `${await page.evaluate(() => document.querySelectorAll('button,input').length)}|${await page.evaluate(() => document.body?.innerText?.length || 0)}`
+    const stateKey = `${new URL(page.url()).pathname}|${await page.evaluate(() => document.querySelectorAll('button,input,a,[role]').length)}`
     statesSeen.add(stateKey)
 
     if (i % 5 === 0) {
-      timeline.push({ step: i, statesDiscovered: statesSeen.size, bugsFound: bugs_found.length, elapsedMs: Date.now() - t0 })
+      timeline.push({ step: i, statesDiscovered: statesSeen.size, bugsFound: bugs.length, elapsedMs: Date.now() - t0 })
     }
 
     const hit = await checkOracles(page, pendingErrors)
@@ -125,15 +151,16 @@ async function run() {
         url: page.url(), trailingActions: historyLog.slice(-15),
       }
       try {
-        bug.screenshot = `crash_toy_step${i}.png`
+        bug.screenshot = `crash_random_step${i}.png`
         await page.screenshot({ path: bug.screenshot })
       } catch {}
-      bugs_found.push(bug)
-      console.log(`\n  BUG #${bugs_found.length} [step ${i}]: ${hit.bugType} — ${hit.message.slice(0, 100)}`)
+      bugs.push(bug)
+      console.log(`\n  BUG #${bugs.length} [step ${i}]: ${hit.bugType} — ${hit.message.slice(0, 100)}`)
 
+      // Try to recover by navigating back to start
       try {
-        await page.goto(startUrl, { timeout: 5000 })
-        await page.waitForTimeout(500)
+        await page.goto(startUrl, { timeout: 10000 })
+        await page.waitForTimeout(1500)
         pendingErrors.length = 0
       } catch {
         console.log('  Could not recover, stopping.')
@@ -141,24 +168,37 @@ async function run() {
       }
     }
 
-    const allTargets = await page.$$('button:visible:not([disabled]), input:visible:not([disabled])')
-    if (allTargets.length === 0) { await page.waitForTimeout(300); continue }
+    const allTargets = await page.$$(
+      'button:visible:not([disabled]), input:visible:not([disabled]), ' +
+      '[role="tab"]:visible, [role="switch"]:visible, [role="slider"]:visible, ' +
+      '[role="checkbox"]:visible, [role="menuitem"]:visible'
+    )
 
+    // Filter out dangerous actions (submit, delete, logout, etc.)
     const safeTargets: ElementHandle[] = []
     for (const el of allTargets) {
-      const text = await el.evaluate(e => ((e as HTMLElement).innerText || '').toLowerCase())
-      if (!DANGER_WORDS.some(w => text.includes(w))) safeTargets.push(el)
+      const isInput = await el.evaluate(e => e.tagName.toLowerCase() === 'input')
+      const text = await el.evaluate(e => ((e as HTMLElement).innerText || e.getAttribute('aria-label') || '').toLowerCase())
+      const type = await el.evaluate(e => e.getAttribute('type') || '')
+      if (isInput || (!DANGER_WORDS.some(w => text.includes(w)) && type !== 'submit')) {
+        safeTargets.push(el)
+      }
     }
-    if (safeTargets.length === 0) { await page.waitForTimeout(300); continue }
+
+    if (safeTargets.length === 0) {
+      await page.waitForTimeout(1000)
+      continue
+    }
 
     const target = safeTargets[Math.floor(Math.random() * safeTargets.length)]
 
     try {
       const tagName = await target.evaluate(el => (el as Element).tagName.toLowerCase())
-      const typeAttr = await target.evaluate(el => (el as Element).getAttribute('type') || '')
+      const typeAttr = await target.evaluate(el => (el as Element).getAttribute('type'))
       const label = await target.evaluate(el => {
         const h = el as HTMLElement
         let l = h.innerText ? h.innerText.trim() : ''
+        if (!l) l = h.getAttribute('aria-label') || ''
         if (!l && h.tagName.toLowerCase() === 'input') l = h.getAttribute('placeholder') || ''
         if (!l) l = h.id || ''
         return l.split('\n')[0].slice(0, 30)
@@ -173,13 +213,14 @@ async function run() {
         historyLog.push(`Step ${i}: Typed ${JSON.stringify(str).slice(0, 40)} into ${desc}`)
         process.stdout.write(`\r  [${i}/${maxActions}] Typed into ${desc.slice(0, 35)}`.padEnd(70))
       } else {
-        await target.click({ force: true, timeout: 1500 })
+        await target.click({ force: true, timeout: 2000 })
         historyLog.push(`Step ${i}: Clicked ${desc}`)
         process.stdout.write(`\r  [${i}/${maxActions}] Clicked ${desc.slice(0, 40)}`.padEnd(70))
       }
 
-      await page.waitForTimeout(150)
-    } catch {}
+      await page.waitForTimeout(300)
+    } catch {
+    }
   }
 
   const elapsed = Date.now() - t0
@@ -189,12 +230,12 @@ async function run() {
   console.log('======================================')
   console.log(`Total actions:     ${maxActions}`)
   console.log(`States discovered: ${statesSeen.size}`)
-  console.log(`Bugs found:        ${bugs_found.length}`)
+  console.log(`Bugs found:        ${bugs.length}`)
   console.log(`Elapsed:           ${(elapsed / 1000).toFixed(1)}s`)
 
-  if (bugs_found.length > 0) {
+  if (bugs.length > 0) {
     console.log('\n--- Bug Details ---')
-    for (const [i, b] of bugs_found.entries()) {
+    for (const [i, b] of bugs.entries()) {
       console.log(`\n  [${i + 1}] ${b.bugType} at step ${b.step}`)
       console.log(`      URL:     ${b.url}`)
       console.log(`      Message: ${b.message.slice(0, 150)}`)
@@ -207,15 +248,16 @@ async function run() {
   fs.writeFileSync(RESULTS_FILE, JSON.stringify({
     fuzzerType: 'random',
     timestamp: new Date().toISOString(),
-    config: { maxActions, bugs, port },
-    stats: { totalActions: maxActions, statesDiscovered: statesSeen.size, bugsFound: bugs_found.length, elapsedMs: elapsed },
-    bugs: bugs_found,
+    config: { maxActions, startUrl, headed },
+    stats: { totalActions: maxActions, statesDiscovered: statesSeen.size, bugsFound: bugs.length, elapsedMs: elapsed },
+    bugs,
     coverageTimeline: timeline,
   }, null, 2))
   console.log(`\nResults saved to ${RESULTS_FILE}`)
 
+  await page.close()
   await browser.close()
-  process.exit(bugs_found.length > 0 ? 1 : 0)
+  process.exit(bugs.length > 0 ? 1 : 0)
 }
 
 run().catch(err => {
