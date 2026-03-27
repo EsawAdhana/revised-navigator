@@ -353,7 +353,7 @@ function InlineEval({ evaluation, disableComments }: { evaluation: CourseEvaluat
         <div className="border-t border-border/30 px-3 py-2 space-y-1.5 max-h-40 overflow-y-auto">
           {evaluation.comments.map((c, i) => (
             <p key={i} className="text-[11px] text-muted-foreground leading-relaxed">
-              &ldquo;{c}&rdquo;
+              &ldquo;{decodeHtmlEntities(c)}&rdquo;
             </p>
           ))}
         </div>
@@ -373,7 +373,7 @@ function CommentsPanel({ comments }: { comments: string[] }) {
     if (!searchQuery.trim()) return comments
 
     const q = searchQuery.toLowerCase()
-    return comments.filter(c => c.toLowerCase().includes(q))
+    return comments.filter(c => decodeHtmlEntities(c).toLowerCase().includes(q))
   }, [comments, searchQuery])
 
   if (comments.length === 0) {
@@ -423,7 +423,7 @@ function CommentsPanel({ comments }: { comments: string[] }) {
               key={i}
               className="text-sm text-muted-foreground bg-secondary/15 rounded-lg px-4 py-3 border border-border/20 leading-relaxed hover:bg-secondary/25 transition-colors"
             >
-              &ldquo;{comment}&rdquo;
+              &ldquo;{decodeHtmlEntities(comment)}&rdquo;
             </div>
           ))
         })()}
@@ -476,7 +476,7 @@ function AggregatedRatingBreakdown({ questions, aggregateScore }: { questions: E
           const barWidth = maxCount > 0 ? (opt.count / maxCount) * 100 : 0
           return (
             <div key={i} className="flex items-center gap-2 text-sm group">
-              <span className="w-24 text-right text-muted-foreground shrink-0 text-[11px] leading-tight">{opt.text}</span>
+              <span className="w-24 text-right text-muted-foreground shrink-0 text-[11px] leading-tight">{decodeHtmlEntities(opt.text)}</span>
               <div className="flex-1 h-4 bg-secondary/40 rounded overflow-hidden relative">
                 <div
                   className={cn('h-full rounded transition-all duration-500', barFill(aggregateScore))}
