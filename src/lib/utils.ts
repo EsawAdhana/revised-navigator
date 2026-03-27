@@ -145,7 +145,7 @@ export function getSchoolFromSubject(subject: string) {
 }
 
 function convertTermToCode(term: string): string {
-  // Convert "Winter 2026" -> "W26", "Spring 2026" -> "Sp26", "Autumn 2025" -> "F25", etc.
+  // Convert "Winter 2026" -> "W26", "Spring 2026" -> "Sp26", "Summer 2026" -> "Su26", "Autumn 2025" -> "F25", etc.
   if (!term) return ''
 
   const parts = term.split(' ')
@@ -154,7 +154,7 @@ function convertTermToCode(term: string): string {
   const season = parts[0].toUpperCase()
   const year = parts[1]
 
-  // Map season to code: Autumn/Fall -> F, Winter -> W, Spring -> Sp, Summer -> U (Stanford syllabus URLs)
+  // Map season to code: Autumn/Fall -> F, Winter -> W, Spring -> Sp, Summer -> Su (Stanford syllabus URLs)
   let seasonCode = ''
   if (season === 'AUTUMN' || season === 'FALL') {
     seasonCode = 'F'
@@ -163,7 +163,7 @@ function convertTermToCode(term: string): string {
   } else if (season === 'SPRING') {
     seasonCode = 'Sp'
   } else if (season === 'SUMMER') {
-    seasonCode = 'U'
+    seasonCode = 'Su'
   } else {
     // Fallback to first letter if unknown
     seasonCode = season.charAt(0)
@@ -177,7 +177,7 @@ function convertTermToCode(term: string): string {
 
 export function getSyllabusUrl(subject: string, code: string, classId?: number, term?: string, sectionNumber?: string) {
   // Stanford syllabus URLs use format: {termCode}-{subject}-{code}-{section}
-  // e.g., W26-ATHLETIC-60-01, Sp26-CS-106A-01
+  // e.g., W26-ATHLETIC-60-01, Sp26-CS-106A-01, Su26-CS-106A-01
   if (term) {
     const termCode = convertTermToCode(term)
     const subjectClean = (subject || '').replace(/\s+/g, '').toUpperCase()
