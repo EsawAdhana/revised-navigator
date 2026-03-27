@@ -81,13 +81,14 @@ function parseTimePiece(piece: string, fallbackMeridiem?: 'AM' | 'PM') {
   return p
 }
 
-function parseTimeRange(timeStr: string) {
+/** Parse a time range string. Supports hyphen, en dash, em dash, and minus (scraped data varies). */
+export function parseTimeRange(timeStr: string) {
   if (!timeStr) return null
   const raw = timeStr.trim()
   if (!raw || raw.toLowerCase().includes('tba')) return null
 
-  // Split on hyphen or en-dash (scrape stores "10:30 AM – 12:20 PM")
-  const parts = raw.split(/\s*[-–]\s*/).map(s => s.trim()).filter(Boolean)
+  // Split on hyphen/en/em dash or unicode minus (e.g. "10:30 AM – 12:20 PM")
+  const parts = raw.split(/\s*[-–—−]\s*/).map(s => s.trim()).filter(Boolean)
   if (parts.length === 0) return null
   if (parts.length === 1) {
     const start = parts[0]

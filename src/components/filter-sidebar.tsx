@@ -7,7 +7,7 @@ import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsIn
 import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, formatComponent, isAllowedGer, formatLevel, parseUnitsOptions, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
 import { searchCourses } from '@/lib/search-utils';
 import { isWimCourse } from '@/lib/wim-courses';
-import { parseMeetingTimes, timeToMinutes, formatMinutes, isMeetingOptional, parseTimeStringToMinutes } from '@/lib/schedule-utils';
+import { parseMeetingTimes, parseTimeRange, timeToMinutes, formatMinutes, isMeetingOptional, parseTimeStringToMinutes } from '@/lib/schedule-utils';
 import { CheckboxItem, FilterGroup } from '@/components/ui/filter-components';
 import { Input } from '@/components/ui/input';
 import { Search, Plus, X, ChevronDown, ChevronRight, Check, Minus } from 'lucide-react';
@@ -295,10 +295,10 @@ export function FilterSidebar() {
                         return '';
                     }).filter(Boolean);
 
-                    let startTime = '', endTime = '';
-                    if (m.time && m.time.includes('-')) {
-                        [startTime, endTime] = m.time.split('-').map((s: string) => s.trim());
-                    }
+                    const range = parseTimeRange(m.time || '')
+                    if (!range?.startTime) return []
+                    const startTime = range.startTime
+                    const endTime = range.endTime
 
                     if (!startTime) return [];
 

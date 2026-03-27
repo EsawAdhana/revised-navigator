@@ -2,7 +2,7 @@ import React, { useMemo, useCallback } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
-import { parseMeetingTimes, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils';
+import { parseMeetingTimes, parseTimeRange, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils';
 import { getSchoolFromSubject, compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary, formatLevel, parseUnitsOptions } from '@/lib/utils';
 import type { Course } from '@/types/course';
 import { searchCourses } from '@/lib/search-utils';
@@ -200,10 +200,10 @@ export function useFilteredCourses() {
                         return '';
                     }).filter(Boolean);
 
-                    let startTime = '', endTime = '';
-                    if (m.time && m.time.includes('-')) {
-                        [startTime, endTime] = m.time.split('-').map((s: string) => s.trim());
-                    }
+                    const range = parseTimeRange(m.time || '')
+                    if (!range?.startTime) return []
+                    const startTime = range.startTime
+                    const endTime = range.endTime
 
                     if (!startTime) return [];
 

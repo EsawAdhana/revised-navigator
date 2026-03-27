@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { useCourseStore } from '@/lib/store';
-import { parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
+import { parseMeetingTimes, parseTimeRange, timeToMinutes } from '@/lib/schedule-utils';
 import { cn, decodeHtmlEntities, parseUnitsOptions } from '@/lib/utils';
 import { AlertTriangle, CalendarPlus, Calendar, Clock, MapPin } from 'lucide-react';
 import type { Course, Section } from '@/types/course';
@@ -202,9 +202,10 @@ export function CalendarPreviewModal({
         const meetings = section.meetings || [];
         meetings.forEach(m => {
             if (!m.time) return;
-            const timeParts = m.time.split('-').map(s => s.trim());
-            const startTime = timeParts[0];
-            const endTime = timeParts[1] || '';
+            const range = parseTimeRange(m.time);
+            if (!range?.startTime) return;
+            const startTime = range.startTime;
+            const endTime = range.endTime
             if (!startTime) return;
             const start = timeToMinutes(startTime);
             const end = endTime ? timeToMinutes(endTime) : start + 60;

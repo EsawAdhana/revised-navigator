@@ -4,17 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "dotenv -e ./env.example.fuzz -- next dev -H 0.0.0.0",
-    "dev:auth": "next dev -H 0.0.0.0",
+    "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --max-warnings 0",
-    "fuzz:random": "npx tsx fuzzing/dumb-fuzzer.ts",
-    "fuzz:invariant": "npx tsx fuzzing/invariant-fuzzer.ts",
-    "fuzz:all": "bash fuzzing/run-all-fuzzers.sh",
-    "toy:serve": "npx tsx fuzzing/toy-app/serve.ts",
-    "toy:fuzz:random": "npx tsx fuzzing/toy-fuzzer-dumb.ts",
-    "toy:fuzz:invariant": "npx tsx fuzzing/toy-fuzzer-invariant.ts"
+    "lint": "eslint . --max-warnings 0"
   },
   "keywords": [],
   "author": "",
@@ -44,7 +37,6 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
     "@types/node": "^25.0.3",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
@@ -53,7 +45,6 @@
     "eslint-config-next": "^16.1.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5.9.3",
-    "dotenv-cli": "^8.0.0"
+    "typescript": "^5.9.3"
   }
 }
