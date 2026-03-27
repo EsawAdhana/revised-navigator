@@ -389,11 +389,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                         <ExternalLink size={14} className="opacity-60" />
                                                     </a>
                                                 </Button>
-                                                {isFutureTerm && (
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Note that syllabi may not be posted for {activeTerm} yet.
-                                                    </p>
-                                                )}
                                                 {!isFutureTerm && isSyllabusValid === false && (
                                                     <p className="text-xs text-amber-600 dark:text-amber-400">
                                                         This syllabus link may not be available. Try searching on syllabus.stanford.edu directly.
