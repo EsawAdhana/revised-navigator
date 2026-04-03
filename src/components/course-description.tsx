@@ -5,6 +5,16 @@ import Link from 'next/link';
 import { useCourseStore } from '@/lib/store';
 import { decodeHtmlEntities } from '@/lib/utils';
 
+/** Only auto-link course codes when nearby preceding text looks like a prereq / requirement list (not e.g. lab fees like "$MUSIC 80"). */
+const COURSE_REF_CONTEXT_RE =
+    /\b(?:prerequisites?|prereqs?|corequisites?|co-?\s*requisites?|recommended|recommendations?|requirements?|suggested|prior\s+courses?|concurrent\s+enrollment)\b/i
+
+function hasCourseReferenceContext(fullText: string, matchIndex: number): boolean {
+    const lookback = 480
+    const start = Math.max(0, matchIndex - lookback)
+    return COURSE_REF_CONTEXT_RE.test(fullText.slice(start, matchIndex))
+}
+
 interface CourseDescriptionProps {
     description: string;
     /** When set, bare course numbers (e.g. "30", "70", "112") in the text are resolved as this subject (e.g. CS 30, CS 70). */
@@ -54,8 +64,9 @@ export function CourseDescription({ description, contextSubject, className }: Co
             }
 
             const courseId = courseMap.get(`${subject}|${code}`);
+            const shouldLink = Boolean(courseId && hasCourseReferenceContext(decodedText, match.index));
 
-            if (courseId) {
+            if (shouldLink && courseId) {
                 parts.push(
                     <Link
                         key={`${match.index}-${fullCode}`}

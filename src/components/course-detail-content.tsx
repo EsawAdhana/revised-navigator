@@ -218,16 +218,21 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
     const isFutureTerm = activeTerm === 'Spring 2026' || activeTerm === 'Summer 2026'
 
-    // GER (General Education Requirements / WAYS) from sections
+    // GER (General Education Requirements / WAYS) from sections — dedupe by display abbreviation
+    // so e.g. "Writing in the Major (WIM)" (injected in store) and "WIM" do not both show as WIM.
     const gers = useMemo(() => {
-        const set = new Set<string>()
-        course.sections?.forEach(s => s.gers?.forEach(g => {
-            if (isAllowedGer(g)) set.add(g)
-        }))
-        if (isWimCourse(course.subject, course.code)) {
-            set.add('WIM')
+        const byAbbrev = new Map<string, string>()
+        const consider = (g: string) => {
+            if (!isAllowedGer(g)) return
+            const abbr = abbreviateGer(g)
+            const existing = byAbbrev.get(abbr)
+            if (!existing || g.length > existing.length) byAbbrev.set(abbr, g)
         }
-        return Array.from(set).sort()
+        course.sections?.forEach(s => s.gers?.forEach(consider))
+        if (isWimCourse(course.subject, course.code)) consider('WIM')
+        return Array.from(byAbbrev.values()).sort((a, b) =>
+            abbreviateGer(a).localeCompare(abbreviateGer(b))
+        )
     }, [course.sections, course.subject, course.code])
     const gerLabel = gers.length > 0 ? gers.map(abbreviateGer).join(', ') : '—'
 
