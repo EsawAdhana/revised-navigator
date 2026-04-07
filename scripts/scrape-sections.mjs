@@ -255,21 +255,59 @@ async function fetchSections(subject, code) {
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 
+function isStatementTimeout(err) {
+    const code = err?.code ?? err?.details
+    const msg = (err?.message || '').toLowerCase()
+    return code === '57014' || msg.includes('statement timeout') || msg.includes('canceling statement')
+}
+
+async function sleep(ms) {
+    return new Promise(r => setTimeout(r, ms))
+}
+
+/** Retry transient DB timeouts (common on large `courses` table). */
+async function withRetries(fn, { label = 'query', maxAttempts = 4 } = {}) {
+    let lastErr
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const { data, error } = await fn()
+        if (!error) return { data, error: null }
+        lastErr = error
+        if (!isStatementTimeout(error) || attempt === maxAttempts) return { data, error }
+        const wait = 800 * attempt
+        console.warn(`  ⚠ ${label} timed out (attempt ${attempt}/${maxAttempts}), retrying in ${wait}ms…`)
+        await sleep(wait)
+    }
+    return { data: null, error: lastErr }
+}
+
+/**
+ * Load all course ids in small pages. Keyset pagination + order avoids heavy OFFSET scans;
+ * narrow select keeps payload small under Supabase statement limits.
+ */
 async function loadCourses(supabase) {
     const rows = []
-    const PAGE = 1000
-    let offset = 0
+    const PAGE = 300
+    let lastCourseId = null
+
     while (true) {
-        const { data, error } = await supabase
-            .from('courses')
-            .select('course_id, subject, code')
-            .range(offset, offset + PAGE - 1)
+        const cursor = lastCourseId
+        const { data, error } = await withRetries(() => {
+            let q = supabase
+                .from('courses')
+                .select('course_id, subject, code')
+                .order('course_id', { ascending: true })
+                .limit(PAGE)
+            if (cursor != null) q = q.gt('course_id', cursor)
+            return q
+        }, { label: 'loadCourses page' })
         if (error) throw error
         if (!data || data.length === 0) break
+
         rows.push(...data)
+        lastCourseId = data[data.length - 1].course_id
         if (data.length < PAGE) break
-        offset += PAGE
     }
+
     return rows
 }
 
