@@ -1,3 +1,7 @@
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   NEXT_PUBLIC_SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+# If schedules stop after repo inactivity: Actions → ... → enable workflows; run once via workflow_dispatch.
 name: Refresh Course Data
 on:
   schedule:
