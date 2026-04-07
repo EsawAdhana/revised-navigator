@@ -37,6 +37,5 @@ report.synctex.gz
 # Production tooling
 CLAUDE.md
 .env.example
-.github/
 public/google*.html
 public/robots.txt

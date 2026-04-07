@@ -7,7 +7,8 @@
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint . --max-warnings 0",
+    "scrape:sections": "node --env-file=.env.local scripts/scrape-sections.mjs"
   },
   "keywords": [],
   "author": "",
@@ -37,6 +38,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "fast-xml-parser": "^5.4.1",
     "@types/node": "^25.0.3",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
