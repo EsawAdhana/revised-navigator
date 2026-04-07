@@ -6,7 +6,7 @@ import { ExternalLink, MapPin, Clock, Check, FileText, AlertCircle, Loader2, Cal
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { Section } from '@/types/course';
-import { cn, getSyllabusUrl, parseUnitsOptions, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities, getCrossListGroupIds } from '@/lib/utils';
+import { cn, getSyllabusUrl, parseUnitsOptions, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities, getCrossListGroupIds, aggregateCrossListedSectionEnrollment } from '@/lib/utils';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSyllabusValidity } from '@/hooks/use-syllabus-validity';
@@ -503,6 +503,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                             const INDEPENDENT_COMPONENTS = new Set(['INS', 'PRA', 'T/D', 'CLN', 'RES', 'ITR', 'RSC', 'TUT', 'SIM', 'CAS']);
 
                                             return termSections.map((section) => {
+                                                const enrollAgg = aggregateCrossListedSectionEnrollment(section, crossListIds, courses);
                                                 const isIndependent = INDEPENDENT_COMPONENTS.has(section.component);
                                                 const tbdLabel = isIndependent ? 'Not Applicable' : 'TBD';
                                                 const compLabel = formatComponent(section.component);
@@ -529,10 +530,10 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                                     )}
                                                                 </div>
                                                                 <div className="text-[15px] text-muted-foreground mt-0.5 font-medium tracking-tight">ID: {section.classId}</div>
-                                                                {section.capacity > 0 && (
+                                                                {enrollAgg.capacity > 0 && (
                                                                     <div className="text-[13px] text-muted-foreground mt-0.5">
-                                                                        {section.enrolled} / {section.capacity} enrolled
-                                                                        {section.waitlist > 0 && ` · ${section.waitlist} / ${section.waitlistMax} on waitlist`}
+                                                                        {enrollAgg.enrolled} / {enrollAgg.capacity} enrolled
+                                                                        {enrollAgg.waitlist > 0 && ` · ${enrollAgg.waitlist} / ${enrollAgg.waitlistMax} on waitlist`}
                                                                     </div>
                                                                 )}
                                                             </div>

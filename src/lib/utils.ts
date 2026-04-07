@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import type { Course, Section } from '@/types/course'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -113,6 +114,47 @@ export function getCrossListGroupIds(courseId: string, courses: { id: string; ti
     }
   }
   return group.length > 0 ? group : [courseId]
+}
+
+/**
+ * Aggregate enrollment for the same logical section across cross-listed catalog entries.
+ * Matches per sibling course by classId first, then component + sectionNumber within the anchor term.
+ * Enrolled and waitlist counts are summed (total people); capacity and waitlistMax use max (shared cap, not summed department quotas).
+ */
+export function aggregateCrossListedSectionEnrollment(
+  anchor: Section,
+  crossListCourseIds: string[],
+  courses: Course[]
+): Pick<Section, 'enrolled' | 'capacity' | 'waitlist' | 'waitlistMax'> {
+  const byId = new Map(courses.map(c => [c.id, c]))
+  const matches: Section[] = []
+  for (const cid of crossListCourseIds) {
+    const c = byId.get(cid)
+    if (!c?.sections?.length) continue
+    const sameTerm = c.sections.filter(s => s.term === anchor.term)
+    const hit =
+      sameTerm.find(s => s.classId === anchor.classId) ??
+      sameTerm.find(
+        s => s.component === anchor.component && s.sectionNumber === anchor.sectionNumber
+      )
+    if (hit) matches.push(hit)
+  }
+  if (matches.length === 0) {
+    return {
+      enrolled: anchor.enrolled,
+      capacity: anchor.capacity,
+      waitlist: anchor.waitlist,
+      waitlistMax: anchor.waitlistMax,
+    }
+  }
+  const caps = matches.map(s => s.capacity ?? 0)
+  const waitCaps = matches.map(s => s.waitlistMax ?? 0)
+  return {
+    enrolled: matches.reduce((a, s) => a + (s.enrolled ?? 0), 0),
+    capacity: Math.max(0, ...caps),
+    waitlist: matches.reduce((a, s) => a + (s.waitlist ?? 0), 0),
+    waitlistMax: Math.max(0, ...waitCaps),
+  }
 }
 
 // Very lightweight heuristic mapping for Stanford subjects.
