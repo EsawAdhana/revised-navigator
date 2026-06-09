@@ -2,10 +2,10 @@ import React, { useMemo, useCallback } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
-import { parseMeetingTimes, parseTimeRange, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils';
-import { getSchoolFromSubject, compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary, formatLevel, parseUnitsOptions } from '@/lib/utils';
+import { compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary, parseUnitsOptions } from '@/lib/utils';
 import type { Course } from '@/types/course';
 import { searchCourses } from '@/lib/search-utils';
+import { filterCourses } from '@/lib/course-filter';
 
 export function useFilteredCourses() {
     const courses = useCourseStore(state => state.courses);
@@ -38,237 +38,23 @@ export function useFilteredCourses() {
     const primaryMap = useMemo(() => getCrossListPrimaryMap(courses), [courses]);
 
     const filteredResult = useMemo(() => {
-        // O(1) Set lookups for filter membership — faster than array .includes() per course
-        const deptsSet = new Set(selectedDepts ?? []);
-        const termsSet = new Set(selectedTerms ?? []);
-        const formatsSet = new Set(selectedFormats ?? []);
-        const levelsSet = new Set(selectedLevels ?? []);
-        const gersSet = new Set(selectedGers ?? []);
-        const schoolsSet = new Set(selectedSchools ?? []);
-        const hasTermFilter = termsSet.size > 0 && !termsSet.has('any');
-
-        // Start with all courses, excluding those without a grade basis (invalid)
-        let result = courses.filter(c => c.grading && c.grading.trim() !== '' && c.grading !== 'TBD');
-        result = result.filter(c => {
-            const norm = normalizeCourseId(c.id);
-            const canonical = resolveToCanonicalPrimary(norm, primaryMap);
-            return canonical === norm;
-        });
-
-        // Filter by Excluded Keywords
-        if (excludedWords && excludedWords.length > 0) {
-            const excludedSet = new Set(excludedWords.map(w => w.toLowerCase()));
-            result = result.filter(c => {
-                const textToCheck = `${c.title} ${c.description} ${c.code}`.toLowerCase();
-                return ![...excludedSet].some(word => textToCheck.includes(word));
-            });
-        }
-
-        // Filter by Department
-        if (deptsSet.size > 0) {
-            result = result.filter(c => deptsSet.has(c.subject));
-        }
-
-        // Filter by Term
-        if (hasTermFilter) {
-            result = result.filter(c => {
-                if (c.terms) {
-                    return c.terms.some(t => termsSet.has(t));
-                }
-                return c.selectedTerm != null && termsSet.has(c.selectedTerm);
-            });
-        }
-
-        // Filter by Format (Component)
-        // When sections is empty (Phase 1 / light data), include course so we don't incorrectly hide during enrichment
-        if (formatsSet.size > 0) {
-            result = result.filter(c => {
-                if (!c.sections || c.sections.length === 0) return true;
-                return c.sections.some(s => s.component && formatsSet.has(s.component));
-            });
-        }
-
-
-        // Filter by Level (Undergrad/Grad etc) - normalize classLevel for matching; fallback to course code
-        if (levelsSet.size > 0) {
-            result = result.filter(c => {
-                const inferFromCode = () => levelsSet.has(formatLevel(c.code || ''));
-                if (c.sections && c.sections.length > 0) {
-                    const sectionsToCheck = hasTermFilter
-                        ? c.sections.filter(s => s.term && termsSet.has(s.term))
-                        : c.sections;
-                    const sectionMatch = sectionsToCheck.length > 0
-                        ? sectionsToCheck.some(s => s.classLevel && String(s.classLevel).trim() && levelsSet.has(formatLevel(s.classLevel)))
-                        : false;
-                    if (sectionMatch) return true;
-                }
-                return inferFromCode();
-            });
-        }
-
-        // Filter by GERs
-        // When sections is empty (Phase 1 / light data), include course so we don't incorrectly hide during enrichment
-        if (gersSet.size > 0) {
-            result = result.filter(c => {
-                if (!c.sections || c.sections.length === 0) return true;
-                return c.sections.some(s => s.gers && s.gers.some(g => gersSet.has(g)));
-            });
-        }
-
-
-        // Filter by unit range (slider: unitMin–unitMax) - use parseUnitsOptions for variable units
-        const unitsFilterActive = unitMin > 1 || unitMax < 5;
-        if (unitsFilterActive) {
-            const min = Math.max(1, unitMin);
-            const max = Math.min(5, unitMax);
-            const maxOpen = max >= 5;
-            result = result.filter(c => {
-                const checkUnits = (uStr: string | number) => {
-                    const opts = parseUnitsOptions(uStr);
-                    if (opts.length === 0) return false;
-                    return opts.some(u => u >= min && (maxOpen ? true : u <= max));
-                };
-                if (c.sections && c.sections.length > 0) {
-                    const sectionsToCheck = hasTermFilter
-                        ? c.sections.filter(s => s.term && termsSet.has(s.term))
-                        : c.sections;
-                    const sectionMatch = sectionsToCheck.length > 0
-                        ? sectionsToCheck.some(s => checkUnits(s.units))
-                        : false;
-                    if (sectionMatch) return true;
-                }
-                return checkUnits(c.units);
-            });
-        }
-
-        // Filter by start time range (minutes from midnight, 0–1440) - handle hyphen and en dash
-        // When sections is empty (Phase 1 / light data), include course so we don't incorrectly hide during enrichment
-        const timeFilterActive = timeMin > 420 || timeMax < 1320;
-        if (timeFilterActive) {
-            const min = Math.max(420, timeMin);
-            const max = Math.min(1320, timeMax);
-            result = result.filter(c => {
-                if (!c.sections || c.sections.length === 0) return true;
-                return c.sections.some(s => s.meetings?.some(m => {
-                    const timeStr = m.time || '';
-                    const startStr = timeStr.split(/\s*[-–]\s*/)[0]?.trim() || timeStr;
-                    const startMins = timeToMinutes(startStr);
-                    return startMins >= min && startMins <= max;
-                }));
-            });
-        }
-
-        // WIM filter is now handled by standard GER filtering
-
-        // Filter by Conflicts
-        if (hideConflicts) {
-            const hasOverlap = (m1: any, m2: any, cartItem?: any) => {
-                // Check Days - but exclude optional days from cartItem
-                let commonDays = m1.days.filter((d: string) => m2.days.includes(d));
-
-                // If cartItem is provided, filter out optional days
-                if (cartItem) {
-                    commonDays = commonDays.filter((day: string) => {
-                        return !isMeetingOptional(cartItem, day, m2.startTime, m2.endTime);
-                    });
-                }
-
-                if (commonDays.length === 0) return false;
-
-                // Check Times
-                const start1 = timeToMinutes(m1.startTime);
-                const end1 = timeToMinutes(m1.endTime);
-                const start2 = timeToMinutes(m2.startTime);
-                const end2 = timeToMinutes(m2.endTime);
-
-                return start1 < end2 && start2 < end1;
-            };
-
-            const parseSectionMeetings = (section: any) => {
-                return section.meetings.flatMap((m: any) => {
-                    let days: string[] = [];
-                    if (typeof m.days === 'string') days = m.days.split(/[ ,]+/);
-
-                    // Normalize Days (Mon, Tue...)
-                    const normalizedDays = days.map((d: string) => {
-                        const lower = d.toLowerCase();
-                        if (lower.startsWith('m')) return 'Mon';
-                        if (lower.startsWith('tu')) return 'Tue';
-                        if (lower.startsWith('w')) return 'Wed';
-                        if (lower.startsWith('th')) return 'Thu';
-                        if (lower.startsWith('f')) return 'Fri';
-                        return '';
-                    }).filter(Boolean);
-
-                    const range = parseTimeRange(m.time || '')
-                    if (!range?.startTime) return []
-                    const startTime = range.startTime
-                    const endTime = range.endTime
-
-                    if (!startTime) return [];
-
-                    return [{
-                        days: normalizedDays,
-                        startTime,
-                        endTime
-                    }];
-                });
-            };
-
-            result = result.filter(c => {
-                if (!c.sections || c.sections.length === 0) return true;
-
-                let sectionsToCheck = c.sections;
-                if (termsSet.size > 0) {
-                    sectionsToCheck = sectionsToCheck.filter(s => termsSet.has(s.term));
-                }
-
-                if (sectionsToCheck.length === 0) return true;
-
-                // A course is valid if AT LEAST ONE section does not overlap
-                return sectionsToCheck.some(section => {
-                    const cartItemsForTerm = cartItems.filter(item => item.selectedTerm === section.term);
-                    if (cartItemsForTerm.length === 0) return true;
-
-                    const sectionMeetings = parseSectionMeetings(section);
-                    if (sectionMeetings.length === 0) return true;
-
-                    const isOverlapping = cartItemsForTerm.some(cartItem => {
-                        // Do not conflict a course with itself
-                        if (cartItem.id === c.id) return false;
-
-                        const cartMeetings = parseMeetingTimes(cartItem, cartItem.selectedTerm);
-                        // Check conflicts, but pass cartItem to hasOverlap to exclude optional days
-                        return cartMeetings.some(cm =>
-                            sectionMeetings.some((sm: any) => hasOverlap(sm, cm, cartItem))
-                        );
-                    });
-
-                    return !isOverlapping;
-                });
-            });
-        }
-
-        // Filter by Availability
-        if (hideUnavailable) {
-            result = result.filter(c => {
-                if (!c.sections || c.sections.length === 0) return true; // No data yet → keep
-                let sectionsToCheck = c.sections;
-                if (termsSet.size > 0) {
-                    sectionsToCheck = sectionsToCheck.filter(s => termsSet.has(s.term));
-                }
-                if (sectionsToCheck.length === 0) return true; // No sections for selected terms → keep
-                return sectionsToCheck.some(s => s.status?.toLowerCase() === 'open');
-            });
-        }
-
-        // Filter by School
-        if (schoolsSet.size > 0) {
-            result = result.filter(c => {
-                const school = getSchoolFromSubject(c.subject);
-                return schoolsSet.has(school);
-            });
-        }
+        // Shared filter pipeline (also used by the sidebar facet counts) — applies
+        // every filter except the free-text query, which is handled below.
+        let result = filterCourses(courses, {
+            excludedWords,
+            selectedDepts,
+            selectedTerms,
+            selectedFormats,
+            selectedLevels,
+            selectedGers,
+            selectedSchools,
+            unitMin,
+            unitMax,
+            timeMin,
+            timeMax,
+            hideConflicts,
+            hideUnavailable,
+        }, primaryMap, cartItems);
 
         // Filter by Query
         if (query) {

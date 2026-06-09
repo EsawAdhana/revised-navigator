@@ -1,23 +1,8 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-
-if (!supabaseKey) {
-  throw new Error(
-    'SUPABASE_SERVICE_ROLE_KEY is not set. ' +
-    'Add it to your Vercel project environment variables (Settings → Environment Variables). ' +
-    'The anon key cannot be used here because it is subject to RLS.'
-  )
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: { persistSession: false }
-})
+import { getPublicClient, mergeCourseRows, FULL_COURSE_COLUMNS, LIGHT_COURSE_COLUMNS } from '@/lib/supabase-admin'
 
 const PAGE_SIZE = 1000
-const CONCURRENCY = 2
+const CONCURRENCY = 5
 
 // In-memory cache (survives across requests in the same serverless instance)
 let cachedLight: any[] | null = null
@@ -26,7 +11,12 @@ let lightTimestamp = 0
 let fullTimestamp = 0
 const CACHE_TTL = 1000 * 60 * 15 // 15 min
 
+// In-flight promises so concurrent cold requests share one DB scan (stampede guard)
+let lightInFlight: Promise<any[]> | null = null
+let fullInFlight: Promise<any[]> | null = null
+
 async function fetchAllRows(columns: string) {
+  const supabase = getPublicClient()
   const { count, error: countError } = await supabase
     .from('courses')
     .select('*', { count: 'exact', head: true })
@@ -41,8 +31,9 @@ async function fetchAllRows(columns: string) {
     for (let j = 0; j < CONCURRENCY && (i + j) < pages; j++) {
       const pageIndex = i + j
       const from = pageIndex * PAGE_SIZE
+      // Stable ordering so paginated ranges can't drop/duplicate rows under concurrent writes
       chunkPromises.push(
-        supabase.from('courses').select(columns).range(from, from + PAGE_SIZE - 1)
+        supabase.from('courses').select(columns).order('course_id', { ascending: true }).range(from, from + PAGE_SIZE - 1)
       )
     }
     const chunkResults = await Promise.all(chunkPromises)
@@ -55,26 +46,32 @@ async function fetchAllRows(columns: string) {
   return rows.filter(r => r.grading && r.grading.trim() !== '' && r.grading !== 'TBD')
 }
 
-function mergeRows(rows: any[]) {
-  const merged = new Map<string, any>()
-  for (const row of rows) {
-    const existing = merged.get(row.course_id)
-    if (!existing) {
-      merged.set(row.course_id, { ...row })
-      continue
-    }
-    const terms = Array.from(new Set([...(existing.terms || []), ...(row.terms || [])]))
-    const sections = [...(existing.sections || []), ...(row.sections || [])]
-    // Prefer non-empty units when merging (first row may have empty units)
-    const units = (existing.units && String(existing.units).trim()) ? existing.units : (row.units || existing.units)
-    merged.set(row.course_id, {
-      ...existing,
-      terms,
-      sections,
-      units,
-    })
+const CACHE_HEADERS = { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800' }
+
+async function getFull(): Promise<any[]> {
+  if (cachedFull && Date.now() - fullTimestamp < CACHE_TTL) return cachedFull
+  if (!fullInFlight) {
+    fullInFlight = (async () => {
+      const merged = mergeCourseRows(await fetchAllRows(FULL_COURSE_COLUMNS))
+      cachedFull = merged
+      fullTimestamp = Date.now()
+      return merged
+    })().finally(() => { fullInFlight = null })
   }
-  return Array.from(merged.values())
+  return fullInFlight
+}
+
+async function getLight(): Promise<any[]> {
+  if (cachedLight && Date.now() - lightTimestamp < CACHE_TTL) return cachedLight
+  if (!lightInFlight) {
+    lightInFlight = (async () => {
+      const merged = mergeCourseRows(await fetchAllRows(LIGHT_COURSE_COLUMNS))
+      cachedLight = merged
+      lightTimestamp = Date.now()
+      return merged
+    })().finally(() => { lightInFlight = null })
+  }
+  return lightInFlight
 }
 
 export async function GET(request: Request) {
@@ -82,43 +79,8 @@ export async function GET(request: Request) {
   const full = searchParams.get('full') === '1'
 
   try {
-    if (full) {
-      // Full data (with sections + description)
-      if (cachedFull && Date.now() - fullTimestamp < CACHE_TTL) {
-        return NextResponse.json(cachedFull, {
-          headers: { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800' }
-        })
-      }
-
-      const rows = await fetchAllRows(
-        'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty'
-      )
-      const merged = mergeRows(rows)
-      cachedFull = merged
-      fullTimestamp = Date.now()
-
-      return NextResponse.json(merged, {
-        headers: { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800' }
-      })
-    }
-
-    // Light data (card-level only — fast)
-    if (cachedLight && Date.now() - lightTimestamp < CACHE_TTL) {
-      return NextResponse.json(cachedLight, {
-        headers: { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800' }
-      })
-    }
-
-    const rows = await fetchAllRows(
-      'course_id, subject, code, title, units, instructors, terms, grading, hours, quality, difficulty'
-    )
-    const merged = mergeRows(rows)
-    cachedLight = merged
-    lightTimestamp = Date.now()
-
-    return NextResponse.json(merged, {
-      headers: { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800' }
-    })
+    const data = full ? await getFull() : await getLight()
+    return NextResponse.json(data, { headers: CACHE_HEADERS })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to fetch courses'
     console.error('Failed to fetch courses:', err)

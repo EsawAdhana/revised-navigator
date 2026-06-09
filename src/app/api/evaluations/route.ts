@@ -1,23 +1,19 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-
-if (!supabaseKey) {
-  throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set')
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: { persistSession: false }
-})
+import { getPublicClient } from '@/lib/supabase-admin'
 
 const MAX_COURSE_IDS = 50
 
 /** POST /api/evaluations — bulk fetch by course IDs. Body: { courseIds: string[] } */
 export async function POST(request: Request) {
+  let body: unknown
   try {
-    const { courseIds } = (await request.json()) as { courseIds: string[] }
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  try {
+    const courseIds = (body as { courseIds?: unknown })?.courseIds
     if (!Array.isArray(courseIds) || courseIds.length === 0) {
       return NextResponse.json({ error: 'courseIds is required' }, { status: 400 })
     }
@@ -27,6 +23,7 @@ export async function POST(request: Request) {
 
     const ids = courseIds.filter((id): id is string => typeof id === 'string')
 
+    const supabase = getPublicClient()
     // Single query — Supabase supports .in() with many values (up to 1000+)
     const { data, error } = await supabase
       .from('evaluations')

@@ -2,11 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VList, VListHandle } from 'virtua';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
 import { CourseCard } from './course-card';
-import { Course } from '@/types/course';
 import { SearchX, ArrowUp } from 'lucide-react';
 import { ActiveFilterChips } from './active-filter-chips';
 import {
@@ -22,7 +20,7 @@ const SCROLL_STORAGE_KEY = 'course-list-scroll';
 export function CourseList() {
   const { courses, isLoading, getSortDisplayValue, getRatingForCourse, sortBy, setSortBy, sortOrder, setSortOrder } = useFilteredCourses();
   const vListRef = useRef<VListHandle>(null);
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const [showJumpTop, setShowJumpTop] = useState(false);
   const scrollOffsetRef = useRef(0);
   const hasRestoredScroll = useRef(false);
 
@@ -187,7 +185,7 @@ export function CourseList() {
           <>
             {/* List area — full width when A-Z (scrubber overlays); otherwise flex-1 */}
             <div className="flex-1 min-w-0 relative overflow-hidden">
-              {scrollOffset > SCROLL_THRESHOLD && (
+              {showJumpTop && (
                 <button
                   type="button"
                   onClick={() => vListRef.current?.scrollTo(0)}
@@ -202,8 +200,9 @@ export function CourseList() {
                 ref={vListRef}
                 className={`h-full w-full scrollbar-hide pb-4 px-2 sm:px-4 ${sortBy === 'az' ? 'pr-6 sm:pr-7' : ''}`}
                 onScroll={(offset) => {
-                  setScrollOffset(offset);
                   scrollOffsetRef.current = offset;
+                  const shouldShow = offset > SCROLL_THRESHOLD;
+                  setShowJumpTop(prev => (prev === shouldShow ? prev : shouldShow));
                 }}
               >
                 {courses.map((course) => (

@@ -159,7 +159,25 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
         return
       }
 
-      // ── Single fetch: full data with sections ──
+      // ── Phase 1: light data (card-level only) — small + fast, renders the list ──
+      // Skip when stale full data is already on screen, so a background revalidate
+      // doesn't momentarily downgrade visible courses (sections/descriptions) to light.
+      if (!stale) {
+        const lightRes = await fetch('/api/courses')
+        if (!lightRes.ok) throw new Error(`API error: ${lightRes.status}`)
+        const lightRows: any[] = await lightRes.json()
+        const lightCourses = lightRows.map(rowToCourse)
+
+        set({
+          courses: lightCourses,
+          hasLoaded: true,
+          isLoading: false,
+          isEnriching: true,
+          hasEnriched: false,
+        })
+      }
+
+      // ── Phase 2: full data with sections + description — enrich in background ──
       const fullRes = await fetch('/api/courses?full=1')
       if (!fullRes.ok) throw new Error(`API error: ${fullRes.status}`)
       const fullRows: any[] = await fullRes.json()
@@ -179,9 +197,9 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
       // Preserve stale data on error — don't overwrite with empty array
       const { courses } = get()
       if (courses.length === 0) {
-        set({ hasLoaded: true, isLoading: false })
+        set({ hasLoaded: true, isLoading: false, isEnriching: false })
       } else {
-        set({ isLoading: false })
+        set({ isLoading: false, isEnriching: false })
       }
     }
   },

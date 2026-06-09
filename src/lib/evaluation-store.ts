@@ -1,9 +1,12 @@
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
 import type { CourseEvaluation } from '@/types/course'
 
 const EVAL_CACHE_KEY = 'evaluations-cache'
 const EVAL_CACHE_TTL = 1000 * 60 * 30 // 30 min
+
+// Course IDs with an in-flight bulk fetch — dedupes concurrent/overlapping callers
+// (e.g. the detail page plus its two CourseEvaluations children mounting together).
+const bulkInFlight = new Set<string>()
 
 function readEvalCache(): Record<string, CourseEvaluation[]> | null {
   try {
@@ -30,7 +33,6 @@ type EvaluationStore = {
   loadingCourses: Record<string, boolean>
   errorCourses: Record<string, boolean>
   isBulkLoading: boolean
-  fetchCourseEvaluations: (courseId: string) => Promise<void>
   fetchBulkEvaluations: (courseIds: string[]) => Promise<void>
   getEvaluations: (courseId: string) => CourseEvaluation[]
   /** Merged evaluations from all course IDs (e.g. cross-listed CS 24, LINGUIST 35). Deduplicated by term+instructor. */
@@ -45,71 +47,19 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
   errorCourses: {},
   isBulkLoading: false,
 
-  fetchCourseEvaluations: async (courseId) => {
-    const { evaluations, loadingCourses } = get()
-
-    // Already cached or currently loading
-    if (evaluations[courseId] || loadingCourses[courseId]) return
-
-    set(state => ({
-      loadingCourses: { ...state.loadingCourses, [courseId]: true },
-      errorCourses: { ...state.errorCourses, [courseId]: false }
-    }))
-
-    try {
-      const { data, error } = await supabase
-        .from('evaluations')
-        .select('term, instructor, course_code, respondents, questions, comments')
-        .eq('course_id', courseId)
-
-      if (error) throw error
-
-      const mapped: CourseEvaluation[] = (data || []).map(row => {
-        const questions = (row.questions || []) as { text?: string; median?: number }[]
-        let onlineAttendancePct: number | undefined
-        let inPersonAttendancePct: number | undefined
-        for (const q of questions) {
-          const t = (q.text || '').toLowerCase()
-          if (t.includes('percent') && t.includes('online') && (q.median ?? 0) > 0) onlineAttendancePct = q.median
-          if (t.includes('percent') && t.includes('in person') && (q.median ?? 0) > 0) inPersonAttendancePct = q.median
-        }
-        return {
-          term: row.term.replace(/(\d{4})\D.*$/, '$1'),
-          instructor: row.instructor,
-          courseCode: row.course_code,
-          respondents: row.respondents,
-          questions: row.questions,
-          comments: row.comments,
-          ...(onlineAttendancePct != null && { onlineAttendancePct }),
-          ...(inPersonAttendancePct != null && { inPersonAttendancePct }),
-        }
-      })
-
-      set(state => ({
-        evaluations: { ...state.evaluations, [courseId]: mapped },
-        loadingCourses: { ...state.loadingCourses, [courseId]: false }
-      }))
-    } catch (err) {
-      console.error(`Failed to load evaluations for ${courseId}:`, err)
-      set(state => ({
-        evaluations: { ...state.evaluations, [courseId]: [] },
-        loadingCourses: { ...state.loadingCourses, [courseId]: false },
-        errorCourses: { ...state.errorCourses, [courseId]: true }
-      }))
-    }
-  },
-
   fetchBulkEvaluations: async (courseIds) => {
     let { evaluations } = get()
-    // Hydrate from cache first (instant on refresh)
+    // Hydrate from cache first (instant on refresh) — only set when it adds new keys
     const cached = readEvalCache()
     if (cached) {
+      const addsNewKeys = Object.keys(cached).some(id => !(id in evaluations))
       evaluations = { ...cached, ...evaluations }
-      set(state => ({ ...state, evaluations }))
+      if (addsNewKeys) set(state => ({ ...state, evaluations: { ...cached, ...state.evaluations } }))
     }
 
-    const toFetch = courseIds.filter(id => !evaluations[id])
+    const toFetch = courseIds.filter(id => !evaluations[id] && !bulkInFlight.has(id))
     if (toFetch.length === 0) return
+    for (const id of toFetch) bulkInFlight.add(id)
 
     set(state => ({ ...state, isBulkLoading: true }))
 
@@ -146,6 +96,8 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
         }
         return { evaluations: updated, errorCourses: errors, isBulkLoading: false }
       })
+    } finally {
+      for (const id of toFetch) bulkInFlight.delete(id)
     }
   },
 

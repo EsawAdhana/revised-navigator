@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { Resend } from 'resend'
 import { cookies } from 'next/headers'
@@ -80,18 +80,21 @@ export async function POST (request: Request) {
     )
   }
 
+  // Send the notification email after responding so request latency isn't tied to the email provider
   if (resendApiKey && feedbackEmailTo) {
-    try {
-      const resend = new Resend(resendApiKey)
-      await resend.emails.send({
-        from: fromEmail,
-        to: feedbackEmailTo,
-        subject: `[Stanford Root] New feedback: ${typeInput}`,
-        text: `Type: ${typeInput}\n\n${text}`
-      })
-    } catch (emailErr) {
-      console.error('Feedback email send error:', emailErr)
-    }
+    after(async () => {
+      try {
+        const resend = new Resend(resendApiKey)
+        await resend.emails.send({
+          from: fromEmail,
+          to: feedbackEmailTo,
+          subject: `[Stanford Root] New feedback: ${typeInput}`,
+          text: `Type: ${typeInput}\n\n${text}`
+        })
+      } catch (emailErr) {
+        console.error('Feedback email send error:', emailErr)
+      }
+    })
   }
 
   return NextResponse.json({ ok: true })

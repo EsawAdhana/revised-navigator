@@ -178,6 +178,7 @@ async function fetchSections(subject, code) {
     const url = `${BASE_URL}?q=${encodeURIComponent(query)}&view=xml-20200810&filter-coursestatus-Active=on`
 
     let xml
+    let lastErr
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
             const res = await fetch(url, {
@@ -187,16 +188,18 @@ async function fetchSections(subject, code) {
                 },
                 signal: AbortSignal.timeout(10000),
             })
-            if (!res.ok) return null
+            // Throw (don't return null) on transient HTTP failures so the caller retries next run
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
             xml = await res.text()
             break
-        } catch {
-            if (attempt === 2) return null
+        } catch (e) {
+            lastErr = e
+            if (attempt === 2) throw e instanceof Error ? e : new Error(String(e))
             await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
         }
     }
 
-    if (!xml) return null
+    if (!xml) throw lastErr instanceof Error ? lastErr : new Error('No XML response')
 
     try {
         const parsed = parser.parse(xml)
@@ -248,8 +251,8 @@ async function fetchSections(subject, code) {
             grading: baseMatch.grading || '',
         }
     } catch (e) {
-        console.error(`  XML parse error for ${subject}${code}:`, e.message)
-        return null
+        // Corrupt/partial XML is transient — throw so the course is retried next run, not marked done
+        throw new Error(`XML parse error for ${subject}${code}: ${e.message}`)
     }
 }
 

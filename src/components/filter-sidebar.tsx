@@ -4,10 +4,11 @@ import React, { useMemo, useState } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
-import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, formatComponent, isAllowedGer, formatLevel, parseUnitsOptions, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
+import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, formatComponent, isAllowedGer, formatLevel, parseUnitsOptions, getCrossListPrimaryMap } from '@/lib/utils';
 import { searchCourses } from '@/lib/search-utils';
-import { isWimCourse } from '@/lib/wim-courses';
-import { parseMeetingTimes, parseTimeRange, timeToMinutes, formatMinutes, isMeetingOptional, parseTimeStringToMinutes } from '@/lib/schedule-utils';
+import { filterCourses, type CourseFilterCriteria, type FacetKey } from '@/lib/course-filter';
+import { formatMinutes } from '@/lib/schedule-utils';
+import type { Course } from '@/types/course';
 import { CheckboxItem, FilterGroup } from '@/components/ui/filter-components';
 import { Input } from '@/components/ui/input';
 import { Search, Plus, X, ChevronDown, ChevronRight, Check, Minus } from 'lucide-react';
@@ -97,11 +98,6 @@ export function FilterSidebar() {
     const [unitMax, setUnitMax] = useQueryState('unitMax', parseAsInteger.withDefault(5));
     const [timeMin, setTimeMin] = useQueryState('timeMin', parseAsInteger.withDefault(420));
     const [timeMax, setTimeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320));
-    // Local state for time inputs (for explicit typing)
-    const [timeFromInput, setTimeFromInput] = useState('');
-    const [timeToInput, setTimeToInput] = useState('');
-    const [timeFieldFocused, setTimeFieldFocused] = useState<'from' | 'to' | null>(null);
-
     // Debounced Local State for Sliders (fixes dragging lag)
     const [localUnitMin, setLocalUnitMin] = useState(unitMin);
     const [localUnitMax, setLocalUnitMax] = useState(unitMax);
@@ -133,220 +129,50 @@ export function FilterSidebar() {
 
     const primaryMap = useMemo(() => getCrossListPrimaryMap(courses), [courses]);
 
-    // Helper to filter courses based on all active filters except a specific one
-    // This ensures facet counts match the visible course list
-    const getFilteredCoursesForFacets = (excludeFilter?: string) => {
-        let filtered = courses;
+    // Shared filter criteria (same pipeline as the visible course list)
+    const facetCriteria = useMemo<CourseFilterCriteria>(() => ({
+        excludedWords,
+        selectedDepts,
+        selectedTerms,
+        selectedFormats,
+        selectedLevels,
+        selectedGers,
+        selectedSchools,
+        unitMin,
+        unitMax,
+        timeMin,
+        timeMax,
+        hideConflicts,
+        hideUnavailable,
+    }), [excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable]);
 
-        // Apply invalid course filter (no grade basis)
-        filtered = filtered.filter(c => c.grading && c.grading.trim() !== '' && c.grading !== 'TBD');
-        filtered = filtered.filter(c => {
-            const norm = normalizeCourseId(c.id);
-            const canonical = resolveToCanonicalPrimary(norm, primaryMap);
-            return canonical === norm;
-        });
+    // Base result with all facet filters applied — reused for any facet that has no active selection
+    const facetBase = useMemo(
+        () => filterCourses(courses, facetCriteria, primaryMap, cartItems),
+        [courses, facetCriteria, primaryMap, cartItems]
+    );
+    const facetBaseSearched = useMemo(
+        () => (query ? searchCourses(facetBase, query) : facetBase),
+        [facetBase, query]
+    );
 
-        // Apply excluded words filter
-        if (excludedWords && excludedWords.length > 0 && excludeFilter !== 'exclude') {
-            filtered = filtered.filter(c => {
-                const textToCheck = `${c.title} ${c.description} ${c.code}`.toLowerCase();
-                return !excludedWords.some(word => textToCheck.includes(word.toLowerCase()));
-            });
-        }
-
-        // Apply department filter
-        if (selectedDepts && selectedDepts.length > 0 && excludeFilter !== 'depts') {
-            filtered = filtered.filter(c => selectedDepts.includes(c.subject));
-        }
-
-        // Apply term filter
-        if (selectedTerms && selectedTerms.length > 0 && excludeFilter !== 'terms' && !selectedTerms.includes('any')) {
-            filtered = filtered.filter(c => {
-                return c.terms && c.terms.some(t => selectedTerms.includes(t));
-            });
-        }
-
-        // Apply format filter
-        // When sections is empty (Phase 1 / light data), include course so we don't incorrectly hide during enrichment
-        if (selectedFormats && selectedFormats.length > 0 && excludeFilter !== 'formats') {
-            filtered = filtered.filter(c => {
-                if (!c.sections || c.sections.length === 0) return true;
-                return c.sections.some(s => s.component && selectedFormats.includes(s.component));
-            });
-        }
-
-
-        // Apply level filter (normalize classLevel for matching: UG/UNDERGRAD -> Undergrad, etc.); fallback to course code
-        if (selectedLevels && selectedLevels.length > 0 && excludeFilter !== 'levels') {
-            const hasTermFilter = selectedTerms && selectedTerms.length > 0 && !selectedTerms.includes('any');
-            filtered = filtered.filter(c => {
-                const inferFromCode = () => selectedLevels.includes(formatLevel(c.code || ''));
-                if (c.sections && c.sections.length > 0) {
-                    const sectionsToCheck = hasTermFilter
-                        ? c.sections.filter(s => s.term && selectedTerms!.includes(s.term))
-                        : c.sections;
-                    const sectionMatch = sectionsToCheck.length > 0
-                        ? sectionsToCheck.some(s => s.classLevel && String(s.classLevel).trim() && selectedLevels.includes(formatLevel(s.classLevel)))
-                        : false;
-                    if (sectionMatch) return true;
-                }
-                return inferFromCode();
-            });
-        }
-
-        // Apply GER filter
-        // When sections is empty (Phase 1 / light data), include course so we don't incorrectly hide during enrichment
-        if (selectedGers && selectedGers.length > 0 && excludeFilter !== 'gers') {
-            filtered = filtered.filter(c => {
-                if (!c.sections || c.sections.length === 0) return true;
-                return c.sections.some(s => s.gers && s.gers.some(g => selectedGers.includes(g)));
-            });
-        }
-
-        // Apply school filter
-        if (selectedSchools && selectedSchools.length > 0 && excludeFilter !== 'schools') {
-            filtered = filtered.filter(c => {
-                const school = getSchoolFromSubject(c.subject);
-                return selectedSchools.includes(school);
-            });
-        }
-
-        // Apply unit range filter (use parseUnitsOptions so variable units like 3-4 match if any option is in range)
-        const unitsFilterActive = unitMin > 1 || unitMax < 5;
-        if (unitsFilterActive && excludeFilter !== 'units') {
-            const min = Math.max(1, unitMin);
-            const max = Math.min(5, unitMax);
-            const maxOpen = max >= 5;
-            const hasTermFilter = selectedTerms && selectedTerms.length > 0 && !selectedTerms.includes('any');
-            filtered = filtered.filter(c => {
-                const checkUnits = (uStr: string | number) => {
-                    const opts = parseUnitsOptions(uStr);
-                    if (opts.length === 0) return false;
-                    return opts.some(u => u >= min && (maxOpen ? true : u <= max));
-                };
-                if (c.sections && c.sections.length > 0) {
-                    const sectionsToCheck = hasTermFilter
-                        ? c.sections.filter(s => s.term && selectedTerms!.includes(s.term))
-                        : c.sections;
-                    const sectionMatch = sectionsToCheck.length > 0
-                        ? sectionsToCheck.some(s => checkUnits(s.units))
-                        : false;
-                    if (sectionMatch) return true;
-                }
-                return checkUnits(c.units);
-            });
-        }
-
-        // Apply start time range filter (handle both hyphen and en dash in time strings)
-        // When sections is empty (Phase 1 / light data), include course so we don't incorrectly hide during enrichment
-        const timeFilterActive = timeMin > 420 || timeMax < 1320;
-        if (timeFilterActive && excludeFilter !== 'times') {
-            const min = Math.max(420, timeMin);
-            const max = Math.min(1320, timeMax);
-            filtered = filtered.filter(c => {
-                if (!c.sections || c.sections.length === 0) return true;
-                return c.sections.some(s => s.meetings?.some(m => {
-                    const timeStr = m.time || '';
-                    const startStr = timeStr.split(/\s*[-–]\s*/)[0]?.trim() || timeStr;
-                    const startMins = timeToMinutes(startStr);
-                    return startMins >= min && startMins <= max;
-                }));
-            });
-        }
-        // WIM filter is now handled as part of standard GER filtering.
-
-        // Apply conflict hiding filter (always applied, not excluded)
-        if (hideConflicts) {
-            const hasOverlap = (m1: any, m2: any, cartItem?: any) => {
-                // Check Days - but exclude optional days from cartItem
-                let commonDays = m1.days.filter((d: string) => m2.days.includes(d));
-
-                // If cartItem is provided, filter out optional days
-                if (cartItem) {
-                    commonDays = commonDays.filter((day: string) => {
-                        return !isMeetingOptional(cartItem, day, m2.startTime, m2.endTime);
-                    });
-                }
-
-                if (commonDays.length === 0) return false;
-
-                // Check Times
-                const start1 = timeToMinutes(m1.startTime);
-                const end1 = timeToMinutes(m1.endTime);
-                const start2 = timeToMinutes(m2.startTime);
-                const end2 = timeToMinutes(m2.endTime);
-
-                return start1 < end2 && start2 < end1;
-            };
-
-            const parseSectionMeetings = (section: any) => {
-                return section.meetings.flatMap((m: any) => {
-                    let days: string[] = [];
-                    if (typeof m.days === 'string') days = m.days.split(/[ ,]+/);
-
-                    // Normalize Days (Mon, Tue...)
-                    const normalizedDays = days.map((d: string) => {
-                        const lower = d.toLowerCase();
-                        if (lower.startsWith('m')) return 'Mon';
-                        if (lower.startsWith('tu')) return 'Tue';
-                        if (lower.startsWith('w')) return 'Wed';
-                        if (lower.startsWith('th')) return 'Thu';
-                        if (lower.startsWith('f')) return 'Fri';
-                        return '';
-                    }).filter(Boolean);
-
-                    const range = parseTimeRange(m.time || '')
-                    if (!range?.startTime) return []
-                    const startTime = range.startTime
-                    const endTime = range.endTime
-
-                    if (!startTime) return [];
-
-                    return [{
-                        days: normalizedDays,
-                        startTime,
-                        endTime
-                    }];
-                });
-            };
-
-            filtered = filtered.filter(c => {
-                if (!c.sections || c.sections.length === 0) return true;
-
-                let sectionsToCheck = c.sections;
-                if (selectedTerms && selectedTerms.length > 0) {
-                    sectionsToCheck = sectionsToCheck.filter(s => selectedTerms.includes(s.term));
-                }
-
-                if (sectionsToCheck.length === 0) return true;
-
-                // A course is valid if AT LEAST ONE section does not overlap
-                return sectionsToCheck.some(section => {
-                    const cartItemsForTerm = cartItems.filter(item => item.selectedTerm === section.term);
-                    if (cartItemsForTerm.length === 0) return true;
-
-                    const sectionMeetings = parseSectionMeetings(section);
-                    if (sectionMeetings.length === 0) return true;
-
-                    const isOverlapping = cartItemsForTerm.some(cartItem => {
-                        const cartMeetings = parseMeetingTimes(cartItem, cartItem.selectedTerm);
-                        // Check conflicts, but pass cartItem to hasOverlap to exclude optional days
-                        return cartMeetings.some(cm =>
-                            sectionMeetings.some((sm: any) => hasOverlap(sm, cm, cartItem))
-                        );
-                    });
-
-                    return !isOverlapping;
-                });
-            });
-        }
-
-        // Apply search query filter (use shared searchCourses for consistency with main list)
-        if (query) {
-            filtered = searchCourses(filtered, query);
-        }
-
-        return filtered;
+    // Filtered courses for a facet's count: omit that facet's own selection so it
+    // doesn't zero out its own options. Reuses the base when the facet is inactive.
+    const getFilteredCoursesForFacets = (excludeFilter?: FacetKey): Course[] => {
+        const isActive = (() => {
+            switch (excludeFilter) {
+                case 'depts': return selectedDepts.length > 0;
+                case 'terms': return selectedTerms.length > 0 && !selectedTerms.includes('any');
+                case 'formats': return selectedFormats.length > 0;
+                case 'levels': return selectedLevels.length > 0;
+                case 'gers': return selectedGers.length > 0;
+                case 'schools': return selectedSchools.length > 0;
+                default: return true;
+            }
+        })();
+        if (!isActive) return facetBaseSearched;
+        const filtered = filterCourses(courses, facetCriteria, primaryMap, cartItems, excludeFilter);
+        return query ? searchCourses(filtered, query) : filtered;
     };
 
     // Compute Facets based on filtered courses

@@ -74,13 +74,6 @@ const CATEGORY_SHORT: Record<QuestionCategory, string> = {
   unknown: ''
 }
 
-function parseRespondentCount(respondents: string): number {
-  const match = respondents.match(/(\d+)\s+of\s+(\d+)/)
-  if (match) return parseInt(match[1], 10)
-  const simpleMatch = respondents.match(/(\d+)/)
-  return simpleMatch ? parseInt(simpleMatch[1], 10) : 1
-}
-
 function median(values: number[]): number | null {
   if (values.length === 0) return null
   const sorted = [...values].sort((a, b) => a - b)
@@ -557,16 +550,6 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
   const instructors = useMemo(() => computeInstructorStats(filteredEvals), [filteredEvals])
   const allComments = useMemo(() => filteredEvals.flatMap(e => e.comments), [filteredEvals])
   const hasMultipleInstructors = instructors.length > 1
-
-  // Hours question for histogram (pick first available)
-  const representativeHoursQuestion = useMemo(() => {
-    for (const ev of filteredEvals) {
-      for (const q of ev.questions) {
-        if (categorizeQuestion(q.text) === 'hours') return q
-      }
-    }
-    return undefined
-  }, [filteredEvals])
 
   // All rating questions across filtered evals (for breakdown)
   const allQuestionsByCategory = useMemo(() => {

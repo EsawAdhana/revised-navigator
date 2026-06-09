@@ -20,28 +20,6 @@ import { useMemo } from 'react';
 import { CalendarPreviewModal } from './calendar-preview-modal';
 import { isWimCourse } from '@/lib/wim-courses';
 
-const COLORS = {
-    sky: 'bg-sky-500/15 border-sky-500/40 text-sky-950 dark:text-sky-50',
-    emerald: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-950 dark:text-emerald-50',
-    violet: 'bg-violet-500/15 border-violet-500/40 text-violet-950 dark:text-violet-50',
-    amber: 'bg-amber-500/15 border-amber-500/40 text-amber-950 dark:text-amber-50',
-    rose: 'bg-rose-500/15 border-rose-500/40 text-rose-950 dark:text-rose-50',
-    teal: 'bg-teal-500/15 border-teal-500/40 text-teal-950 dark:text-teal-50',
-    pink: 'bg-pink-500/15 border-pink-500/40 text-pink-950 dark:text-pink-50',
-    indigo: 'bg-indigo-500/15 border-indigo-500/40 text-indigo-950 dark:text-indigo-50',
-} as const
-
-const THEME_COLORS = {
-    sky: 'bg-sky-500 hover:bg-sky-600',
-    emerald: 'bg-emerald-500 hover:bg-emerald-600',
-    violet: 'bg-violet-500 hover:bg-violet-600',
-    amber: 'bg-amber-500 hover:bg-amber-600',
-    rose: 'bg-rose-500 hover:bg-rose-600',
-    teal: 'bg-teal-500 hover:bg-teal-600',
-    pink: 'bg-pink-500 hover:bg-pink-600',
-    indigo: 'bg-indigo-500 hover:bg-indigo-600',
-} as const
-
 interface CourseDetailContentProps {
     course: Course;
 }
@@ -100,9 +78,11 @@ function InstructorSummary({ instructorName, evals }: { instructorName: string; 
 
 
 export function CourseDetailContent({ course }: CourseDetailContentProps) {
-    const { addItem, removeItem, hasItem, getItem } = useCartStore();
-    const { courses } = useCourseStore();
-    const { fetchBulkEvaluations, getMergedEvaluations, isLoadingCourse } = useEvaluationStore();
+    const addItem = useCartStore(s => s.addItem);
+    const removeItem = useCartStore(s => s.removeItem);
+    const courses = useCourseStore(s => s.courses);
+    const fetchBulkEvaluations = useEvaluationStore(s => s.fetchBulkEvaluations);
+    const getMergedEvaluations = useEvaluationStore(s => s.getMergedEvaluations);
     const evaluationsById = useEvaluationStore(state => state.evaluations);
 
     const crossListIds = useMemo(() => getCrossListGroupIds(course.id, courses), [course.id, courses]);
@@ -112,26 +92,26 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     }, [crossListIds, fetchBulkEvaluations]);
 
     const evaluations = useMemo(() => getMergedEvaluations(crossListIds), [getMergedEvaluations, crossListIds, evaluationsById]);
-    const isLoadingEvals = crossListIds.some(id => isLoadingCourse(id));
-    const metrics = useMemo(() => aggregateMetrics(evaluations), [evaluations]);
 
-    const cartItem = getItem(course.id);
+    // Subscribe to only this course's cart entry so unrelated cart changes don't re-render the page
+    const cartItem = useCartStore(s => s.items.find(i => i.id === course.id));
 
-    // Group sections by term, deduplicating by classId so the same section never appears twice
-    const sectionsByTerm = (course?.sections || []).reduce((acc, section) => {
-        if (!acc[section.term]) acc[section.term] = [];
-        const already = acc[section.term].some(s => s.classId === section.classId);
-        if (!already) acc[section.term].push(section);
-        return acc;
-    }, {} as Record<string, Section[]>);
+    // Group sections by term (dedup by classId), sort sections + terms — memoized so this
+    // doesn't re-run on every render (e.g. tab switches, hover state).
+    const sectionsByTerm = useMemo(() => {
+        const grouped = (course?.sections || []).reduce((acc, section) => {
+            if (!acc[section.term]) acc[section.term] = [];
+            const already = acc[section.term].some(s => s.classId === section.classId);
+            if (!already) acc[section.term].push(section);
+            return acc;
+        }, {} as Record<string, Section[]>);
+        Object.keys(grouped).forEach(term => {
+            grouped[term].sort((a, b) => compareCourseCodes(a.sectionNumber, b.sectionNumber));
+        });
+        return grouped;
+    }, [course?.sections]);
 
-    // Sort sections within each term numerically
-    Object.keys(sectionsByTerm).forEach(term => {
-        sectionsByTerm[term].sort((a, b) => compareCourseCodes(a.sectionNumber, b.sectionNumber));
-    });
-
-    // Sort terms logically
-    const terms = Object.keys(sectionsByTerm).sort((a, b) => {
+    const terms = useMemo(() => Object.keys(sectionsByTerm).sort((a, b) => {
         const order = ['Autumn', 'Winter', 'Spring', 'Summer'];
         const partsA = (a || '').split(' ');
         const partsB = (b || '').split(' ');
@@ -141,7 +121,18 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         const yearB = partsB[1] || '';
         if (yearA !== yearB) return (yearA || '').localeCompare(yearB || '');
         return order.indexOf(semA) - order.indexOf(semB);
-    });
+    }), [sectionsByTerm]);
+
+    // Precompute cross-listed enrollment per section so it isn't recomputed for every render/tab switch
+    const enrollmentBySectionId = useMemo(() => {
+        const map = new Map<number, ReturnType<typeof aggregateCrossListedSectionEnrollment>>();
+        for (const term of Object.keys(sectionsByTerm)) {
+            for (const section of sectionsByTerm[term]) {
+                map.set(section.classId, aggregateCrossListedSectionEnrollment(section, crossListIds, courses));
+            }
+        }
+        return map;
+    }, [sectionsByTerm, crossListIds, courses]);
 
     // State for active tab
     const [activeTerm, setActiveTerm] = useState<string>(() => {
@@ -503,7 +494,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                             const INDEPENDENT_COMPONENTS = new Set(['INS', 'PRA', 'T/D', 'CLN', 'RES', 'ITR', 'RSC', 'TUT', 'SIM', 'CAS']);
 
                                             return termSections.map((section) => {
-                                                const enrollAgg = aggregateCrossListedSectionEnrollment(section, crossListIds, courses);
+                                                const enrollAgg = enrollmentBySectionId.get(section.classId) ?? aggregateCrossListedSectionEnrollment(section, crossListIds, courses);
                                                 const isIndependent = INDEPENDENT_COMPONENTS.has(section.component);
                                                 const tbdLabel = isIndependent ? 'Not Applicable' : 'TBD';
                                                 const compLabel = formatComponent(section.component);

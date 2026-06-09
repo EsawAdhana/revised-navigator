@@ -3,10 +3,14 @@
 import { useEffect } from 'react'
 import { useAuthStore } from '@/lib/auth-store'
 import { useCartStore } from '@/lib/cart-store'
-import { debouncedPush, flushAndPush } from '@/lib/schedule-sync'
+import { debouncedPush, flushAndPush, hydrateLocalCart } from '@/lib/schedule-sync'
 
 export function useSyncSchedule() {
   const user = useAuthStore(state => state.user)
+
+  useEffect(() => {
+    hydrateLocalCart()
+  }, [])
 
   useEffect(() => {
     if (!user?.id) return

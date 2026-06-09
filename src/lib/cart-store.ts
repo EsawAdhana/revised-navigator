@@ -95,6 +95,19 @@ export const useCartStore = create<CartStore>()(
     {
       name: 'navigator-cart',
       version: 1,
+      // Persist only schedule metadata — full Course data is re-attached from
+      // the catalog on load (see hydrateLocalCart / reHydrateOnEnrichment in
+      // schedule-sync). Avoids serializing full course payloads on every set.
+      partialize: (state) => ({
+        items: state.items.map(i => ({
+          id: i.id,
+          selectedTerm: i.selectedTerm,
+          selectedSectionId: i.selectedSectionId,
+          selectedUnits: i.selectedUnits,
+          color: i.color,
+          optionalMeetings: i.optionalMeetings,
+        })) as CartItem[],
+      }),
       onRehydrateStorage: () => (_state, _err) => {
         setCartHydrated()
       }

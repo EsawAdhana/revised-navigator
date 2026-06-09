@@ -24,18 +24,25 @@ function toScheduleItems(): ScheduleItem[] {
   }))
 }
 
-/** Waits for the course catalog to be loaded, then resolves. */
-function waitForCourses(): Promise<void> {
+/** Waits for the course catalog to be loaded, then resolves. Resolves after a
+ * timeout regardless, so callers can't hang if `hasLoaded` never flips. */
+function waitForCourses(timeoutMs = 10000): Promise<void> {
   return new Promise((resolve) => {
     if (useCourseStore.getState().hasLoaded) {
       resolve()
       return
     }
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      unsub()
+      resolve()
+    }
+    const timer = setTimeout(finish, timeoutMs)
     const unsub = useCourseStore.subscribe((state) => {
-      if (state.hasLoaded) {
-        unsub()
-        resolve()
-      }
+      if (state.hasLoaded) finish()
     })
   })
 }
@@ -92,6 +99,39 @@ function reHydrateOnEnrichment(syncedIds: Set<string>) {
   })
 }
 
+let _localHydrated = false
+
+/**
+ * Re-attaches full Course data from the catalog to the locally-persisted
+ * (metadata-only) cart. Runs once on app load so a reload doesn't show
+ * title-less / meeting-less cart items before the server pull resolves.
+ * Reads cart state fresh after awaiting so it never clobbers a server pull.
+ */
+export async function hydrateLocalCart(): Promise<void> {
+  if (_localHydrated) return
+  _localHydrated = true
+  await cartHydrated
+  if (useCartStore.getState().items.length === 0) return
+  await waitForCourses()
+  const courseMap = new Map(useCourseStore.getState().courses.map(c => [c.id, c]))
+  const items = useCartStore.getState().items
+  useCartStore.setState({
+    items: items.map(item => {
+      const course = courseMap.get(item.id)
+      if (!course) return item
+      return {
+        ...course,
+        selectedTerm: item.selectedTerm,
+        selectedSectionId: item.selectedSectionId,
+        selectedUnits: item.selectedUnits,
+        color: item.color,
+        optionalMeetings: item.optionalMeetings,
+      }
+    }),
+  })
+  reHydrateOnEnrichment(new Set(items.map(i => i.id)))
+}
+
 /**
  * Upserts current cart to Supabase as plaintext JSONB.
  * Errors are swallowed — local state remains visible to user.
@@ -140,16 +180,16 @@ export async function pullSchedule(userId: string): Promise<void> {
 export function resetSyncState() {
   _lastPulledUserId = null
   lastItemCount = -1
+  _localHydrated = false
 }
 
-function cartItemIds(): Set<string> {
-  return new Set(useCartStore.getState().items.map(i => i.id))
-}
-
-function setsEqual(a: Set<string>, b: Set<string>): boolean {
-  if (a.size !== b.size) return false
-  for (const id of a) if (!b.has(id)) return false
-  return true
+/** Stable signature of the full schedule (id + term + section + units + optional meetings),
+ * so a mid-pull edit to an existing item — not just adds/removes — is detected. */
+function cartSignature(): string {
+  return useCartStore.getState().items
+    .map(i => `${i.id}|${i.selectedTerm ?? ''}|${i.selectedSectionId ?? ''}|${i.selectedUnits ?? ''}|${i.color ?? ''}|${(i.optionalMeetings ?? []).join('~')}`)
+    .sort()
+    .join(';')
 }
 
 async function _pullSchedule(userId: string): Promise<void> {
@@ -165,7 +205,7 @@ async function _pullSchedule(userId: string): Promise<void> {
 
     await cartHydrated
 
-    const snapshotIds = cartItemIds()
+    const snapshotSig = cartSignature()
 
     const { data, error } = await supabase
       .from('user_schedules')
@@ -178,8 +218,9 @@ async function _pullSchedule(userId: string): Promise<void> {
       return
     }
 
-    // If the user changed the cart while we were fetching, their intent wins
-    if (!setsEqual(snapshotIds, cartItemIds())) {
+    // If the user changed the cart while we were fetching (add/remove OR an edit to
+    // an existing item), their intent wins — push local instead of overwriting it.
+    if (snapshotSig !== cartSignature()) {
       await pushSchedule(userId)
       return
     }

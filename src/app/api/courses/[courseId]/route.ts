@@ -1,38 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-
-if (!supabaseKey) {
-  throw new Error(
-    'SUPABASE_SERVICE_ROLE_KEY is not set. ' +
-    'Add it to your Vercel project environment variables (Settings → Environment Variables). ' +
-    'The anon key cannot be used here because it is subject to RLS.'
-  )
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: { persistSession: false }
-})
-
-const FULL_COLUMNS = 'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty'
-
-function mergeRows(rows: any[]) {
-  const merged = new Map<string, any>()
-  for (const row of rows) {
-    const existing = merged.get(row.course_id)
-    if (!existing) {
-      merged.set(row.course_id, { ...row })
-      continue
-    }
-    const terms = Array.from(new Set([...(existing.terms || []), ...(row.terms || [])]))
-    const sections = [...(existing.sections || []), ...(row.sections || [])]
-    const units = (existing.units && String(existing.units).trim()) ? existing.units : (row.units || existing.units)
-    merged.set(row.course_id, { ...existing, terms, sections, units })
-  }
-  return Array.from(merged.values())
-}
+import { getPublicClient, mergeCourseRows, FULL_COURSE_COLUMNS } from '@/lib/supabase-admin'
 
 export async function GET(
   _request: Request,
@@ -44,9 +11,10 @@ export async function GET(
   }
 
   try {
+    const supabase = getPublicClient()
     const { data, error } = await supabase
       .from('courses')
-      .select(FULL_COLUMNS)
+      .select(FULL_COURSE_COLUMNS)
       .eq('course_id', courseId)
 
     if (error) throw error
@@ -54,7 +22,7 @@ export async function GET(
       return NextResponse.json({ error: 'Course not found' }, { status: 404 })
     }
 
-    const merged = mergeRows(data)
+    const merged = mergeCourseRows(data)
     return NextResponse.json(merged[0], {
       headers: { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800' }
     })

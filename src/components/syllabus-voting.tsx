@@ -12,12 +12,21 @@ interface SyllabusVotingProps {
 }
 
 export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
-  const {
-    officialVotes, submissions, loading,
-    fetchSyllabusData, castOfficialVote, submitLink, deleteSubmission, voteOnSubmission
-  } = useSyllabusStore()
+  const key = `${courseId}:${term}`
 
-  const currentUserId = typeof window !== 'undefined' ? getUserId() : ''
+  // Scoped selectors — only re-render when this course/term's syllabus data changes
+  const votes = useSyllabusStore(s => s.officialVotes[key]) || { up: 0, down: 0, userVote: 0 }
+  const subs = useSyllabusStore(s => s.submissions[key]) || []
+  const isLoading = useSyllabusStore(s => s.loading[key])
+  const fetchSyllabusData = useSyllabusStore(s => s.fetchSyllabusData)
+  const castOfficialVote = useSyllabusStore(s => s.castOfficialVote)
+  const submitLink = useSyllabusStore(s => s.submitLink)
+  const deleteSubmission = useSyllabusStore(s => s.deleteSubmission)
+  const voteOnSubmission = useSyllabusStore(s => s.voteOnSubmission)
+
+  // Resolve after mount so SSR HTML and first client paint agree (avoids hydration mismatch)
+  const [currentUserId, setCurrentUserId] = useState('')
+  useEffect(() => { setCurrentUserId(getUserId()) }, [])
 
   const [showForm, setShowForm] = useState(false)
   const [url, setUrl] = useState('')
@@ -26,11 +35,6 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const LABEL_OPTIONS = ['Syllabus', 'Course Website','GitHub', 'Other']
-
-  const key = `${courseId}:${term}`
-  const votes = officialVotes[key] || { up: 0, down: 0, userVote: 0 }
-  const subs = submissions[key] || []
-  const isLoading = loading[key]
 
   useEffect(() => {
     if (courseId && term) fetchSyllabusData(courseId, term)

@@ -29,8 +29,9 @@ import { parseICS } from '@/lib/ics-parser';
 import { toast } from 'sonner';
 
 function ScheduleContent() {
-  const { items } = useCartStore()
-  const { courses, hasLoaded } = useCourseStore()
+  const items = useCartStore(s => s.items)
+  const courses = useCourseStore(s => s.courses)
+  const hasLoaded = useCourseStore(s => s.hasLoaded)
   const [ignoredOverloads, setIgnoredOverloads] = useState<Record<string, boolean>>({})
 
   // Eagerly fetch sections for cart items instead of waiting for the full Phase 2 catalog fetch
@@ -129,7 +130,10 @@ function ScheduleContent() {
   const isOverload = totalUnitsMax > 20
   const isIgnored = ignoredOverloads[currentTerm]
 
-  const { fetchBulkEvaluations, getEvaluations, loadingCourses, evaluations } = useEvaluationStore()
+  const fetchBulkEvaluations = useEvaluationStore(s => s.fetchBulkEvaluations)
+  const getEvaluations = useEvaluationStore(s => s.getEvaluations)
+  const loadingCourses = useEvaluationStore(s => s.loadingCourses)
+  const evaluations = useEvaluationStore(s => s.evaluations)
   useEffect(() => {
     const ids = currentTermCourses.map(c => c.id)
     if (ids.length > 0) fetchBulkEvaluations(ids)
@@ -138,7 +142,7 @@ function ScheduleContent() {
   const EXPECTED_HOURS_CACHE_KEY = 'expected-hours-cache'
   const EXPECTED_HOURS_TTL = 1000 * 60 * 30 // 30 min
 
-  const { expectedHoursPerWeek, expectedHoursLoading } = useMemo(() => {
+  const { expectedHoursPerWeek, expectedHoursLoading, computedHours } = useMemo(() => {
     let total = 0
     let withData = 0
     let loading = false
@@ -162,20 +166,7 @@ function ScheduleContent() {
     }
     const computed = withData > 0 ? total : null
 
-    // Cache when we have a computed value
-    if (typeof window !== 'undefined' && currentTermCourses.length > 0) {
-      const cacheKey = `expected-hours-${currentTerm}-${currentTermCourses.map(c => c.id).sort().join(',')}`
-      if (computed != null) {
-        try {
-          const raw = sessionStorage.getItem(EXPECTED_HOURS_CACHE_KEY)
-          const data: Record<string, { total: number; ts: number }> = raw ? JSON.parse(raw) : {}
-          data[cacheKey] = { total: computed, ts: Date.now() }
-          sessionStorage.setItem(EXPECTED_HOURS_CACHE_KEY, JSON.stringify(data))
-        } catch { /* ignore */ }
-      }
-    }
-
-    // Use cached value when loading to avoid flash
+    // Read cached value when still loading, to avoid a flash (read-only — write is in an effect below)
     let displayValue = computed
     if (loading && computed == null && typeof window !== 'undefined') {
       try {
@@ -191,9 +182,22 @@ function ScheduleContent() {
 
     return {
       expectedHoursPerWeek: displayValue ?? computed,
-      expectedHoursLoading: loading && displayValue == null
+      expectedHoursLoading: loading && displayValue == null,
+      computedHours: computed,
     }
   }, [currentTermCourses, loadingCourses, evaluations, getEvaluations, currentTerm])
+
+  // Persist the computed value outside of render (no side effects inside useMemo)
+  useEffect(() => {
+    if (typeof window === 'undefined' || currentTermCourses.length === 0 || computedHours == null) return
+    const cacheKey = `expected-hours-${currentTerm}-${currentTermCourses.map(c => c.id).sort().join(',')}`
+    try {
+      const raw = sessionStorage.getItem(EXPECTED_HOURS_CACHE_KEY)
+      const data: Record<string, { total: number; ts: number }> = raw ? JSON.parse(raw) : {}
+      data[cacheKey] = { total: computedHours, ts: Date.now() }
+      sessionStorage.setItem(EXPECTED_HOURS_CACHE_KEY, JSON.stringify(data))
+    } catch { /* ignore */ }
+  }, [computedHours, currentTerm, currentTermCourses])
 
   const handleExportICS = () => {
     const exportEvents = currentTermCourses.flatMap(course => {

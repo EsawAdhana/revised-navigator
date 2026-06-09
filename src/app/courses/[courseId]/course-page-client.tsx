@@ -7,8 +7,8 @@ import { useQueryState } from 'nuqs';
 import { useCourseStore } from '@/lib/store';
 import { SiteHeader } from '@/components/site-header';
 import { useCartStore } from '@/lib/cart-store';
-import { useFilteredCourses } from '@/hooks/use-filtered-courses';
-import { getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
+import { searchCourses } from '@/lib/search-utils';
+import { compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
 
 const CourseDetailContent = dynamic(
@@ -30,15 +30,31 @@ export function CoursePageClient() {
     const [mounted, setMounted] = useState(false);
 
     const [query] = useQueryState('q', { defaultValue: '' });
-    const { courses: filteredCourses } = useFilteredCourses();
-    const { courses, hasLoaded, enrichedCourseIds, fetchCourseDetail } = useCourseStore();
-    const { getItem } = useCartStore();
+    const courses = useCourseStore(s => s.courses);
+    const hasLoaded = useCourseStore(s => s.hasLoaded);
+    const enrichedCourseIds = useCourseStore(s => s.enrichedCourseIds);
+    const fetchCourseDetail = useCourseStore(s => s.fetchCourseDetail);
+    const getItem = useCartStore(s => s.getItem);
 
     useEffect(() => {
         setMounted(true);
     }, []);
 
     const prevQueryAndId = useRef({ query: (query || '').trim(), courseId });
+
+    // Top search match for the redirect effect only — avoids running the full
+    // filter/sort/metrics pipeline on the detail page. Computed only when there's a query.
+    const firstSearchMatch = useMemo(() => {
+        const q = (query || '').trim();
+        if (!q || courses.length === 0) return undefined;
+        const valid = courses.filter(c => c.grading && c.grading.trim() !== '' && c.grading !== 'TBD');
+        const matches = searchCourses(valid, q);
+        if (matches.length === 0) return undefined;
+        return [...matches].sort((a, b) => {
+            const subjectCompare = (a.subject ?? '').localeCompare(b.subject ?? '');
+            return subjectCompare !== 0 ? subjectCompare : compareCourseCodes(a.code ?? '', b.code ?? '');
+        })[0];
+    }, [query, courses]);
 
     useEffect(() => {
         const currentQuery = (query || '').trim();
@@ -48,16 +64,15 @@ export function CoursePageClient() {
         if (currentQuery === prev.query) return;
         if (courseId !== prev.courseId) return;
 
-        if (!currentQuery || filteredCourses.length === 0) return;
-        const firstMatch = filteredCourses[0];
+        if (!currentQuery || !firstSearchMatch) return;
 
-        if (firstMatch.id !== courseId) {
+        if (firstSearchMatch.id !== courseId) {
             const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
             searchParams.set('q', currentQuery);
             const rest = searchParams.toString();
-            router.push(rest ? `/courses/${encodeURIComponent(firstMatch.id)}?${rest}` : `/courses/${encodeURIComponent(firstMatch.id)}`);
+            router.push(rest ? `/courses/${encodeURIComponent(firstSearchMatch.id)}?${rest}` : `/courses/${encodeURIComponent(firstSearchMatch.id)}`);
         }
-    }, [query, courseId, filteredCourses, router]);
+    }, [query, courseId, firstSearchMatch, router]);
 
     const course = useMemo(() => {
         let found = courses.find(c => c.id === courseId);

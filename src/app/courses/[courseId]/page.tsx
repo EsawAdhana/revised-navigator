@@ -1,21 +1,20 @@
 import type { Metadata } from 'next';
-import { createClient } from '@supabase/supabase-js';
+import { getPublicClient } from '@/lib/supabase-admin';
 import { CoursePageClient } from './course-page-client';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-
 async function fetchCourseMeta(courseId: string) {
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-        auth: { persistSession: false },
-    });
-    const { data } = await supabase
-        .from('courses')
-        .select('title, subject, code, description, units')
-        .eq('course_id', courseId)
-        .limit(1)
-        .single();
-    return data;
+    try {
+        const supabase = getPublicClient();
+        const { data } = await supabase
+            .from('courses')
+            .select('title, subject, code, description, units')
+            .eq('course_id', courseId)
+            .limit(1)
+            .single();
+        return data;
+    } catch {
+        return null;
+    }
 }
 
 export async function generateMetadata({

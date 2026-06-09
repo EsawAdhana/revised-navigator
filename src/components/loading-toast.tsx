@@ -6,7 +6,7 @@ import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
 
 export function LoadingToast() {
-    const { isLoading } = useCourseStore()
+    const isLoading = useCourseStore(state => state.isLoading)
     const show = isLoading
 
     const [isVisible, setIsVisible] = React.useState(false)
