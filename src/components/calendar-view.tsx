@@ -6,7 +6,6 @@ import { useCartStore } from '@/lib/cart-store';
 import { isMeetingOptional, parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
 import { cn, unitsLabel, decodeHtmlEntities } from '@/lib/utils';
 import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search } from 'lucide-react';
-import { GerProgress } from '@/components/ger-progress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -420,7 +419,6 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                 <span className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">Hrs / Wk</span>
               </div>
             </div>
-            <GerProgress />
             {currentTermCourses.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground border-2 border-dashed rounded-xl bg-muted/20">
                 <Calendar className="h-10 w-10 mb-3 opacity-20" />
