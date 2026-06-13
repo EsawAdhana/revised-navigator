@@ -16,7 +16,7 @@ export default function TermsPage() {
       <div className="mx-auto max-w-3xl px-6 py-12 flex-1">
         <div className="mb-12">
           <Link
-            href="/"
+            href="/browse"
             className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"
           >
             &larr; Back to Stanford Root
@@ -24,7 +24,7 @@ export default function TermsPage() {
         </div>
 
         <h1 className="text-3xl font-bold text-foreground mt-8 mb-2 font-[family-name:var(--font-outfit)]">Terms of Service</h1>
-        <p className="text-sm text-muted-foreground mb-10">Last updated: February 15, 2026</p>
+        <p className="text-sm text-muted-foreground mb-10">Last updated: June 9, 2026</p>
 
         <div className="prose prose-neutral dark:prose-invert max-w-none space-y-6 text-sm text-foreground/80 leading-relaxed">
           <section>
@@ -38,8 +38,9 @@ export default function TermsPage() {
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-2">2. Eligibility</h2>
             <p>
-              The Service is available exclusively to individuals with a valid @stanford.edu
-              email address. By signing in, you represent that you are a current Stanford
+              Browsing the course catalog and building a schedule are open to anyone. Saving your
+              schedule across devices and viewing course evaluations require signing in with a valid
+              @stanford.edu account. By signing in, you represent that you are a current Stanford
               University student, faculty, or staff member authorized to use your Stanford account.
             </p>
           </section>
@@ -47,9 +48,11 @@ export default function TermsPage() {
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-2">3. Description of Service</h2>
             <p>
-              Stanford Root provides tools for browsing Stanford course catalogs, building schedules,
-              and viewing course evaluations. Course data is sourced
-              from publicly available Stanford University resources.
+              Stanford Root provides tools for browsing Stanford course catalogs and building
+              schedules, which are available without an account. Signed-in Stanford users can
+              additionally sync their schedule across devices and view course evaluations. Course
+              catalog data is sourced from publicly available Stanford University resources; course
+              evaluation data is accessible only to authenticated members of the Stanford community.
             </p>
           </section>
 

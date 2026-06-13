@@ -6,8 +6,8 @@ export async function GET(
   { params }: { params: Promise<{ courseId: string }> }
 ) {
   const { courseId } = await params
-  if (!courseId) {
-    return NextResponse.json({ error: 'Missing courseId' }, { status: 400 })
+  if (!courseId || courseId.length > 64) {
+    return NextResponse.json({ error: 'Invalid courseId' }, { status: 400 })
   }
 
   try {

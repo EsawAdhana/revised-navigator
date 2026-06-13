@@ -1,7 +1,7 @@
 import type { Course } from '@/types/course'
 import type { CartItem } from '@/lib/cart-store'
 import { getSchoolFromSubject, formatLevel, parseUnitsOptions, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils'
-import { parseMeetingTimes, parseTimeRange, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils'
+import { parseMeetingTimes, parseTimeRange, parseDays, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils'
 
 export type CourseFilterCriteria = {
   excludedWords: string[]
@@ -39,17 +39,8 @@ function hasOverlap(m1: Meeting, m2: Meeting, cartItem?: CartItem): boolean {
 
 function parseSectionMeetings(section: { meetings?: { days?: string; time?: string }[] }): Meeting[] {
   return (section.meetings || []).flatMap(m => {
-    let days: string[] = []
-    if (typeof m.days === 'string') days = m.days.split(/[ ,]+/)
-    const normalizedDays = days.map(d => {
-      const lower = d.toLowerCase()
-      if (lower.startsWith('m')) return 'Mon'
-      if (lower.startsWith('tu')) return 'Tue'
-      if (lower.startsWith('w')) return 'Wed'
-      if (lower.startsWith('th')) return 'Thu'
-      if (lower.startsWith('f')) return 'Fri'
-      return ''
-    }).filter(Boolean)
+    const normalizedDays = parseDays(m.days || '')
+    if (normalizedDays.length === 0) return []
     const range = parseTimeRange(m.time || '')
     if (!range?.startTime) return []
     return [{ days: normalizedDays, startTime: range.startTime, endTime: range.endTime }]
@@ -173,9 +164,9 @@ export function filterCourses(
     result = result.filter(c => {
       if (!c.sections || c.sections.length === 0) return true
       return c.sections.some(s => s.meetings?.some(m => {
-        const timeStr = m.time || ''
-        const startStr = timeStr.split(/\s*[-–]\s*/)[0]?.trim() || timeStr
-        const startMins = timeToMinutes(startStr)
+        const range = parseTimeRange(m.time || '')
+        if (!range?.startTime) return false
+        const startMins = timeToMinutes(range.startTime)
         return startMins >= min && startMins <= max
       }))
     })

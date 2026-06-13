@@ -1,6 +1,18 @@
 import { create } from 'zustand'
 import type { CourseEvaluation } from '@/types/course'
 
+/** Normalizes an instructor name for de-dup: case-insensitive and order-independent
+ *  so "Dan Jurafsky" and "Jurafsky, Dan" collapse to the same key. */
+function normalizeInstructor(name: string): string {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[.,]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(' ')
+}
+
 const EVAL_CACHE_KEY = 'evaluations-cache'
 const EVAL_CACHE_TTL = 1000 * 60 * 30 // 30 min
 
@@ -39,6 +51,9 @@ type EvaluationStore = {
   getMergedEvaluations: (courseIds: string[]) => CourseEvaluation[]
   isLoadingCourse: (courseId: string) => boolean
   hasErrorForCourse: (courseId: string) => boolean
+  /** Clears all loaded evaluations and the cache (e.g. on sign-out, since
+   *  evaluation data is Stanford-login-only). */
+  clearAll: () => void
 }
 
 export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
@@ -69,6 +84,15 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ courseIds: toFetch })
       })
+      if (res.status === 401) {
+        // Evaluations are Stanford-login-only — treat as no data (not an error).
+        set(state => {
+          const updated = { ...state.evaluations }
+          for (const id of toFetch) if (!(id in updated)) updated[id] = []
+          return { evaluations: updated, isBulkLoading: false }
+        })
+        return
+      }
       if (!res.ok) throw new Error(`API error: ${res.status}`)
       const byCourse = (await res.json()) as Record<string, CourseEvaluation[]>
 
@@ -113,7 +137,7 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
     for (const id of courseIds) {
       const evals = evaluations[id] || []
       for (const ev of evals) {
-        const key = `${ev.term}|${ev.instructor}`
+        const key = `${ev.term}|${normalizeInstructor(ev.instructor)}`
         if (!seen.has(key)) {
           seen.add(key)
           merged.push(ev)
@@ -131,5 +155,10 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
   hasErrorForCourse: (courseId) => {
     const { errorCourses } = get()
     return !!errorCourses[courseId]
+  },
+
+  clearAll: () => {
+    try { sessionStorage.removeItem(EVAL_CACHE_KEY) } catch { /* ignore */ }
+    set({ evaluations: {}, loadingCourses: {}, errorCourses: {}, isBulkLoading: false })
   }
 }))

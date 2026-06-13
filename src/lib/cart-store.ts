@@ -40,10 +40,20 @@ export const useCartStore = create<CartStore>()(
                 ? currentItems[existingIndex].selectedUnits
                 : undefined
 
+        // Resolve selectedSectionId the same way (never overwrite with undefined)
+        const resolvedSectionId =
+          sectionId !== undefined
+            ? sectionId
+            : course.selectedSectionId !== undefined
+              ? course.selectedSectionId
+              : existingIndex >= 0
+                ? currentItems[existingIndex].selectedSectionId
+                : undefined
+
         const courseWithTerm: CartItem = {
           ...course,
           selectedTerm: term || course.selectedTerm || course.terms?.[0],
-          selectedSectionId: sectionId,
+          selectedSectionId: resolvedSectionId,
           selectedUnits: resolvedUnits,
           color: existingColor || course.color // Keep existing or use provided
         }

@@ -1,55 +1,68 @@
-'use client';
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { Logo } from '@/components/logo';
+import { HeroActions } from '@/components/hero-actions';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { LandingPreview } from '@/components/landing-preview';
 
-import React, { Suspense } from 'react';
-import dynamic from 'next/dynamic';
-import { CourseList } from '@/components/course-list';
-import { AuthGate } from '@/components/auth-gate';
-import { SiteHeader } from '@/components/site-header';
+export const metadata: Metadata = {
+  title: 'Stanford Root — A better way to browse Stanford courses',
+  description:
+    "Explore Stanford's full course catalog, read student evaluations, and build your weekly schedule — fast, clean, and free.",
+};
 
-const FilterSidebar = dynamic(
-  () => import('@/components/filter-sidebar').then(m => ({ default: m.FilterSidebar })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="p-4 space-y-4">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-8 rounded bg-muted/30 animate-pulse" />
-        ))}
-      </div>
-    ),
-  }
-);
-
-function HomeContent() {
+export default function LandingPage() {
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-background">
-      <SiteHeader />
-
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-[280px] border-r border-border/40 bg-background hidden md:block overflow-y-auto custom-scrollbar shrink-0">
-          <FilterSidebar />
-        </aside>
-        <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-secondary/20 relative">
-          <CourseList />
-        </main>
-      </div>
-    </div>
-  );
-}
-
-export default function Home() {
-  return (
-    <Suspense fallback={
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3 animate-fade-in">
-          <div className="h-8 w-8 rounded-xl bg-primary/10 animate-pulse" />
-          <span className="text-sm text-muted-foreground">Loading...</span>
+    <main className="flex min-h-screen flex-col bg-background">
+      {/* Top bar */}
+      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 sm:px-8 h-16">
+        <div className="flex items-center gap-2.5">
+          <Logo className="h-8 w-8" />
+          <span className="text-lg font-bold tracking-tight text-foreground font-[family-name:var(--font-outfit)]">
+            Stanford Root
+          </span>
         </div>
-      </div>
-    }>
-      <AuthGate>
-        <HomeContent />
-      </AuthGate>
-    </Suspense>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+        </div>
+      </header>
+
+      {/* Hero */}
+      <section className="mx-auto w-full max-w-6xl px-6 pt-14 sm:pt-20">
+        <div className="mx-auto max-w-3xl text-center">
+          <h1 className="animate-fade-in-up text-balance text-4xl font-bold tracking-tight text-foreground sm:text-6xl font-[family-name:var(--font-outfit)]">
+            A better way to browse{' '}
+            <span className="text-primary">Stanford courses</span>
+          </h1>
+          <p className="animate-fade-in-up mx-auto mt-6 max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
+            Search the catalog, read real student evaluations, and build your weekly schedule —
+            all in one fast, clean, and free place.
+          </p>
+          <div className="animate-fade-in-up mt-10 flex justify-center">
+            <HeroActions />
+          </div>
+        </div>
+
+        {/* Product preview */}
+        <div className="mt-16 px-2 pb-24 sm:mt-20">
+          <LandingPreview />
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="mt-auto border-t border-border/40 px-6 py-8">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 text-sm text-muted-foreground sm:flex-row">
+          <span>&copy; {new Date().getFullYear()} Stanford Root. All rights reserved.</span>
+          <div className="flex items-center gap-6">
+            <Link href="/privacy" className="transition-colors hover:text-foreground">
+              Privacy
+            </Link>
+            <Link href="/terms" className="transition-colors hover:text-foreground">
+              Terms
+            </Link>
+          </div>
+        </div>
+      </footer>
+    </main>
   );
 }

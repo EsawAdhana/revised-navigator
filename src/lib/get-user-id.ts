@@ -10,7 +10,7 @@ export function getUserId (): string {
   const user = useAuthStore.getState().user
   if (user) return user.id
 
-  // Fallback for edge cases (should rarely hit this behind AuthGate)
+  // Anonymous users (not signed in) get a stable localStorage UUID
   if (typeof window === 'undefined') return 'server'
 
   if (cachedAnonId) return cachedAnonId

@@ -11,6 +11,10 @@ const config: Config = {
   theme: {
   	extend: {
   		colors: {
+  			'cardinal-red': {
+  				DEFAULT: '#8C1515',
+  				light: '#B83A3A'
+  			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

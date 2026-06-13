@@ -5,7 +5,9 @@ import { SearchBar } from '@/components/search-bar';
 import { FilterSidebar } from '@/components/filter-sidebar';
 import { Logo } from '@/components/logo';
 import { useAuthStore } from '@/lib/auth-store';
+import { track } from '@/lib/analytics';
 import { Button } from '@/components/ui/button';
+import { ThemeToggle } from '@/components/theme-toggle';
 import Link from 'next/link';
 import { CalendarDays, LogOut, Menu } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -15,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 export function SiteHeader() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const { user, signOut } = useAuthStore();
+    const { user, isLoading, signOut, signInWithGoogle } = useAuthStore();
 
     const scheduleHref = useMemo(() => {
         const params = new URLSearchParams(searchParams.toString());
@@ -24,13 +26,13 @@ export function SiteHeader() {
         return qs ? `/schedule?${qs}` : '/schedule';
     }, [searchParams]);
 
-    // Logo: from another page → home with search preserved; already on home → home with search cleared
+    // Logo: from another page → catalog with search preserved; already on catalog → catalog with search cleared
     const homeHref = useMemo(() => {
-        if (pathname === '/') return '/';
+        if (pathname === '/browse') return '/browse';
         const params = new URLSearchParams(searchParams.toString());
         params.delete('courseId');
         const qs = params.toString();
-        return qs ? `/?${qs}` : '/';
+        return qs ? `/browse?${qs}` : '/browse';
     }, [pathname, searchParams]);
 
     return (
@@ -75,6 +77,8 @@ export function SiteHeader() {
 
             {/* Right: Actions */}
             <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0 pr-2 sm:pr-4 md:pr-6">
+                <ThemeToggle />
+
                 <Button
                     asChild
                     variant="ghost"
@@ -85,6 +89,15 @@ export function SiteHeader() {
                         <span className="hidden md:inline">Schedule</span>
                     </Link>
                 </Button>
+
+                {!user && !isLoading && (
+                    <Button
+                        onClick={() => { track('login_started', { source: 'header' }); signInWithGoogle(); }}
+                        className="ml-1 rounded-full h-9 px-4 text-sm font-medium"
+                    >
+                        Log in
+                    </Button>
+                )}
 
                 {user && (
                     <div className="flex items-center gap-1.5 ml-1">

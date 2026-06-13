@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useEvaluationStore } from '@/lib/evaluation-store'
+import { useAuthStore } from '@/lib/auth-store'
+import { track } from '@/lib/analytics'
 import {
   Loader2, ChevronDown, ChevronUp, MessageSquare,
-  ExternalLink, Clock, Search, X
+  ExternalLink, Clock, Search, X, Lock
 } from 'lucide-react'
 import { cn, decodeHtmlEntities } from '@/lib/utils'
+import { compareTerms } from '@/lib/terms'
 import type { CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
 
 // --- Color helpers (green=good, yellow/orange=mid, red=bad) ---
@@ -506,6 +509,9 @@ interface CourseEvaluationsProps {
 export function CourseEvaluations({ courseIds, subject, code, forcedTab }: CourseEvaluationsProps) {
   const { fetchBulkEvaluations, getMergedEvaluations, isLoadingCourse, hasErrorForCourse } = useEvaluationStore()
   const evaluationsById = useEvaluationStore(state => state.evaluations)
+  const user = useAuthStore(state => state.user)
+  const authLoading = useAuthStore(state => state.isLoading)
+  const signInWithGoogle = useAuthStore(state => state.signInWithGoogle)
   const [activeTermFilter, setActiveTermFilter] = useState<string>('all')
   const [activeTab, setActiveTab] = useState<EvalTab>(forcedTab || 'overview')
   const [expandedInstructor, setExpandedInstructor] = useState<string | null>(null)
@@ -523,21 +529,16 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
 
   const courseIdsKey = courseIds.join(',')
   useEffect(() => {
-    if (courseIds.length > 0) fetchBulkEvaluations(courseIds)
-  }, [courseIdsKey, fetchBulkEvaluations])
+    if (user && courseIds.length > 0) fetchBulkEvaluations(courseIds)
+  }, [courseIdsKey, fetchBulkEvaluations, user])
+
+  useEffect(() => {
+    if (!authLoading && !user) track('eval_gate_viewed', { subject, code })
+  }, [authLoading, user, subject, code])
 
   // Unique terms (newest first)
   const evalTerms = useMemo(() => {
-    const terms = [...new Set(evaluations.map(e => e.term))].sort((a, b) => {
-      const parseTermYear = (t: string) => {
-        const parts = t.split(' ')
-        const year = parseInt(parts[parts.length - 1], 10)
-        const order = ['Winter', 'Spring', 'Summer', 'Autumn', 'Fall']
-        const seasonIdx = order.findIndex(s => t.toLowerCase().includes(s.toLowerCase()))
-        return (year * 10) + (seasonIdx >= 0 ? seasonIdx : 0)
-      }
-      return parseTermYear(b) - parseTermYear(a)
-    })
+    const terms = [...new Set(evaluations.map(e => e.term))].sort((a, b) => compareTerms(b, a))
     return terms
   }, [evaluations])
 
@@ -548,7 +549,22 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
 
   const metrics = useMemo(() => aggregateMetrics(filteredEvals), [filteredEvals])
   const instructors = useMemo(() => computeInstructorStats(filteredEvals), [filteredEvals])
-  const allComments = useMemo(() => filteredEvals.flatMap(e => e.comments), [filteredEvals])
+  const allComments = useMemo(() => {
+    // De-dupe identical comments that can appear across multiple evaluation records
+    // (e.g. cross-listed or co-taught offerings sharing the same comment pool).
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const e of filteredEvals) {
+      for (const c of e.comments) {
+        const key = decodeHtmlEntities(c).trim().toLowerCase()
+        if (key && !seen.has(key)) {
+          seen.add(key)
+          out.push(c)
+        }
+      }
+    }
+    return out
+  }, [filteredEvals])
   const hasMultipleInstructors = instructors.length > 1
 
   // All rating questions across filtered evals (for breakdown)
@@ -574,6 +590,38 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
       setActiveTab('overview')
     }
   }, [activeTab])
+
+  // Gated: course evaluations are Stanford-login-only
+  if (!user) {
+    if (authLoading) {
+      return (
+        <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+          <Loader2 size={18} className="animate-spin" />
+          <span className="text-sm">Loading evaluations...</span>
+        </div>
+      )
+    }
+    return (
+      <div className="flex flex-col items-center justify-center text-center py-10 px-6 gap-3 border border-border/50 rounded-xl bg-secondary/10">
+        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+          <Lock size={18} className="text-primary" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-foreground">Course reviews are Stanford-only</p>
+          <p className="text-xs text-muted-foreground max-w-[260px]">
+            Log in with your Stanford account to view student evaluations, ratings, and comments.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => { track('login_started', { source: 'eval_gate' }); signInWithGoogle(); }}
+          className="mt-1 inline-flex items-center justify-center rounded-full bg-foreground text-background px-5 py-2 text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
+        >
+          Log in with Stanford
+        </button>
+      </div>
+    )
+  }
 
   // Loading
   if (isLoading) {

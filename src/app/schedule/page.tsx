@@ -8,17 +8,17 @@ const CalendarView = dynamic(
   { ssr: false }
 );
 import { Button } from '@/components/ui/button';
-import { Download, Upload } from 'lucide-react';
-import NextImage from 'next/image';
+import { ArrowDownUp, Download, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCartStore } from '@/lib/cart-store';
 import { useCourseStore } from '@/lib/store';
+import { useAuthStore } from '@/lib/auth-store';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { aggregateMetrics } from '@/components/course-evaluations';
-import { AuthGate } from '@/components/auth-gate';
 import { Logo } from '@/components/logo';
 import { parseMeetingTimes, timeToMinutes, parseDays } from '@/lib/schedule-utils';
+import { getDefaultTerm, getApproxTermStart } from '@/lib/terms';
 import { cn, parseUnitsOptions } from '@/lib/utils';
 import {
   Popover,
@@ -26,6 +26,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { parseICS } from '@/lib/ics-parser';
+import { track } from '@/lib/analytics';
 import { toast } from 'sonner';
 
 function ScheduleContent() {
@@ -52,7 +53,7 @@ function ScheduleContent() {
 
   const QUARTERS = ['Winter', 'Spring', 'Summer', 'Autumn']
 
-  const [currentTerm, setCurrentTerm] = useState('Spring 2026')
+  const [currentTerm, setCurrentTerm] = useState(getDefaultTerm())
 
   const nextTerm = () => {
     setCurrentTerm(prev => {
@@ -130,14 +131,15 @@ function ScheduleContent() {
   const isOverload = totalUnitsMax > 20
   const isIgnored = ignoredOverloads[currentTerm]
 
+  const user = useAuthStore(s => s.user)
   const fetchBulkEvaluations = useEvaluationStore(s => s.fetchBulkEvaluations)
   const getEvaluations = useEvaluationStore(s => s.getEvaluations)
   const loadingCourses = useEvaluationStore(s => s.loadingCourses)
   const evaluations = useEvaluationStore(s => s.evaluations)
   useEffect(() => {
     const ids = currentTermCourses.map(c => c.id)
-    if (ids.length > 0) fetchBulkEvaluations(ids)
-  }, [currentTermCourses, fetchBulkEvaluations])
+    if (user && ids.length > 0) fetchBulkEvaluations(ids)
+  }, [currentTermCourses, fetchBulkEvaluations, user])
 
   const EXPECTED_HOURS_CACHE_KEY = 'expected-hours-cache'
   const EXPECTED_HOURS_TTL = 1000 * 60 * 30 // 30 min
@@ -200,6 +202,14 @@ function ScheduleContent() {
   }, [computedHours, currentTerm, currentTermCourses])
 
   const handleExportICS = () => {
+    // RFC 5545 text escaping for SUMMARY/DESCRIPTION/LOCATION values.
+    const escapeICS = (s: string) =>
+      (s || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,')
+        .replace(/\r?\n/g, '\\n')
+
     const exportEvents = currentTermCourses.flatMap(course => {
       const meetings = parseMeetingTimes(course, currentTerm)
       return meetings.flatMap(m => {
@@ -242,13 +252,11 @@ END:STANDARD
 END:VTIMEZONE
 `
 
-    exportEvents.forEach(event => {
-      // Rough term anchor dates
-      let termStartDate = new Date()
-      if (currentTerm === 'Autumn 2025') termStartDate = new Date(2025, 8, 22)
-      else if (currentTerm === 'Winter 2026') termStartDate = new Date(2026, 0, 5)
-      else if (currentTerm === 'Spring 2026') termStartDate = new Date(2026, 2, 30)
+    // Approximate first instructional day for the term (year-agnostic; covers
+    // all four quarters and rolls over automatically).
+    const termStartDate = getApproxTermStart(currentTerm)
 
+    exportEvents.forEach(event => {
       const dayMap: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5 }
       const targetDay = dayMap[event.day]
       if (!targetDay) return
@@ -273,9 +281,9 @@ END:VTIMEZONE
       const dtEnd = `${year}${month}${date}T${formatTime(event.end)}`
 
       icsContent += `BEGIN:VEVENT
-SUMMARY:${event.courseCode}
-DESCRIPTION:${event.courseCode} - ${event.location}
-LOCATION:${event.location}
+SUMMARY:${escapeICS(event.courseCode)}
+DESCRIPTION:${escapeICS(`${event.courseCode} - ${event.location}`)}
+LOCATION:${escapeICS(event.location)}
 DTSTART;TZID=America/Los_Angeles:${dtStart}
 DTEND;TZID=America/Los_Angeles:${dtEnd}
 RRULE:FREQ=WEEKLY;COUNT=10
@@ -293,6 +301,7 @@ END:VEVENT
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+    track('ics_exported', { courses: currentTermCourses.length })
   }
 
   // --- ICS Import Logic ---
@@ -383,6 +392,8 @@ END:VEVENT
         count++
       })
 
+      track('ics_imported', { count, enriched: enrichedCount })
+
       if (enrichedCount > 0) {
         toast.success(`Imported ${count} courses (${enrichedCount} matched to catalog).`)
       } else {
@@ -414,7 +425,7 @@ END:VEVENT
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
-                  <NextImage src="/icon.png" alt="" width={16} height={16} className="h-4 w-4 opacity-70" />
+                  <ArrowDownUp className="h-4 w-4" />
                   Transfer
                 </Button>
               </PopoverTrigger>
@@ -485,10 +496,15 @@ END:VEVENT
 
 export default function SchedulePage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center">Loading...</div>}>
-      <AuthGate>
-        <ScheduleContent />
-      </AuthGate>
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4 animate-fade-in">
+          <Logo className="h-10 w-10 animate-float" />
+          <span className="text-sm font-medium text-muted-foreground animate-pulse">Loading schedule…</span>
+        </div>
+      </div>
+    }>
+      <ScheduleContent />
     </Suspense>
   );
 }

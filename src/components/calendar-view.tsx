@@ -3,6 +3,9 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
+import { useAuthStore } from '@/lib/auth-store';
+import { promptLoginToSyncOnce } from '@/lib/login-nudge';
+import { track } from '@/lib/analytics';
 import { isMeetingOptional, parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
 import { cn, unitsLabel, decodeHtmlEntities } from '@/lib/utils';
 import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search } from 'lucide-react';
@@ -373,6 +376,8 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                           onClick={() => {
                             if (isAdded) return;
                             addItem(course, currentTerm);
+                            track('course_added_to_schedule', { auth: useAuthStore.getState().user ? 'authed' : 'anonymous', source: 'schedule_search' });
+                            promptLoginToSyncOnce();
                             setSearchQuery('');
                             setDropdownOpen(false);
                             searchInputRef.current?.blur();

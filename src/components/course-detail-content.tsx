@@ -5,6 +5,9 @@ import { useCourseStore } from '@/lib/store';
 import { ExternalLink, MapPin, Clock, Check, FileText, AlertCircle, Loader2, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
+import { useAuthStore } from '@/lib/auth-store';
+import { promptLoginToSyncOnce } from '@/lib/login-nudge';
+import { track } from '@/lib/analytics';
 import { Section } from '@/types/course';
 import { cn, getSyllabusUrl, parseUnitsOptions, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities, getCrossListGroupIds, aggregateCrossListedSectionEnrollment } from '@/lib/utils';
 import { InstructorList } from './instructor-list';
@@ -19,6 +22,7 @@ import { useEvaluationStore } from '@/lib/evaluation-store';
 import { useMemo } from 'react';
 import { CalendarPreviewModal } from './calendar-preview-modal';
 import { isWimCourse } from '@/lib/wim-courses';
+import { compareTerms, getDefaultTerm, isFutureTerm as isTermInFuture } from '@/lib/terms';
 
 interface CourseDetailContentProps {
     course: Course;
@@ -84,12 +88,13 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const fetchBulkEvaluations = useEvaluationStore(s => s.fetchBulkEvaluations);
     const getMergedEvaluations = useEvaluationStore(s => s.getMergedEvaluations);
     const evaluationsById = useEvaluationStore(state => state.evaluations);
+    const user = useAuthStore(s => s.user);
 
     const crossListIds = useMemo(() => getCrossListGroupIds(course.id, courses), [course.id, courses]);
 
     useEffect(() => {
-        if (crossListIds.length > 0) fetchBulkEvaluations(crossListIds);
-    }, [crossListIds, fetchBulkEvaluations]);
+        if (user && crossListIds.length > 0) fetchBulkEvaluations(crossListIds);
+    }, [crossListIds, fetchBulkEvaluations, user]);
 
     const evaluations = useMemo(() => getMergedEvaluations(crossListIds), [getMergedEvaluations, crossListIds, evaluationsById]);
 
@@ -111,17 +116,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         return grouped;
     }, [course?.sections]);
 
-    const terms = useMemo(() => Object.keys(sectionsByTerm).sort((a, b) => {
-        const order = ['Autumn', 'Winter', 'Spring', 'Summer'];
-        const partsA = (a || '').split(' ');
-        const partsB = (b || '').split(' ');
-        const semA = partsA[0] || '';
-        const yearA = partsA[1] || '';
-        const semB = partsB[0] || '';
-        const yearB = partsB[1] || '';
-        if (yearA !== yearB) return (yearA || '').localeCompare(yearB || '');
-        return order.indexOf(semA) - order.indexOf(semB);
-    }), [sectionsByTerm]);
+    const terms = useMemo(() => Object.keys(sectionsByTerm).sort(compareTerms), [sectionsByTerm]);
 
     // Precompute cross-listed enrollment per section so it isn't recomputed for every render/tab switch
     const enrollmentBySectionId = useMemo(() => {
@@ -139,8 +134,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         if (cartItem?.selectedTerm && terms.includes(cartItem.selectedTerm)) {
             return cartItem.selectedTerm;
         }
-        if (terms.includes('Spring 2026')) return 'Spring 2026';
-        return terms[0] || '';
+        return getDefaultTerm(terms);
     });
 
     // Term carousel: show 3 at a time when there are more than 3 terms
@@ -202,12 +196,11 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         if (cartItem?.selectedTerm && terms.includes(cartItem.selectedTerm)) {
             setActiveTerm(cartItem.selectedTerm);
         } else if (terms.length > 0 && !terms.includes(activeTerm)) {
-            if (terms.includes('Spring 2026')) setActiveTerm('Spring 2026');
-            else setActiveTerm(terms[0]);
+            setActiveTerm(getDefaultTerm(terms));
         }
     }, [course.id, cartItem?.selectedTerm, terms.length]); // eslint-disable-line react-hooks/exhaustive-deps -- activeTerm omitted to avoid loop; setActiveTerm is stable
 
-    const isFutureTerm = activeTerm === 'Spring 2026' || activeTerm === 'Summer 2026'
+    const isFutureTerm = isTermInFuture(activeTerm)
 
     // GER (General Education Requirements / WAYS) from sections — dedupe by display abbreviation
     // so e.g. "Writing in the Major (WIM)" (injected in store) and "WIM" do not both show as WIM.
@@ -239,6 +232,8 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
             const hasVariable = sectionOpts.length > 1 || courseOpts.length > 1;
             const unitsToUse = selectedUnitsOverride !== undefined ? selectedUnitsOverride : selectedUnits;
             addItem(course, activeTerm, sectionId, hasVariable ? unitsToUse : undefined);
+            track('course_added_to_schedule', { auth: user ? 'authed' : 'anonymous', source: 'detail' });
+            promptLoginToSyncOnce();
         }
     };
 
@@ -551,7 +546,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                                             <span className="capitalize font-medium text-foreground leading-tight break-words">{(() => {
                                                                                 const rawDays = m.days || '';
                                                                                 if (!rawDays.trim()) return tbdLabel;
-                                                                                const days = rawDays.toLowerCase().split(/[,\s]+/);
+                                                                                const days = rawDays.toLowerCase().split(/[,\s/]+/).filter(Boolean);
                                                                                 return days.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ');
                                                                             })()}</span>
                                                                         </div>

@@ -4,8 +4,8 @@ import { getUserId } from './get-user-id'
 
 // --- Domain allowlist for submitted URLs ---
 
-const ALLOWED_DOMAINS = ['.edu', '.github.com', '.github.io', '.google.com']
-const ALLOWED_EXACT = ['github.com', 'github.io', 'google.com']
+const ALLOWED_DOMAINS = ['.stanford.edu', '.github.com', '.github.io', '.google.com']
+const ALLOWED_EXACT = ['stanford.edu', 'github.com', 'github.io', 'google.com']
 
 export function isAllowedUrl (url: string): { valid: boolean, reason?: string } {
   try {
@@ -18,7 +18,7 @@ export function isAllowedUrl (url: string): { valid: boolean, reason?: string } 
       ALLOWED_DOMAINS.some(suffix => hostname.endsWith(suffix)) ||
       ALLOWED_EXACT.some(domain => hostname === domain)
     if (!allowed) {
-      return { valid: false, reason: 'Only .edu, GitHub, and Google domains are accepted' }
+      return { valid: false, reason: 'Only Stanford, GitHub, and Google domains are accepted' }
     }
     return { valid: true }
   } catch {

@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { useCartStore } from './cart-store'
 import { useCourseStore } from './store'
 import { cartHydrated } from './cart-hydration'
+import { track } from './analytics'
 
 // Minimal payload stored server-side — no full Course catalog data
 export type ScheduleItem = {
@@ -155,12 +156,14 @@ let _pullActive = false
 let _lastPulledUserId: string | null = null
 
 /**
- * On sign-in: fetch server schedule (server wins). If server has data, hydrate
- * cart from it. If server is empty but local has items, push local to server.
+ * On sign-in: fetch server schedule. If the local cart is non-empty (e.g. a
+ * schedule built anonymously before logging in), merge local + server (union by
+ * course id, local wins) and push the result so nothing is lost. If the local
+ * cart is empty, the server wins — a true cross-device pull.
  *
  * Guards:
- *  - Only pulls once per user per module lifetime (page navigations that
- *    remount AuthGate won't re-pull and clobber local state).
+ *  - Only pulls once per user per module lifetime (page navigations won't
+ *    re-pull and clobber local state).
  *  - Flushes any pending debounced push before fetching so local changes
  *    reach the server before we read from it.
  *  - Detects cart mutations made while the fetch is in-flight and preserves
@@ -225,27 +228,44 @@ async function _pullSchedule(userId: string): Promise<void> {
       return
     }
 
-    if (data) {
-      // Server row exists — server wins (even if empty)
-      const serverItems = (Array.isArray(data.schedule) ? data.schedule : []) as ScheduleItem[]
-      if (serverItems.length > 0) {
+    const serverItems = data
+      ? ((Array.isArray(data.schedule) ? data.schedule : []) as ScheduleItem[])
+      : []
+    const localItems = toScheduleItems()
+
+    if (localItems.length > 0) {
+      // Local cart has items (e.g. built anonymously before logging in) — merge
+      // so nothing the user built is lost. Union by course id; local wins on
+      // conflicts. Then push the merged result to the server.
+      const localIds = new Set(localItems.map(i => i.id))
+      const serverOnly = serverItems.filter(s => !localIds.has(s.id))
+      if (serverOnly.length > 0) {
         await waitForCourses()
-        const hydrated = hydrateItems(serverItems)
-        if (hydrated.length > 0) {
-          useCartStore.setState({ items: hydrated })
-          const syncedIds = new Set(serverItems.map(s => s.id))
+        const hydratedServerOnly = hydrateItems(serverOnly)
+        if (hydratedServerOnly.length > 0) {
+          useCartStore.setState((state) => ({ items: [...state.items, ...hydratedServerOnly] }))
+          const syncedIds = new Set(serverOnly.map(s => s.id))
           useCourseStore.getState().fetchCourseDetails([...syncedIds])
           reHydrateOnEnrichment(syncedIds)
         }
-      } else {
-        // Server has empty schedule — clear local cart to match
-        useCartStore.setState({ items: [] })
       }
-    } else {
-      // No server row (PGRST116) — first-time user, push local if any
-      const localItems = toScheduleItems()
-      if (localItems.length > 0) await pushSchedule(userId)
+      await pushSchedule(userId)
+    } else if (serverItems.length > 0) {
+      // Local cart empty — server wins (true cross-device pull)
+      await waitForCourses()
+      const hydrated = hydrateItems(serverItems)
+      if (hydrated.length > 0) {
+        useCartStore.setState({ items: hydrated })
+        const syncedIds = new Set(serverItems.map(s => s.id))
+        useCourseStore.getState().fetchCourseDetails([...syncedIds])
+        reHydrateOnEnrichment(syncedIds)
+      }
+    } else if (data) {
+      // Server row exists but is empty, and local is empty — nothing to do.
+      useCartStore.setState({ items: [] })
     }
+
+    track('schedule_synced', { items: toScheduleItems().length })
   } catch (err) {
     console.error('pullSchedule error:', err)
   } finally {

@@ -6,6 +6,7 @@ import { compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveT
 import type { Course } from '@/types/course';
 import { searchCourses } from '@/lib/search-utils';
 import { filterCourses } from '@/lib/course-filter';
+import { getDefaultTerm } from '@/lib/terms';
 
 export function useFilteredCourses() {
     const courses = useCourseStore(state => state.courses);
@@ -14,7 +15,7 @@ export function useFilteredCourses() {
 
     const [query] = useQueryState('q', { defaultValue: '' });
     const [selectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
-    const [selectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']));
+    const [selectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([getDefaultTerm()]));
     const [selectedFormats] = useQueryState('formats', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedLevels] = useQueryState('levels', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedGers] = useQueryState('gers', parseAsArrayOf(parseAsString).withDefault([]));

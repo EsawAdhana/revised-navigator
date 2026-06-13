@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { Resend } from 'resend'
 import { cookies } from 'next/headers'
+import { rateLimit } from '@/lib/rate-limit'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -41,6 +42,14 @@ export async function POST (request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  if (!user.email?.endsWith('@stanford.edu')) {
+    return NextResponse.json({ error: 'Stanford account required' }, { status: 403 })
+  }
+
+  // Best-effort throttle: 5 submissions / hour per user.
+  if (!rateLimit(`feedback:${user.id}`, 5, 60 * 60 * 1000)) {
+    return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 })
   }
 
   let body: { text?: string; type?: string }
@@ -89,7 +98,7 @@ export async function POST (request: Request) {
           from: fromEmail,
           to: feedbackEmailTo,
           subject: `[Stanford Root] New feedback: ${typeInput}`,
-          text: `Type: ${typeInput}\n\n${text}`
+          text: `Type: ${typeInput}\nFrom: ${user.email}\n\n${text}`
         })
       } catch (emailErr) {
         console.error('Feedback email send error:', emailErr)

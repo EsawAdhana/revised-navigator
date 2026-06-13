@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { usePathname } from 'next/navigation';
 
 const LoadingToast = dynamic(
   () => import('@/components/loading-toast').then(m => ({ default: m.LoadingToast })),
@@ -12,10 +13,14 @@ const FeedbackDialog = dynamic(
 );
 
 export function DeferredShell() {
+  const pathname = usePathname();
+  // Hide the feedback button on the landing page for a clean first impression.
+  const showFeedback = pathname !== '/';
+
   return (
     <>
       <LoadingToast />
-      <FeedbackDialog />
+      {showFeedback && <FeedbackDialog />}
     </>
   );
 }

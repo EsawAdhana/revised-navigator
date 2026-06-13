@@ -15,7 +15,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing ids array' }, { status: 400 })
   }
 
-  const ids: string[] = (body as any).ids.filter((id: unknown): id is string => typeof id === 'string').slice(0, MAX_IDS)
+  const ids: string[] = (body as any).ids
+    .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0 && id.length <= 64)
+    .slice(0, MAX_IDS)
   if (ids.length === 0) {
     return NextResponse.json([])
   }

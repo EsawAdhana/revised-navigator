@@ -5,6 +5,7 @@ import { useQueryState } from 'nuqs';
 import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { track } from '@/lib/analytics';
 
 export function SearchBar() {
   const pathname = usePathname();
@@ -20,7 +21,9 @@ export function SearchBar() {
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current)
     debounceRef.current = window.setTimeout(() => {
-      setQuery(localValue.trim() ? localValue : null)
+      const trimmed = localValue.trim()
+      setQuery(trimmed ? localValue : null)
+      if (trimmed) track('search_performed', { length: trimmed.length })
     }, 250)
 
     return () => {
@@ -34,7 +37,7 @@ export function SearchBar() {
       if (
         (e.key === '/' && !isInput) ||
         (e.key === 'k' && (e.metaKey || e.ctrlKey)) ||
-        (pathname === '/' && e.key === 'f' && (e.ctrlKey || e.metaKey))
+        (pathname === '/browse' && e.key === 'f' && (e.ctrlKey || e.metaKey))
       ) {
         e.preventDefault();
         inputRef.current?.focus();

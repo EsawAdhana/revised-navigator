@@ -5,11 +5,12 @@ import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsIn
 import { X } from 'lucide-react'
 import { abbreviateGer, unitsLabel } from '@/lib/utils'
 import { formatMinutes } from '@/lib/schedule-utils'
+import { getDefaultTerm } from '@/lib/terms'
 
 export function ActiveFilterChips() {
   const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false))
   const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]))
-  const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']))
+  const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([getDefaultTerm()]))
   const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedFormats, setSelectedFormats] = useQueryState('formats', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedLevels, setSelectedLevels] = useQueryState('levels', parseAsArrayOf(parseAsString).withDefault([]))

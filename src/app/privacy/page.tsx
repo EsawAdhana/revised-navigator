@@ -16,7 +16,7 @@ export default function PrivacyPage() {
       <div className="mx-auto max-w-3xl px-6 py-12 flex-1">
         <div className="mb-12">
           <Link
-            href="/"
+            href="/browse"
             className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"
           >
             &larr; Back to Stanford Root
@@ -26,7 +26,7 @@ export default function PrivacyPage() {
         <div className="space-y-12">
           <section>
             <h1 className="text-4xl font-bold tracking-tight mb-4">Privacy Policy</h1>
-            <p className="text-muted-foreground">Last Updated: February 9, 2026</p>
+            <p className="text-muted-foreground">Last Updated: June 9, 2026</p>
           </section>
 
           <section className="prose prose-neutral dark:prose-invert max-w-none">
@@ -82,7 +82,20 @@ export default function PrivacyPage() {
             <p>
               We use browser localStorage to persist your course schedule across sessions.
               Authentication tokens are managed by Supabase and stored as secure cookies.
-              We do not use third-party tracking cookies or analytics.
+              We do not use third-party tracking cookies, advertising, or third-party analytics.
+            </p>
+          </section>
+
+          <section className="prose prose-neutral dark:prose-invert max-w-none">
+            <h2 className="text-lg font-semibold text-foreground mb-2">Usage Analytics</h2>
+            <p>
+              To understand how the Service is used and improve it, we collect first-party,
+              anonymous usage analytics stored in our own database (Supabase). We record
+              high-level events such as page views, searches, adding a course to a schedule,
+              and signing in, along with a randomly generated device identifier kept in your
+              browser&apos;s localStorage. We do not use any third-party analytics or
+              advertising trackers, and we never sell this data. This information is used only
+              in aggregate to measure engagement and improve the Service.
             </p>
           </section>
 

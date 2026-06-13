@@ -53,6 +53,15 @@ function getDayStr(date: Date): string {
     return days[date.getDay()]
 }
 
+/** Stable non-negative 31-bit hash, so re-imports key the same Section classId. */
+function hashToInt(str: string): number {
+    let h = 0
+    for (let i = 0; i < str.length; i++) {
+        h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0
+    }
+    return Math.abs(h)
+}
+
 function formatTime(date: Date): string {
     let hours = date.getHours()
     const minutes = date.getMinutes()
@@ -66,7 +75,10 @@ function formatTime(date: Date): string {
 }
 
 export function parseICS(icsContent: string): Course[] {
-    const lines = icsContent.split(/\r\n|\n|\r/)
+    // RFC 5545 line unfolding: a CRLF/LF/CR followed by a space or tab is a
+    // continuation of the previous line, not a new one.
+    const unfolded = icsContent.replace(/(\r\n|\n|\r)[ \t]/g, '')
+    const lines = unfolded.split(/\r\n|\n|\r/)
     const events: SimpleEvent[] = []
 
     let inEvent = false
@@ -116,7 +128,10 @@ export function parseICS(icsContent: string): Course[] {
     const courses: Course[] = []
 
     for (const [key, groupEvents] of Object.entries(grouped)) {
-        const [summary, term] = key.split('|')
+        // term never contains '|'; summaries can, so split on the last separator.
+        const sepIdx = key.lastIndexOf('|')
+        const summary = key.slice(0, sepIdx)
+        const term = key.slice(sepIdx + 1)
 
         // We need to consolidate meeting times.
         // An ICS might have 30 events for "CS 106A" (Mon, Wed, Fri for 10 weeks).
@@ -137,7 +152,10 @@ export function parseICS(icsContent: string): Course[] {
         }
 
         const meetings = Object.entries(meetingsMap).map(([meetKey, daysSet]) => {
-            const [timeRange, location] = meetKey.split('|')
+            // timeRange has no '|'; location might, so split on the first separator.
+            const sep = meetKey.indexOf('|')
+            const timeRange = meetKey.slice(0, sep)
+            const location = meetKey.slice(sep + 1)
             const [start, end] = timeRange.split('-')
             // Custom sort for days
             const dayOrder = { 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7 }
@@ -178,7 +196,7 @@ export function parseICS(icsContent: string): Course[] {
 
         const section: Section = {
             term,
-            classId: Math.floor(Math.random() * 1000000), // Random ID for keying
+            classId: hashToInt(`${subject} ${code} ${term}`), // Stable ID for keying
             sectionNumber: '01',
             component: 'LEC',
             units: 0, // Unknown

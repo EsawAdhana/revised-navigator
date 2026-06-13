@@ -8,6 +8,7 @@ import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, formatComponent, i
 import { searchCourses } from '@/lib/search-utils';
 import { filterCourses, type CourseFilterCriteria, type FacetKey } from '@/lib/course-filter';
 import { formatMinutes } from '@/lib/schedule-utils';
+import { getDefaultTerm, compareTerms } from '@/lib/terms';
 import type { Course } from '@/types/course';
 import { CheckboxItem, FilterGroup } from '@/components/ui/filter-components';
 import { Input } from '@/components/ui/input';
@@ -82,7 +83,7 @@ export function FilterSidebar() {
     // State
     const [query] = useQueryState('q', { defaultValue: '' });
     const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
-    const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault(['Spring 2026']));
+    const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([getDefaultTerm()]));
     const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
     const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
@@ -257,13 +258,7 @@ export function FilterSidebar() {
                     name: code
                 }))
                 .sort((a, b) => a.code.localeCompare(b.code)),
-            terms: Array.from(terms.entries()).sort((a, b) => {
-                const order = ['Autumn', 'Winter', 'Spring', 'Summer'];
-                const [semA, yearA] = a[0].split(' ');
-                const [semB, yearB] = b[0].split(' ');
-                if (yearA !== yearB) return yearA.localeCompare(yearB);
-                return order.indexOf(semA) - order.indexOf(semB);
-            }),
+            terms: Array.from(terms.entries()).sort((a, b) => compareTerms(a[0], b[0])),
             formats: Array.from(formats.entries()).sort((a, b) => b[1] - a[1]), // Sort by count desc
             levels: Array.from(levels.entries()).sort((a, b) => b[1] - a[1]),
             gers: Array.from(gers.entries()).sort((a, b) => a[0].localeCompare(b[0])),

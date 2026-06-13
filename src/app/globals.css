@@ -35,6 +35,41 @@
 
     --ring: 0 74% 32%;
     --radius: 0.75rem;
+    color-scheme: light;
+  }
+
+  .dark {
+    /* Warm dark Cardinal theme */
+    color-scheme: dark;
+    --background: 40 12% 8%;
+    --foreground: 40 15% 92%;
+
+    --card: 40 10% 11%;
+    --card-foreground: 40 15% 92%;
+
+    --popover: 40 10% 10%;
+    --popover-foreground: 40 15% 92%;
+
+    --primary: 0 70% 52%;
+    /* Brightened Cardinal for contrast on dark */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 40 8% 16%;
+    --secondary-foreground: 40 15% 92%;
+
+    --muted: 40 6% 18%;
+    --muted-foreground: 40 8% 62%;
+
+    --accent: 40 8% 18%;
+    --accent-foreground: 40 15% 92%;
+
+    --destructive: 0 70% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 40 8% 20%;
+    --input: 40 8% 20%;
+
+    --ring: 0 70% 52%;
   }
 }
 

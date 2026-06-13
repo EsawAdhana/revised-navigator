@@ -21,14 +21,35 @@ const DELAY_MS = 80         // ms between batches
 const PROGRESS_FILE = '.sections-scrape-progress.json'
 const BASE_URL = 'https://explorecourses.stanford.edu/search'
 
-// NQTR attribute value → human-readable term
-const NQTR_MAP = {
-    AUT: 'Autumn 2025',
-    WIN: 'Winter 2026',
-    SPR: 'Spring 2026',
-    SUM: 'Summer 2026',
-    // older terms just in case
-    FAL: 'Autumn 2025',
+// NQTR attribute value → human-readable term.
+// Derived from the active academic year so it self-rolls every year and never
+// needs manual edits. Only used as a fallback when a section lacks a <term>
+// element; the primary parser (parseSectionTerm) handles the authoritative year.
+function buildNqtrMap(now = new Date()) {
+    // Academic year starts in Autumn. Sep-Dec → AY starts this calendar year;
+    // Jan-Aug → AY started the previous calendar year.
+    const ayStart = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1
+    return {
+        AUT: `Autumn ${ayStart}`,
+        FAL: `Autumn ${ayStart}`,
+        WIN: `Winter ${ayStart + 1}`,
+        SPR: `Spring ${ayStart + 1}`,
+        SUM: `Summer ${ayStart + 1}`,
+    }
+}
+const NQTR_MAP = buildNqtrMap()
+
+// Chronological term sort: by calendar year, then season-within-year
+// (Winter < Spring < Summer < Autumn). Keeps `terms[0]` sensible downstream.
+const SEASON_ORDER = { Winter: 0, Spring: 1, Summer: 2, Autumn: 3, Fall: 3 }
+function termSortKey(term) {
+    const parts = (term || '').trim().split(/\s+/)
+    const season = parts[0] || ''
+    const year = parseInt(parts[parts.length - 1], 10) || 0
+    return year * 10 + (SEASON_ORDER[season] ?? 0)
+}
+function sortTerms(terms) {
+    return [...terms].sort((a, b) => termSortKey(a) - termSortKey(b))
 }
 
 // ── Args ────────────────────────────────────────────────────────────────────
@@ -236,7 +257,7 @@ async function fetchSections(subject, code) {
             }
         }
 
-        const terms = Array.from(new Set(uniqueSections.map(s => s.term).filter(Boolean)))
+        const terms = sortTerms(Array.from(new Set(uniqueSections.map(s => s.term).filter(Boolean))))
 
         return {
             sections: uniqueSections,
@@ -368,25 +389,42 @@ async function main() {
                 const result = await fetchSections(course.subject, course.code)
 
                 if (!result) {
-                    noSections++
-                    done.add(course.course_id)
+                    // Course no longer matches an active ExploreCourses entry.
+                    // Clear stale sections/terms so last year's data doesn't linger.
+                    const { error } = await withRetries(
+                        () => supabase
+                            .from('courses')
+                            .update({ sections: [], terms: [] })
+                            .eq('course_id', course.course_id),
+                        { label: `clear ${course.course_id}` }
+                    )
+                    if (error) {
+                        errors++
+                        console.error(`  ❌ ${course.course_id} (clear): ${error.message}`)
+                    } else {
+                        noSections++
+                        done.add(course.course_id)
+                    }
                     processed++
                     return
                 }
 
                 const { sections, terms, ...metadata } = result
 
-                const { error } = await supabase
-                    .from('courses')
-                    .update({
-                        sections,
-                        terms,
-                        description: metadata.description,
-                        title: metadata.title,
-                        units: metadata.units,
-                        grading: metadata.grading
-                    })
-                    .eq('course_id', course.course_id)
+                const { error } = await withRetries(
+                    () => supabase
+                        .from('courses')
+                        .update({
+                            sections,
+                            terms,
+                            description: metadata.description,
+                            title: metadata.title,
+                            units: metadata.units,
+                            grading: metadata.grading
+                        })
+                        .eq('course_id', course.course_id),
+                    { label: `update ${course.course_id}` }
+                )
 
                 if (error) {
                     errors++

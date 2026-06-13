@@ -7,6 +7,8 @@ import {
   resetSyncState,
 } from './schedule-sync'
 import { useCartStore } from './cart-store'
+import { useEvaluationStore } from './evaluation-store'
+import { track } from './analytics'
 
 interface AuthState {
   user: User | null
@@ -52,6 +54,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && user) {
         pullSchedule(user.id)
       }
+
+      if (event === 'SIGNED_IN' && user) {
+        track('login_completed')
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -73,6 +79,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     cancelDebouncedPush()
     resetSyncState()
     useCartStore.getState().clearCart()
+    useEvaluationStore.getState().clearAll()
     await supabase.auth.signOut()
     set({ user: null, session: null })
   }
