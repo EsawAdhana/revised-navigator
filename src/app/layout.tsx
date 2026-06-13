@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Inter, Outfit } from "next/font/google";
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { ThemeProvider } from '@/components/theme-provider';
@@ -42,9 +43,11 @@ export default function RootLayout({
       <body className={`${inter.className} ${outfit.variable}`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <NuqsAdapter>
-            <AuthProvider>
-              {children}
-            </AuthProvider>
+            <Suspense fallback={null}>
+              <AuthProvider>
+                {children}
+              </AuthProvider>
+            </Suspense>
             <AnalyticsProvider />
             <ThemedToaster />
             <DeferredShell />

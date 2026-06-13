@@ -9,13 +9,14 @@ import {
 import { useCartStore } from './cart-store'
 import { useEvaluationStore } from './evaluation-store'
 import { track } from './analytics'
+import { showAuthError } from './auth-errors'
 
 interface AuthState {
   user: User | null
   session: Session | null
   isLoading: boolean
   initialize: () => () => void
-  signInWithGoogle: () => Promise<void>
+  signInWithGoogle: (returnPath?: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -46,6 +47,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (user && !user.email?.endsWith('@stanford.edu')) {
         supabase.auth.signOut()
         set({ user: null, session: null, isLoading: false })
+        if (event === 'SIGNED_IN') {
+          showAuthError('stanford_required')
+        }
         return
       }
 
@@ -63,16 +67,37 @@ export const useAuthStore = create<AuthState>((set) => ({
     return () => subscription.unsubscribe()
   },
 
-  signInWithGoogle: async () => {
-    await supabase.auth.signInWithOAuth({
+  signInWithGoogle: async (returnPath?: string) => {
+    if (typeof window === 'undefined') return
+
+    const next = returnPath ?? `${window.location.pathname}${window.location.search}`
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+        redirectTo,
         queryParams: {
-          hd: 'stanford.edu'
-        }
-      }
+          hd: 'stanford.edu',
+        },
+      },
     })
+
+    if (error) {
+      console.error('OAuth sign-in failed:', error)
+      const isLocalhost = window.location.hostname === 'localhost'
+      const hint = isLocalhost
+        ? ' Add http://localhost:3000/auth/callback to Supabase Auth → Redirect URLs.'
+        : undefined
+      showAuthError('oauth_failed', hint ? `${error.message}${hint}` : error.message)
+      return
+    }
+
+    if (data?.url) {
+      window.location.assign(data.url)
+    } else {
+      showAuthError('oauth_failed', 'No redirect URL returned from Supabase.')
+    }
   },
 
   signOut: async () => {
