@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useEvaluationStore } from '@/lib/evaluation-store'
 import { useAuthStore } from '@/lib/auth-store'
 import { track } from '@/lib/analytics'
+import { StanfordLoginButton } from '@/components/stanford-login-button'
 import {
   Loader2, ChevronDown, ChevronUp, MessageSquare,
   ExternalLink, Clock, Search, X, Lock
@@ -511,7 +512,6 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
   const evaluationsById = useEvaluationStore(state => state.evaluations)
   const user = useAuthStore(state => state.user)
   const authLoading = useAuthStore(state => state.isLoading)
-  const signInWithGoogle = useAuthStore(state => state.signInWithGoogle)
   const [activeTermFilter, setActiveTermFilter] = useState<string>('all')
   const [activeTab, setActiveTab] = useState<EvalTab>(forcedTab || 'overview')
   const [expandedInstructor, setExpandedInstructor] = useState<string | null>(null)
@@ -612,13 +612,11 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
             Log in with your Stanford account to view student evaluations, ratings, and comments.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => { track('login_started', { source: 'eval_gate' }); signInWithGoogle(); }}
-          className="mt-1 inline-flex items-center justify-center rounded-full bg-foreground text-background px-5 py-2 text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
-        >
-          Log in with Stanford
-        </button>
+        <StanfordLoginButton
+          source="eval_gate"
+          signingInLabel="Redirecting to Stanford…"
+          className="mt-1 inline-flex items-center justify-center rounded-full bg-foreground text-background px-5 py-2 text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] gap-2 h-auto"
+        />
       </div>
     )
   }

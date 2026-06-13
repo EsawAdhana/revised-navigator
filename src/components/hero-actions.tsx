@@ -3,18 +3,10 @@
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useAuthStore } from '@/lib/auth-store'
-import { track } from '@/lib/analytics'
+import { StanfordLoginButton } from '@/components/stanford-login-button'
 
 /** Guest-only CTAs on the landing page. Signed-in users are redirected to /browse in middleware. */
 export function HeroActions() {
-  const signInWithGoogle = useAuthStore(state => state.signInWithGoogle)
-
-  const handleLogin = () => {
-    track('login_started', { source: 'hero' })
-    void signInWithGoogle('/browse')
-  }
-
   return (
     <div className="relative z-10 flex flex-col sm:flex-row items-center gap-3">
       <Button
@@ -27,15 +19,14 @@ export function HeroActions() {
           <ArrowRight className="ml-1 h-4 w-4" />
         </Link>
       </Button>
-      <Button
-        type="button"
+      <StanfordLoginButton
+        source="hero"
+        returnPath="/browse"
         variant="outline"
         size="lg"
-        onClick={handleLogin}
-        className="h-12 px-7 text-base font-semibold rounded-full border-border/70 hover:bg-secondary/60 transition-all hover:scale-[1.02] active:scale-[0.99]"
-      >
-        Log in with Stanford
-      </Button>
+        signingInLabel="Redirecting to Stanford…"
+        className="h-12 px-7 text-base font-semibold rounded-full border-border/70 hover:bg-secondary/60 transition-all hover:scale-[1.02] active:scale-[0.99] gap-2"
+      />
     </div>
   )
 }

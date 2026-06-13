@@ -18,8 +18,7 @@ export function promptLoginToSyncOnce(): void {
     action: {
       label: 'Log in',
       onClick: () => {
-        track('login_started', { source: 'nudge' })
-        useAuthStore.getState().signInWithGoogle()
+        void useAuthStore.getState().signInWithGoogle({ source: 'nudge' })
       },
     },
     duration: 8000,

@@ -5,7 +5,7 @@ import { SearchBar } from '@/components/search-bar';
 import { FilterSidebar } from '@/components/filter-sidebar';
 import { Logo } from '@/components/logo';
 import { useAuthStore } from '@/lib/auth-store';
-import { track } from '@/lib/analytics';
+import { StanfordLoginButton } from '@/components/stanford-login-button';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import Link from 'next/link';
@@ -17,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 export function SiteHeader() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const { user, isLoading, signOut, signInWithGoogle } = useAuthStore();
+    const { user, isLoading, signOut } = useAuthStore();
 
     const scheduleHref = useMemo(() => {
         const params = new URLSearchParams(searchParams.toString());
@@ -91,12 +91,14 @@ export function SiteHeader() {
                 </Button>
 
                 {!user && !isLoading && (
-                    <Button
-                        onClick={() => { track('login_started', { source: 'header' }); signInWithGoogle(); }}
-                        className="ml-1 rounded-full h-9 px-4 text-sm font-medium"
+                    <StanfordLoginButton
+                        source="header"
+                        size="default"
+                        signingInLabel="Signing in…"
+                        className="ml-1 rounded-full h-9 px-4 text-sm font-medium gap-2"
                     >
                         Log in
-                    </Button>
+                    </StanfordLoginButton>
                 )}
 
                 {user && (
