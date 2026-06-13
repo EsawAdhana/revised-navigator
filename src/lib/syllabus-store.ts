@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { supabase } from './supabase'
-import { getUserId } from './get-user-id'
 import { useAuthStore } from './auth-store'
 
 // --- Domain allowlist for submitted URLs ---
@@ -181,7 +180,8 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
     const validation = isAllowedUrl(url)
     if (!validation.valid) return { ok: false, reason: validation.reason }
 
-    const userId = getUserId()
+    const userId = useAuthStore.getState().user?.id
+    if (!userId) return { ok: false, reason: 'Sign in to submit a link.' }
 
     try {
       const { error } = await supabase
@@ -201,7 +201,8 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
 
   // --- Delete own submission ---
   deleteSubmission: async (submissionId, courseId, term) => {
-    const userId = getUserId()
+    const userId = useAuthStore.getState().user?.id
+    if (!userId) return
     const key = makeKey(courseId, term)
     const subs = get().submissions[key] || []
     const sub = subs.find(s => s.id === submissionId)

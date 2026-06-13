@@ -27,12 +27,12 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
   const user = useAuthStore(s => s.user)
   const signInWithGoogle = useAuthStore(s => s.signInWithGoogle)
 
-  const requireAuthToVote = useCallback((voteAction: () => void) => {
+  const requireAuth = useCallback((action: () => void) => {
     if (!user) {
       void signInWithGoogle({ source: 'syllabus_gate' })
       return
     }
-    voteAction()
+    action()
   }, [user, signInWithGoogle])
 
   const [showForm, setShowForm] = useState(false)
@@ -47,7 +47,15 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
     if (courseId && term) fetchSyllabusData(courseId, term)
   }, [courseId, term, fetchSyllabusData])
 
+  useEffect(() => {
+    if (!user) setShowForm(false)
+  }, [user])
+
   const handleSubmit = async () => {
+    if (!user) {
+      void signInWithGoogle({ source: 'syllabus_gate' })
+      return
+    }
     setError('')
     const validation = isAllowedUrl(url)
     if (!validation.valid) {
@@ -77,7 +85,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
         <span className="text-[11px] text-muted-foreground">Is the syllabus available?</span>
         <button
           type="button"
-          onClick={() => requireAuthToVote(() => castOfficialVote(courseId, term, 1))}
+          onClick={() => requireAuth(() => castOfficialVote(courseId, term, 1))}
           className={cn(
             'flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors',
             votes.userVote === 1
@@ -92,7 +100,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
         </button>
         <button
           type="button"
-          onClick={() => requireAuthToVote(() => castOfficialVote(courseId, term, -1))}
+          onClick={() => requireAuth(() => castOfficialVote(courseId, term, -1))}
           className={cn(
             'flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors',
             votes.userVote === -1
@@ -106,7 +114,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
           {votes.down > 0 && <span className="tabular-nums">{votes.down}</span>}
         </button>
         {!user && (
-          <span className="text-[10px] text-muted-foreground">Sign in to vote</span>
+          <span className="text-[10px] text-muted-foreground">Sign in to participate</span>
         )}
       </div>
 
@@ -144,7 +152,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   type="button"
-                  onClick={() => requireAuthToVote(() => voteOnSubmission(sub.id, 1, courseId, term))}
+                  onClick={() => requireAuth(() => voteOnSubmission(sub.id, 1, courseId, term))}
                   aria-label={user ? 'Upvote this link' : 'Sign in to upvote this link'}
                   title={user ? 'Upvote this link' : 'Sign in to vote'}
                   className={cn(
@@ -164,7 +172,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
                 </span>
                 <button
                   type="button"
-                  onClick={() => requireAuthToVote(() => voteOnSubmission(sub.id, -1, courseId, term))}
+                  onClick={() => requireAuth(() => voteOnSubmission(sub.id, -1, courseId, term))}
                   aria-label={user ? 'Downvote this link' : 'Sign in to downvote this link'}
                   title={user ? 'Downvote this link' : 'Sign in to vote'}
                   className={cn(
@@ -196,13 +204,14 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
       {!showForm ? (
         <button
           type="button"
-          onClick={() => setShowForm(true)}
+          onClick={() => requireAuth(() => setShowForm(true))}
           className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-primary transition-colors"
+          title={user ? undefined : 'Sign in to submit a link'}
         >
           <Plus size={12} />
           Know the correct link? Submit it here!
         </button>
-      ) : (
+      ) : user ? (
         <div className="space-y-2 p-3 bg-secondary/15 rounded-lg border border-border/30">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-foreground">Submit a syllabus link</span>
@@ -251,7 +260,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
           </div>
           <p className="text-[10px] text-muted-foreground">Only HTTPS links on .edu, GitHub, or Google domains are accepted.</p>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
