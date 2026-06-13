@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VList, VListHandle } from 'virtua';
 import { useSearchParams } from 'next/navigation';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
+import { useCourseStore } from '@/lib/store';
 import { CourseCard } from './course-card';
 import { SearchX, ArrowUp } from 'lucide-react';
 import { ActiveFilterChips } from './active-filter-chips';
@@ -50,6 +51,10 @@ export function CourseList() {
 
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
+
+  const prefetchCourseDetail = useCallback((courseId: string) => {
+    useCourseStore.getState().fetchCourseDetail(courseId);
+  }, []);
 
   const saveScrollOnClick = useCallback((e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey || e.button === 1) return; // New tab — no scroll save
@@ -213,6 +218,7 @@ export function CourseList() {
                     sortDisplayValue={getSortDisplayValue(course)}
                     rating={getRatingForCourse(course)}
                     onClick={saveScrollOnClick}
+                    onMouseEnter={() => prefetchCourseDetail(course.id)}
                   />
                   </div>
                 ))}

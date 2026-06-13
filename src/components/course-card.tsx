@@ -21,9 +21,10 @@ interface CourseCardProps {
   rating?: number | null;
   style?: React.CSSProperties;
   onClick?: (e: React.MouseEvent) => void;
+  onMouseEnter?: () => void;
 }
 
-export const CourseCard = React.memo(({ course, href, sortDisplayValue, rating, style, onClick }: CourseCardProps) => {
+export const CourseCard = React.memo(({ course, href, sortDisplayValue, rating, style, onClick, onMouseEnter }: CourseCardProps) => {
   const cardContent = (
     <div
       className="group relative w-full min-w-0 rounded-xl bg-card text-card-foreground border border-border/40 hover:border-primary/25 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(140,21,21,0.06)] transition-all duration-300 cursor-pointer px-3 py-4 sm:px-4 hover:-translate-y-[1px] overflow-hidden"
@@ -87,7 +88,7 @@ export const CourseCard = React.memo(({ course, href, sortDisplayValue, rating, 
   return (
     <div style={style} className="w-full min-w-0 py-1.5">
       {href ? (
-        <Link href={href} onClick={onClick} className="block no-underline text-inherit">
+        <Link href={href} onClick={onClick} onMouseEnter={onMouseEnter} className="block no-underline text-inherit">
           {cardContent}
         </Link>
       ) : (

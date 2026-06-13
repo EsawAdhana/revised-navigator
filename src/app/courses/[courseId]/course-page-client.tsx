@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryState } from 'nuqs';
-import { useCourseStore } from '@/lib/store';
+import { useCourseStore, hasFullCourseData } from '@/lib/store';
 import { SiteHeader } from '@/components/site-header';
 import { useCartStore } from '@/lib/cart-store';
 import { searchCourses } from '@/lib/search-utils';
@@ -32,7 +32,7 @@ export function CoursePageClient() {
     const [query] = useQueryState('q', { defaultValue: '' });
     const courses = useCourseStore(s => s.courses);
     const hasLoaded = useCourseStore(s => s.hasLoaded);
-    const enrichedCourseIds = useCourseStore(s => s.enrichedCourseIds);
+    const hasEnriched = useCourseStore(s => s.hasEnriched);
     const fetchCourseDetail = useCourseStore(s => s.fetchCourseDetail);
     const getItem = useCartStore(s => s.getItem);
 
@@ -83,11 +83,15 @@ export function CoursePageClient() {
         return found;
     }, [courses, courseId, getItem]);
 
+    const isDetailReady = Boolean(
+        course && (hasEnriched || hasFullCourseData(course))
+    );
+
     useEffect(() => {
-        if (hasLoaded && course && !enrichedCourseIds.has(courseId)) {
+        if (hasLoaded && course && !isDetailReady) {
             fetchCourseDetail(courseId);
         }
-    }, [hasLoaded, course, courseId, enrichedCourseIds, fetchCourseDetail]);
+    }, [hasLoaded, course, courseId, isDetailReady, fetchCourseDetail]);
 
     useEffect(() => {
         if (!hasLoaded || !course || !courses.length) return;
@@ -107,12 +111,16 @@ export function CoursePageClient() {
             <div className="min-h-screen bg-background flex flex-col">
                 <SiteHeader />
                 <main className="flex-1 bg-background">
-                    <div className="flex flex-1 items-center justify-center">
-                        <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
-                            <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
-                            <span className="text-sm text-muted-foreground">Loading class information...</span>
+                    {isDetailReady && course ? (
+                        <CourseDetailContent course={course} />
+                    ) : (
+                        <div className="flex flex-1 items-center justify-center">
+                            <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
+                                <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
+                                <span className="text-sm text-muted-foreground">Loading class information...</span>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </main>
             </div>
         );
@@ -122,7 +130,7 @@ export function CoursePageClient() {
         <div className="min-h-screen bg-background flex flex-col">
             <SiteHeader />
             <main className="flex-1 bg-background">
-                {(!hasLoaded && !course) || (hasLoaded && course && !enrichedCourseIds.has(courseId)) ? (
+                {(!hasLoaded && !course) || (hasLoaded && course && !isDetailReady) ? (
                     <div className="flex flex-1 items-center justify-center">
                         <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
                             <Loader2 className="h-8 w-8 animate-spin text-primary/60" />

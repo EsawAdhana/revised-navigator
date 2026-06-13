@@ -87,6 +87,15 @@ async function writeCache(courses: Course[]) {
   }
 }
 
+/** Light catalog rows omit description and sections; full rows include at least one. */
+export function hasFullCourseData(course: Course): boolean {
+  return Boolean(course.description?.trim()) || (course.sections?.length ?? 0) > 0
+}
+
+function enrichedIdsFromCourses(courses: Course[]): Set<string> {
+  return new Set(courses.filter(hasFullCourseData).map(c => c.id))
+}
+
 function rowToCourse(row: any): Course {
   const isWim = isWimCourse(row.subject, row.code)
   const sections = row.sections || []
@@ -143,7 +152,13 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
     // Stale-while-revalidate: show cached data immediately on refresh (even if expired)
     const stale = await readStaleCache()
     if (stale) {
-      set({ courses: stale, hasLoaded: true, hasEnriched: true, isLoading: false })
+      set({
+        courses: stale,
+        hasLoaded: true,
+        hasEnriched: true,
+        isLoading: false,
+        enrichedCourseIds: enrichedIdsFromCourses(stale),
+      })
       // Fall through to fetch fresh in background
     } else if (hasLoaded) {
       return
@@ -155,7 +170,13 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
       // ── Fresh cache hit: skip fetch ──
       const cached = await readCache()
       if (cached && !stale) {
-        set({ courses: cached, hasLoaded: true, hasEnriched: true, isLoading: false })
+        set({
+          courses: cached,
+          hasLoaded: true,
+          hasEnriched: true,
+          isLoading: false,
+          enrichedCourseIds: enrichedIdsFromCourses(cached),
+        })
         return
       }
 
@@ -205,8 +226,24 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
   },
 
   fetchCourseDetails: async (courseIds: string[]) => {
-    const toFetch = courseIds.filter(id => !get().enrichedCourseIds.has(id))
-    if (toFetch.length === 0) return
+    const { courses, enrichedCourseIds } = get()
+    const toFetch = courseIds.filter(id => {
+      if (enrichedCourseIds.has(id)) return false
+      const existing = courses.find(c => c.id === id)
+      return !existing || !hasFullCourseData(existing)
+    })
+    if (toFetch.length === 0) {
+      const locallyEnriched = courseIds.filter(id => {
+        const existing = courses.find(c => c.id === id)
+        return existing && hasFullCourseData(existing) && !enrichedCourseIds.has(id)
+      })
+      if (locallyEnriched.length > 0) {
+        set(state => ({
+          enrichedCourseIds: new Set([...state.enrichedCourseIds, ...locallyEnriched]),
+        }))
+      }
+      return
+    }
 
     try {
       const res = await fetch('/api/courses/batch', {
@@ -233,6 +270,13 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
 
   fetchCourseDetail: async (courseId: string) => {
     if (get().enrichedCourseIds.has(courseId)) return
+    const existing = get().courses.find(c => c.id === courseId)
+    if (existing && hasFullCourseData(existing)) {
+      set(state => ({
+        enrichedCourseIds: new Set([...state.enrichedCourseIds, courseId]),
+      }))
+      return
+    }
 
     try {
       const res = await fetch(`/api/courses/${encodeURIComponent(courseId)}`)
