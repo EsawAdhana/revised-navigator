@@ -11,7 +11,7 @@ import { useEvaluationStore } from './evaluation-store'
 import { track } from './analytics'
 import { showAuthError, showAuthLoading, dismissAuthLoading } from './auth-errors'
 
-export type SignInSource = 'hero' | 'header' | 'eval_gate' | 'nudge'
+export type SignInSource = 'hero' | 'header' | 'eval_gate' | 'syllabus_gate' | 'nudge'
 
 interface AuthState {
   user: User | null

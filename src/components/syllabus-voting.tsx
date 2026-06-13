@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { ThumbsUp, ThumbsDown, Plus, Link2, X, Loader2, Trash2 } from 'lucide-react'
 import { useSyllabusStore, isAllowedUrl } from '@/lib/syllabus-store'
-import { getUserId } from '@/lib/get-user-id'
+import { useAuthStore } from '@/lib/auth-store'
 import { cn } from '@/lib/utils'
 
 interface SyllabusVotingProps {
@@ -24,9 +24,16 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
   const deleteSubmission = useSyllabusStore(s => s.deleteSubmission)
   const voteOnSubmission = useSyllabusStore(s => s.voteOnSubmission)
 
-  // Resolve after mount so SSR HTML and first client paint agree (avoids hydration mismatch)
-  const [currentUserId, setCurrentUserId] = useState('')
-  useEffect(() => { setCurrentUserId(getUserId()) }, [])
+  const user = useAuthStore(s => s.user)
+  const signInWithGoogle = useAuthStore(s => s.signInWithGoogle)
+
+  const requireAuthToVote = useCallback((voteAction: () => void) => {
+    if (!user) {
+      void signInWithGoogle({ source: 'syllabus_gate' })
+      return
+    }
+    voteAction()
+  }, [user, signInWithGoogle])
 
   const [showForm, setShowForm] = useState(false)
   const [url, setUrl] = useState('')
@@ -70,34 +77,37 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
         <span className="text-[11px] text-muted-foreground">Is the syllabus available?</span>
         <button
           type="button"
-          onClick={() => castOfficialVote(courseId, term, 1)}
+          onClick={() => requireAuthToVote(() => castOfficialVote(courseId, term, 1))}
           className={cn(
             'flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors',
             votes.userVote === 1
               ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
               : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
           )}
-          title="Yes, the syllabus is available"
-          aria-label="Yes, the syllabus is available"
+          title={user ? 'Yes, the syllabus is available' : 'Sign in to vote'}
+          aria-label={user ? 'Yes, the syllabus is available' : 'Sign in to vote yes'}
         >
           <ThumbsUp size={12} />
           {votes.up > 0 && <span className="tabular-nums">{votes.up}</span>}
         </button>
         <button
           type="button"
-          onClick={() => castOfficialVote(courseId, term, -1)}
+          onClick={() => requireAuthToVote(() => castOfficialVote(courseId, term, -1))}
           className={cn(
             'flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors',
             votes.userVote === -1
               ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
               : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
           )}
-          title="No, the syllabus is not available"
-          aria-label="No, the syllabus is not available"
+          title={user ? 'No, the syllabus is not available' : 'Sign in to vote'}
+          aria-label={user ? 'No, the syllabus is not available' : 'Sign in to vote no'}
         >
           <ThumbsDown size={12} />
           {votes.down > 0 && <span className="tabular-nums">{votes.down}</span>}
         </button>
+        {!user && (
+          <span className="text-[10px] text-muted-foreground">Sign in to vote</span>
+        )}
       </div>
 
       {/* Warning when 3+ users report the link as unavailable */}
@@ -134,8 +144,9 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   type="button"
-                  onClick={() => voteOnSubmission(sub.id, 1, courseId, term)}
-                  aria-label="Upvote this link"
+                  onClick={() => requireAuthToVote(() => voteOnSubmission(sub.id, 1, courseId, term))}
+                  aria-label={user ? 'Upvote this link' : 'Sign in to upvote this link'}
+                  title={user ? 'Upvote this link' : 'Sign in to vote'}
                   className={cn(
                     'p-1 rounded transition-colors',
                     sub.userVote === 1
@@ -153,8 +164,9 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
                 </span>
                 <button
                   type="button"
-                  onClick={() => voteOnSubmission(sub.id, -1, courseId, term)}
-                  aria-label="Downvote this link"
+                  onClick={() => requireAuthToVote(() => voteOnSubmission(sub.id, -1, courseId, term))}
+                  aria-label={user ? 'Downvote this link' : 'Sign in to downvote this link'}
+                  title={user ? 'Downvote this link' : 'Sign in to vote'}
                   className={cn(
                     'p-1 rounded transition-colors',
                     sub.userVote === -1
@@ -164,7 +176,7 @@ export function SyllabusVoting ({ courseId, term }: SyllabusVotingProps) {
                 >
                   <ThumbsDown size={10} />
                 </button>
-                {sub.userId === currentUserId && (
+                {user && sub.userId === user.id && (
                   <button
                     type="button"
                     onClick={() => deleteSubmission(sub.id, courseId, term)}

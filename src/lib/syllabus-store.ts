@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from './supabase'
 import { getUserId } from './get-user-id'
+import { useAuthStore } from './auth-store'
 
 // --- Domain allowlist for submitted URLs ---
 
@@ -71,7 +72,7 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
     if (get().loading[key]) return
 
     set(s => ({ loading: { ...s.loading, [key]: true } }))
-    const userId = getUserId()
+    const authUserId = useAuthStore.getState().user?.id
 
     try {
       // Official votes
@@ -87,7 +88,7 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
       for (const v of (votes || [])) {
         if (v.vote === 1) up++
         else if (v.vote === -1) down++
-        if (v.user_id === userId) userVote = v.vote
+        if (authUserId && v.user_id === authUserId) userVote = v.vote
       }
 
       // Submissions
@@ -101,11 +102,11 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
       // User's votes on submissions
       const subIds = (subs || []).map(s => s.id)
       const userSubVotes: Record<number, number> = {}
-      if (subIds.length > 0) {
+      if (authUserId && subIds.length > 0) {
         const { data: subVotes } = await supabase
           .from('syllabus_submission_votes')
           .select('submission_id, vote')
-          .eq('user_id', userId)
+          .eq('user_id', authUserId)
           .in('submission_id', subIds)
 
         for (const sv of (subVotes || [])) {
@@ -136,7 +137,8 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
 
   // --- Vote on the official link ---
   castOfficialVote: async (courseId, term, vote) => {
-    const userId = getUserId()
+    const userId = useAuthStore.getState().user?.id
+    if (!userId) return
     const key = makeKey(courseId, term)
     const current = get().officialVotes[key] || { up: 0, down: 0, userVote: 0 }
     const newVote = current.userVote === vote ? 0 : vote
@@ -228,7 +230,8 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
 
   // --- Vote on a community submission ---
   voteOnSubmission: async (submissionId, vote, courseId, term) => {
-    const userId = getUserId()
+    const userId = useAuthStore.getState().user?.id
+    if (!userId) return
     const key = makeKey(courseId, term)
     const subs = get().submissions[key] || []
     const sub = subs.find(s => s.id === submissionId)
