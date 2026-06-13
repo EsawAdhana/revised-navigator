@@ -94,7 +94,7 @@ function MiniCalendar() {
  *  Mirrors course-card.tsx and the calendar palette so it reads as a genuine product shot. */
 export function LandingPreview() {
   return (
-    <div className="relative mx-auto w-full max-w-5xl">
+    <div className="pointer-events-none relative mx-auto w-full max-w-5xl">
       {/* App window */}
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
         {/* Window top bar */}
@@ -141,8 +141,8 @@ export function LandingPreview() {
         </div>
       </div>
 
-      {/* Calendar card peeking in the corner */}
-      <div className="pointer-events-none absolute -bottom-10 -right-4 hidden md:block">
+      {/* Calendar card peeking in the corner — non-interactive so it can't block hero CTAs */}
+      <div className="pointer-events-none absolute -bottom-10 -right-4 z-0 hidden md:block">
         <MiniCalendar />
       </div>
     </div>

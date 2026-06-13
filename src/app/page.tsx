@@ -38,7 +38,7 @@ export default function LandingPage() {
             Search the catalog, read real student evaluations, and build your weekly schedule —
             all in one fast, clean, and free place.
           </p>
-          <div className="animate-fade-in-up mt-10 flex justify-center">
+          <div className="animate-fade-in-up relative z-10 mt-10 flex justify-center">
             <HeroActions />
           </div>
         </div>
