@@ -34,7 +34,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = session?.user ?? null
 
       if (user && !user.email?.endsWith('@stanford.edu')) {
-        supabase.auth.signOut()
+        void supabase.auth.signOut().catch(err => console.error('Failed to sign out non-Stanford user:', err))
         set({ user: null, session: null, isLoading: false })
         return
       }
@@ -49,7 +49,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = session?.user ?? null
 
       if (user && !user.email?.endsWith('@stanford.edu')) {
-        supabase.auth.signOut()
+        void supabase.auth.signOut().catch(err => console.error('Failed to sign out non-Stanford user:', err))
         set({ user: null, session: null, isLoading: false })
         if (event === 'SIGNED_IN') {
           showAuthError('stanford_required')

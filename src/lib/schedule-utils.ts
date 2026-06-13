@@ -137,36 +137,6 @@ export function formatMinutes(minutes: number) {
   return `${h12}:${m.toString().padStart(2, '0')} ${mer}`
 }
 
-/** Parse time string to minutes from midnight (0–1440). Accepts "9:00 AM", "9:00AM", "14:30" (24h). When endOfDay12AM, "12:00 AM" returns 1440. Returns null if invalid. */
-export function parseTimeStringToMinutes(str: string, endOfDay12AM = false): number | null {
-  const s = str.trim()
-  if (!s) return null
-  // 24h: "14:30", "14:00", "24:00"
-  const m24 = s.match(/^(\d{1,2}):(\d{2})$/)
-  if (m24) {
-    const h = parseInt(m24[1], 10)
-    const m = parseInt(m24[2], 10)
-    if (h >= 0 && h <= 24 && m >= 0 && m <= 59) {
-      const mins = h === 24 ? 1440 : h * 60 + m
-      return mins <= 1440 ? mins : null
-    }
-    return null
-  }
-  // 12h: "9:00 AM", "9:00AM", "12:00 PM"
-  const m12 = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i)
-  if (m12) {
-    let h = parseInt(m12[1], 10)
-    const m = parseInt(m12[2], 10)
-    const mer = (m12[3] || '').toLowerCase()
-    if (h < 1 || h > 12 || m < 0 || m > 59) return null
-    if (mer === 'pm') h = h === 12 ? 12 : h + 12
-    else if (mer === 'am') h = h === 12 ? (endOfDay12AM ? 24 : 0) : h
-    else return null
-    return h === 24 ? 1440 : h * 60 + m
-  }
-  return null
-}
-
 function pickSectionForTerm(course: Course, term?: string): Section | undefined {
   const sections = course.sections || []
   if (sections.length === 0) return undefined

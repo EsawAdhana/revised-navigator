@@ -1,4 +1,5 @@
 import { Course, Section } from '@/types/course'
+import { getCurrentTerm } from '@/lib/terms'
 import { v4 as uuidv4 } from 'uuid'
 
 interface SimpleEvent {
@@ -37,15 +38,6 @@ function parseICSDate(icsDate: string): Date | null {
         parseInt(min),
         parseInt(sec)
     )
-}
-
-function getTermFromDate(date: Date): string {
-    const month = date.getMonth() // 0-11
-    const year = date.getFullYear()
-
-    if (month >= 8) return `Autumn ${year}` // Sep-Dec
-    if (month >= 3) return `Spring ${year}` // Apr-Aug (rough approx for Spring/Summer)
-    return `Winter ${year}` // Jan-Mar
 }
 
 function getDayStr(date: Date): string {
@@ -106,11 +98,10 @@ export function parseICS(icsContent: string): Course[] {
         } else if (line.startsWith('LOCATION:')) {
             currentEvent.location = line.substring(9).trim()
         } else if (line.startsWith('DTSTART')) {
-            // Handle DTSTART;TZID=...:2023... or DTSTART:2023...
-            const value = line.split(':')[1]
+            const value = line.slice(line.indexOf(':') + 1)
             currentEvent.start = parseICSDate(value) || undefined
         } else if (line.startsWith('DTEND')) {
-            const value = line.split(':')[1]
+            const value = line.slice(line.indexOf(':') + 1)
             currentEvent.end = parseICSDate(value) || undefined
         }
     }
@@ -119,7 +110,7 @@ export function parseICS(icsContent: string): Course[] {
     const grouped: Record<string, SimpleEvent[]> = {}
 
     for (const ev of events) {
-        const term = getTermFromDate(ev.start)
+        const term = getCurrentTerm(ev.start)
         const key = `${ev.summary}|${term}`
         if (!grouped[key]) grouped[key] = []
         grouped[key].push(ev)

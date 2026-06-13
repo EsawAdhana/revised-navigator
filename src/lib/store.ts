@@ -92,6 +92,8 @@ export function hasFullCourseData(course: Course): boolean {
   return Boolean(course.description?.trim()) || (course.sections?.length ?? 0) > 0
 }
 
+let fetchCoursesInFlight: Promise<void> | null = null
+
 function enrichedIdsFromCourses(courses: Course[]): Set<string> {
   return new Set(courses.filter(hasFullCourseData).map(c => c.id))
 }
@@ -146,6 +148,9 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
   enrichedCourseIds: new Set(),
 
   fetchCourses: async () => {
+    if (fetchCoursesInFlight) return fetchCoursesInFlight
+
+    fetchCoursesInFlight = (async () => {
     const { isLoading, hasLoaded } = get()
     if (isLoading) return
 
@@ -223,6 +228,9 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
         set({ isLoading: false, isEnriching: false })
       }
     }
+    })().finally(() => { fetchCoursesInFlight = null })
+
+    return fetchCoursesInFlight
   },
 
   fetchCourseDetails: async (courseIds: string[]) => {

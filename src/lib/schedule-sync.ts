@@ -85,8 +85,10 @@ function hydrateItems(scheduleItems: ScheduleItem[], logPrefix = '') {
  */
 function reHydrateOnEnrichment(syncedIds: Set<string>) {
   if (useCourseStore.getState().hasEnriched) return
+  const timer = setTimeout(() => { unsub() }, 60000)
   const unsub = useCourseStore.subscribe((state) => {
     if (!state.hasEnriched) return
+    clearTimeout(timer)
     unsub()
     const courseMap = new Map(state.courses.map(c => [c.id, c]))
     useCartStore.setState((cartState) => ({
@@ -174,7 +176,6 @@ let _lastPulledUserId: string | null = null
 export async function pullSchedule(userId: string): Promise<void> {
   if (_lastPulledUserId === userId) return
   if (pullInFlight) return pullInFlight
-  _lastPulledUserId = userId
   pullInFlight = _pullSchedule(userId).finally(() => { pullInFlight = null })
   return pullInFlight
 }
@@ -197,6 +198,7 @@ function cartSignature(): string {
 
 async function _pullSchedule(userId: string): Promise<void> {
   _pullActive = true
+  let success = false
   try {
     // Flush (not cancel) any pending local changes so the server has them
     // before we read. This prevents the pull from overwriting un-pushed adds.
@@ -266,10 +268,12 @@ async function _pullSchedule(userId: string): Promise<void> {
     }
 
     track('schedule_synced', { items: toScheduleItems().length })
+    success = true
   } catch (err) {
     console.error('pullSchedule error:', err)
   } finally {
     _pullActive = false
+    if (success) _lastPulledUserId = userId
   }
 }
 

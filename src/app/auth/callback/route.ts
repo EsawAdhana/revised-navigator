@@ -7,7 +7,11 @@ function getRedirectOrigin(request: Request): string {
   const isLocalEnv = process.env.NODE_ENV === 'development'
 
   if (isLocalEnv) return origin
-  if (forwardedHost) return `https://${forwardedHost}`
+  if (forwardedHost) {
+    const host = forwardedHost.split(',')[0].trim()
+    const allowedHost = new URL(process.env.NEXT_PUBLIC_SITE_URL || origin).hostname
+    if (host === allowedHost) return `https://${host}`
+  }
   return origin
 }
 
@@ -29,6 +33,6 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/?auth_error=session_failed`)
   }
 
-  const safeNext = next.startsWith('/') ? next : '/'
+  const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/'
   return NextResponse.redirect(`${origin}${safeNext}`)
 }

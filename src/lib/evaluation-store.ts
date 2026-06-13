@@ -76,7 +76,18 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
     if (toFetch.length === 0) return
     for (const id of toFetch) bulkInFlight.add(id)
 
-    set(state => ({ ...state, isBulkLoading: true }))
+    set(state => {
+      const loadingCourses = { ...state.loadingCourses }
+      for (const id of toFetch) loadingCourses[id] = true
+      return { ...state, isBulkLoading: true, loadingCourses }
+    })
+
+    const clearLoadingFlags = (loadingCourses: Record<string, boolean>) => {
+      const next = { ...loadingCourses }
+      for (const id of toFetch) delete next[id]
+      return next
+    }
+
 
     try {
       const res = await fetch('/api/evaluations', {
@@ -89,12 +100,23 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
         set(state => {
           const updated = { ...state.evaluations }
           for (const id of toFetch) if (!(id in updated)) updated[id] = []
-          return { evaluations: updated, isBulkLoading: false }
+          return {
+            evaluations: updated,
+            isBulkLoading: false,
+            loadingCourses: clearLoadingFlags(state.loadingCourses),
+          }
         })
         return
       }
       if (!res.ok) throw new Error(`API error: ${res.status}`)
-      const byCourse = (await res.json()) as Record<string, CourseEvaluation[]>
+      const raw: unknown = await res.json()
+      const byCourse: Record<string, CourseEvaluation[]> = {}
+      if (raw && typeof raw === 'object') {
+        for (const [courseId, evals] of Object.entries(raw as Record<string, unknown>)) {
+          byCourse[courseId] = Array.isArray(evals) ? (evals as CourseEvaluation[]) : []
+        }
+      }
+
 
       const fetched: Record<string, CourseEvaluation[]> = {}
       for (const [courseId, evals] of Object.entries(byCourse)) {
@@ -107,7 +129,11 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
       set(state => {
         const merged = { ...state.evaluations, ...fetched }
         writeEvalCache(merged)
-        return { evaluations: merged, isBulkLoading: false }
+        return {
+          evaluations: merged,
+          isBulkLoading: false,
+          loadingCourses: clearLoadingFlags(state.loadingCourses),
+        }
       })
     } catch (err) {
       console.error('Failed to bulk load evaluations:', err)
@@ -118,7 +144,12 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
           if (!(id in updated)) updated[id] = []
           errors[id] = true
         }
-        return { evaluations: updated, errorCourses: errors, isBulkLoading: false }
+        return {
+          evaluations: updated,
+          errorCourses: errors,
+          isBulkLoading: false,
+          loadingCourses: clearLoadingFlags(state.loadingCourses),
+        }
       })
     } finally {
       for (const id of toFetch) bulkInFlight.delete(id)

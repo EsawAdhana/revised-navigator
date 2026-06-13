@@ -50,7 +50,7 @@ export function getAlternateCourseCodesFromTitle(title: string): string[] {
   const match = trimmed.match(/\s*\(([^)]+)\)\s*$/)
   if (!match) return []
   const inner = match[1].trim()
-  const courseCodeList = /^[A-Za-z]{2,10}\s+\d{1,3}[A-Za-z]?(\s*,\s*[A-Za-z]{2,10}\s+\d{1,3}[A-Za-z]?)*$/
+  const courseCodeList = /^[A-Za-z&]{2,10}\s+\d{1,3}[A-Za-z]?(\s*,\s*[A-Za-z&]{2,10}\s+\d{1,3}[A-Za-z]?)*$/
   if (!courseCodeList.test(inner)) return []
   return inner.split(/\s*,\s*/).map(part => part.replace(/\s+/g, '').toUpperCase())
 }

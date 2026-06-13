@@ -313,7 +313,7 @@ function InlineEval({ evaluation, disableComments }: { evaluation: CourseEvaluat
             <ScoreBadge key={i} score={q.median} size="sm" />
           ))}
         </div>
-        {hoursQ ? (
+        {hoursQ && typeof hoursQ.median === 'number' ? (
           <span className="text-[10px] font-semibold text-foreground tabular-nums w-14 text-right">
             {hoursQ.median.toFixed(0)} hrs/wk
           </span>

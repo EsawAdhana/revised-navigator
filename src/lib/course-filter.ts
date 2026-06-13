@@ -30,6 +30,7 @@ function hasOverlap(m1: Meeting, m2: Meeting, cartItem?: CartItem): boolean {
     commonDays = commonDays.filter(day => !isMeetingOptional(cartItem, day, m2.startTime, m2.endTime))
   }
   if (commonDays.length === 0) return false
+  if (!m1.endTime || !m2.endTime) return false
   const start1 = timeToMinutes(m1.startTime)
   const end1 = timeToMinutes(m1.endTime)
   const start2 = timeToMinutes(m2.startTime)

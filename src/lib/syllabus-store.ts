@@ -151,21 +151,23 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
     set(s => ({ officialVotes: { ...s.officialVotes, [key]: optimistic } }))
 
     try {
+      let error
       if (newVote === 0) {
-        await supabase
+        ({ error } = await supabase
           .from('syllabus_votes')
           .delete()
           .eq('course_id', courseId)
           .eq('term', term)
-          .eq('user_id', userId)
+          .eq('user_id', userId))
       } else {
-        await supabase
+        ({ error } = await supabase
           .from('syllabus_votes')
           .upsert(
             { course_id: courseId, term, user_id: userId, vote: newVote },
             { onConflict: 'course_id,term,user_id' }
-          )
+          ))
       }
+      if (error) throw error
     } catch (err) {
       console.error('Error casting official vote:', err)
       get().fetchSyllabusData(courseId, term)
@@ -212,11 +214,12 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
     }))
 
     try {
-      await supabase
+      const { error } = await supabase
         .from('syllabus_submissions')
         .delete()
         .eq('id', submissionId)
         .eq('user_id', userId)
+      if (error) throw error
     } catch (err) {
       console.error('Error deleting submission:', err)
       get().fetchSyllabusData(courseId, term)
@@ -247,35 +250,39 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
     }))
 
     try {
+      let voteError
       if (newVote === 0) {
-        await supabase
+        ({ error: voteError } = await supabase
           .from('syllabus_submission_votes')
           .delete()
           .eq('submission_id', submissionId)
-          .eq('user_id', userId)
+          .eq('user_id', userId))
       } else {
-        await supabase
+        ({ error: voteError } = await supabase
           .from('syllabus_submission_votes')
           .upsert(
             { submission_id: submissionId, user_id: userId, vote: newVote },
             { onConflict: 'submission_id,user_id' }
-          )
+          ))
       }
+      if (voteError) throw voteError
 
       // Recalculate and persist the cached score
-      const { data: allVotes } = await supabase
+      const { data: allVotes, error: votesError } = await supabase
         .from('syllabus_submission_votes')
         .select('vote')
         .eq('submission_id', submissionId)
+      if (votesError) throw votesError
 
       const netScore = (allVotes || []).reduce((sum: number, v: { vote: number }) => sum + v.vote, 0)
 
       // Auto-remove submissions with 3+ net downvotes
       if (netScore <= -3) {
-        await supabase
+        const { error: deleteError } = await supabase
           .from('syllabus_submissions')
           .delete()
           .eq('id', submissionId)
+        if (deleteError) throw deleteError
 
         set(s => ({
           submissions: {
@@ -286,10 +293,11 @@ export const useSyllabusStore = create<SyllabusState>((set, get) => ({
         return
       }
 
-      await supabase
+      const { error: updateError } = await supabase
         .from('syllabus_submissions')
         .update({ score: netScore })
         .eq('id', submissionId)
+      if (updateError) throw updateError
 
       // Sync local state with real score
       set(s => ({

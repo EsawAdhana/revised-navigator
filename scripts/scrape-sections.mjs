@@ -179,7 +179,7 @@ function parseSection(sectionNode, courseNode) {
         grading: courseNode?.grading || '',
         classLevel: textVal(sectionNode?.classLevel) || '',
         instructionalMode: sectionNode?.instructionalMode || '',
-        status: sectionNode?.currentlyEnrolled || '',
+        status: sectionNode?.enrollStatus || '',
         enrolled: parseInt(sectionNode?.currentClassSize, 10) || 0,
         capacity: parseInt(sectionNode?.maxClassSize, 10) || 0,
         waitlist: parseInt(sectionNode?.currentWaitlistSize, 10) || 0,
