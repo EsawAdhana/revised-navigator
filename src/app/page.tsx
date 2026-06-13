@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Logo } from '@/components/logo';
 import { HeroActions } from '@/components/hero-actions';
+import { LandingRedirect } from '@/components/landing-redirect';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LandingPreview } from '@/components/landing-preview';
 
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
 export default function LandingPage() {
   return (
     <main className="flex min-h-screen flex-col bg-background">
+      <LandingRedirect />
       {/* Top bar */}
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 sm:px-8 h-16">
         <div className="flex items-center gap-2.5">

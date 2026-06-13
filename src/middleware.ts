@@ -43,7 +43,17 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Signed-in users skip the marketing landing page and go straight to the app.
+  if (
+    url.pathname === '/' &&
+    user?.email?.endsWith('@stanford.edu') &&
+    !url.searchParams.has('code') &&
+    !url.searchParams.has('auth_error')
+  ) {
+    return NextResponse.redirect(new URL('/browse', url.origin))
+  }
 
   return supabaseResponse
 }
