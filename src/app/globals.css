@@ -312,30 +312,6 @@ input[type="range"].filter-range::-moz-range-thumb {
   animation: gradient-shift 8s ease infinite;
 }
 
-@keyframes grow-loop {
-  0% {
-    transform: scaleY(0);
-    opacity: 0;
-  }
-  40% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-  60% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scaleY(0);
-    opacity: 0;
-  }
-}
-
-.animate-grow-up {
-  transform-origin: bottom;
-  animation: grow-loop 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-
 .animate-marquee {
   display: flex;
   animation: marquee linear infinite;
