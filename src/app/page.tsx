@@ -7,9 +7,9 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { LandingPreview } from '@/components/landing-preview';
 
 export const metadata: Metadata = {
-  title: 'Stanford Root — A better way to browse Stanford courses',
+  title: 'Stanford Root — Search every Stanford course and evaluation',
   description:
-    "Explore Stanford's full course catalog, read student evaluations, and build your weekly schedule — fast, clean, and free.",
+    "Browse Stanford's full course catalog, read real student course evaluations, and build a conflict-free weekly schedule.",
 };
 
 export default function LandingPage() {
@@ -20,7 +20,7 @@ export default function LandingPage() {
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 sm:px-8 h-16">
         <div className="flex items-center gap-2.5">
           <Logo className="h-8 w-8" />
-          <span className="text-lg font-bold tracking-tight text-foreground font-[family-name:var(--font-outfit)]">
+          <span className="font-display text-xl font-semibold tracking-tight text-foreground">
             Stanford Root
           </span>
         </div>
@@ -30,23 +30,25 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section className="mx-auto w-full max-w-6xl px-6 pt-14 sm:pt-20">
+      <section className="mx-auto w-full max-w-6xl px-6 pt-12 sm:pt-16">
         <div className="mx-auto max-w-3xl text-center">
-          <h1 className="animate-fade-in-up text-balance text-4xl font-bold tracking-tight text-foreground sm:text-6xl font-[family-name:var(--font-outfit)]">
-            A better way to browse{' '}
-            <span className="text-primary">Stanford courses</span>
+          <h1 className="animate-fade-in-up text-balance text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-5xl">
+            Every Stanford course and evaluation, in one search.
           </h1>
-          <p className="animate-fade-in-up mx-auto mt-6 max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
-            Search the catalog, read real student evaluations, and build your weekly schedule —
-            all in one fast, clean, and free place.
+          <p className="animate-fade-in-up mx-auto mt-5 max-w-xl text-balance text-lg leading-relaxed text-muted-foreground">
+            Browse the full course catalog, read real student course evaluations, and build a
+            conflict-free weekly schedule.
           </p>
-          <div className="animate-fade-in-up relative z-10 mt-10 flex justify-center">
+          <div className="relative z-10 mt-8 flex justify-center">
             <HeroActions />
           </div>
+          <p className="mt-5 text-sm text-muted-foreground/80">
+            Built on Stanford&rsquo;s official course catalog and student evaluations.
+          </p>
         </div>
 
-        {/* Product preview */}
-        <div className="mt-16 px-2 pb-24 sm:mt-20">
+        {/* What you can do */}
+        <div className="mt-16 pb-24 sm:mt-20">
           <LandingPreview />
         </div>
       </section>
