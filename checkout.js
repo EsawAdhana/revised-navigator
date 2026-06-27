@@ -12,10 +12,12 @@ function renderCartSummary(cart) {
   let total = 0;
   for (let i = 0; i < cart.items.length; i++) {
     const item = cart.items[i];
-    // BUG: `item` can be undefined when a line item fails to resolve
+    // A line item can be undefined when it fails to resolve
     // (e.g. an out-of-stock product or a stale cart entry). Reading `.price`
     // on undefined throws:
     //   TypeError: Cannot read properties of undefined (reading 'price')
+    // FIX: skip unresolved line items instead of dereferencing undefined.
+    if (!item) continue;
     total += item.price * item.quantity;
   }
   return total;
@@ -25,14 +27,10 @@ function checkout() {
   const cart = {
     items: [
       { name: 'Keyboard', price: 79.0, quantity: 1 },
-      undefined, // unresolved / out-of-stock line item -> triggers the crash
+      undefined, // unresolved / out-of-stock line item -> previously triggered the crash
       { name: 'Mouse', price: 25.0, quantity: 2 },
     ],
   };
-  return renderCartSummary(cart);
-}
-
-if (typeof window !== 'undefined') {
-  window.renderCartSummary = renderCartSummary;
-  window.checkout = checkout;
+  const total = renderCartSummary(cart);
+  return total;
 }
