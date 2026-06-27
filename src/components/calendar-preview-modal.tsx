@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { useCourseStore } from '@/lib/store';
-import { parseMeetingTimes, parseTimeRange, timeToMinutes } from '@/lib/schedule-utils';
+import { parseMeetingTimes, parseTimeRange, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils';
 import { cn, decodeHtmlEntities, parseUnitsOptions } from '@/lib/utils';
 import { AlertTriangle, CalendarPlus, Calendar, Clock, MapPin } from 'lucide-react';
 import type { Course, Section } from '@/types/course';
@@ -25,6 +25,8 @@ type CalendarEvent = {
     endTime: string;
     location?: string;
     isPreview: boolean;
+    /** Meeting the user hid on their schedule — excluded from conflict detection. */
+    isOptional?: boolean;
 };
 
 type LaidOutEvent = CalendarEvent & {
@@ -118,6 +120,7 @@ export function CalendarPreviewModal({
                         endTime: m.endTime,
                         location: m.location,
                         isPreview: false,
+                        isOptional: isMeetingOptional(c, day, m.startTime, m.endTime),
                     });
                 });
             });
@@ -135,10 +138,10 @@ export function CalendarPreviewModal({
             if (!range?.startTime) return;
             const startTime = range.startTime;
             const endTime = range.endTime
-            if (!startTime) return;
+            if (!startTime || !endTime) return;
             const start = timeToMinutes(startTime);
-            const end = endTime ? timeToMinutes(endTime) : start + 60;
-            if (!start || end <= start) return;
+            const end = timeToMinutes(endTime);
+            if (!start || !end || end <= start) return;
 
             // Parse days (reuse normalization logic)
             const rawDays = (m.days || '').split(/[,\s]+/).map((d: string) => {
@@ -177,6 +180,7 @@ export function CalendarPreviewModal({
         const names = new Set<string>();
         previewEvents.forEach(pv => {
             existingEvents.forEach(ex => {
+                if (ex.isOptional) return; // hidden meetings don't count as conflicts (matches browse)
                 if (ex.day === pv.day && ex.start < pv.end && ex.end > pv.start) {
                     names.add(ex.courseCode);
                 }
@@ -362,7 +366,8 @@ export function CalendarPreviewModal({
                                                     key={ev.id}
                                                     className={cn(
                                                         'absolute rounded-md border px-1 py-0.5 overflow-hidden z-10 shadow-sm',
-                                                        colorClasses
+                                                        colorClasses,
+                                                        ev.isOptional && 'opacity-55 border-dashed grayscale'
                                                     )}
                                                     style={{
                                                         top: `${topPx}px`,

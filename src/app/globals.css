@@ -4,72 +4,72 @@
 
 @layer base {
   :root {
-    /* Stanford Identity — refined palette */
-    --background: 40 20% 99%;
-    --foreground: 40 10% 12%;
+    /* shadcn/ui default (zinc) neutrals + Stanford Cardinal Red brand */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 40 10% 12%;
+    --card-foreground: 240 10% 3.9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 40 10% 12%;
+    --popover-foreground: 240 10% 3.9%;
 
     --primary: 0 74% 32%;
     /* Cardinal Red #8C1515 */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 40 15% 95%;
-    --secondary-foreground: 40 10% 12%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
 
-    --muted: 40 10% 93%;
-    --muted-foreground: 40 5% 45%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
 
-    --accent: 40 15% 95%;
-    --accent-foreground: 40 10% 12%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
 
     --destructive: 0 74% 32%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 40 10% 90%;
-    --input: 40 10% 90%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
 
     --ring: 0 74% 32%;
-    --radius: 0.75rem;
+    --radius: 0.5rem;
     color-scheme: light;
   }
 
   .dark {
-    /* Warm dark Cardinal theme */
+    /* Warm-neutral charcoal neutrals + brightened Cardinal */
     color-scheme: dark;
-    --background: 40 12% 8%;
-    --foreground: 40 15% 92%;
+    --background: 30 6% 9%;
+    --foreground: 40 8% 96%;
 
-    --card: 40 10% 11%;
-    --card-foreground: 40 15% 92%;
+    --card: 30 6% 12%;
+    --card-foreground: 40 8% 96%;
 
-    --popover: 40 10% 10%;
-    --popover-foreground: 40 15% 92%;
+    --popover: 30 6% 11%;
+    --popover-foreground: 40 8% 96%;
 
     --primary: 0 70% 52%;
     /* Brightened Cardinal for contrast on dark */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 40 8% 16%;
-    --secondary-foreground: 40 15% 92%;
+    --secondary: 30 5% 17%;
+    --secondary-foreground: 40 8% 96%;
 
-    --muted: 40 6% 18%;
-    --muted-foreground: 40 8% 62%;
+    --muted: 30 5% 17%;
+    --muted-foreground: 30 5% 65%;
 
-    --accent: 40 8% 18%;
-    --accent-foreground: 40 15% 92%;
+    --accent: 30 5% 17%;
+    --accent-foreground: 40 8% 96%;
 
     --destructive: 0 70% 52%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 40 8% 20%;
-    --input: 40 8% 20%;
+    --border: 30 5% 21%;
+    --input: 30 5% 19%;
 
-    --ring: 0 70% 52%;
+    --ring: 240 4.9% 83.9%;
   }
 }
 
@@ -200,92 +200,6 @@ input[type="range"].filter-range::-moz-range-thumb {
   }
 }
 
-@keyframes float {
-
-  0%,
-  100% {
-    transform: translateY(0px);
-  }
-
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
-@keyframes pulse-subtle {
-
-  0%,
-  100% {
-    opacity: 0.4;
-  }
-
-  50% {
-    opacity: 0.8;
-  }
-}
-
-@keyframes gradient-shift {
-  0% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-@keyframes marquee {
-  0% {
-    transform: translateX(0);
-  }
-
-  100% {
-    transform: translateX(-50%);
-  }
-}
-
-@keyframes marquee-reverse {
-  0% {
-    transform: translateX(-50%);
-  }
-
-  100% {
-    transform: translateX(0);
-  }
-}
-
-@keyframes grain {
-
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-
-  10% {
-    transform: translate(-2%, -2%);
-  }
-
-  30% {
-    transform: translate(1%, -3%);
-  }
-
-  50% {
-    transform: translate(-1%, 2%);
-  }
-
-  70% {
-    transform: translate(3%, 1%);
-  }
-
-  90% {
-    transform: translate(2%, 3%);
-  }
-}
-
 .animate-fade-in {
   animation: fade-in 0.4s ease-out both;
 }
@@ -303,25 +217,6 @@ input[type="range"].filter-range::-moz-range-thumb {
   animation: shimmer 1.8s ease-in-out infinite;
 }
 
-.animate-float {
-  animation: float 3s ease-in-out infinite;
-}
-
-.animate-gradient {
-  background-size: 300% 300%;
-  animation: gradient-shift 8s ease infinite;
-}
-
-.animate-marquee {
-  display: flex;
-  animation: marquee linear infinite;
-}
-
-.animate-marquee-reverse {
-  display: flex;
-  animation: marquee-reverse linear infinite;
-}
-
 /* ── Skeleton loader ── */
 .skeleton {
   background: linear-gradient(90deg,
@@ -331,15 +226,4 @@ input[type="range"].filter-range::-moz-range-thumb {
   background-size: 200% 100%;
   animation: shimmer 1.8s ease-in-out infinite;
   border-radius: var(--radius);
-}
-
-/* ── Noise texture overlay ── */
-.noise::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  opacity: 0.025;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 1;
 }

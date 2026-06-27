@@ -9,7 +9,9 @@ import { SiteHeader } from '@/components/site-header';
 import { useCartStore } from '@/lib/cart-store';
 import { searchCourses } from '@/lib/search-utils';
 import { compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 
 const CourseDetailContent = dynamic(
   () => import('@/components/course-detail-content').then(m => ({ default: m.CourseDetailContent })),
@@ -34,6 +36,7 @@ export function CoursePageClient() {
     const hasLoaded = useCourseStore(s => s.hasLoaded);
     const hasEnriched = useCourseStore(s => s.hasEnriched);
     const fetchCourseDetail = useCourseStore(s => s.fetchCourseDetail);
+    const failedDetailIds = useCourseStore(s => s.failedDetailIds);
     const getItem = useCartStore(s => s.getItem);
 
     useEffect(() => {
@@ -87,6 +90,19 @@ export function CoursePageClient() {
         course && (hasEnriched || hasFullCourseData(course))
     );
 
+    const detailFailed = Boolean(
+        hasLoaded && course && !isDetailReady && failedDetailIds.has(courseId)
+    );
+
+    const retryDetail = () => {
+        useCourseStore.setState(state => {
+            const next = new Set(state.failedDetailIds);
+            next.delete(courseId);
+            return { failedDetailIds: next };
+        });
+        fetchCourseDetail(courseId);
+    };
+
     useEffect(() => {
         if (hasLoaded && course && !isDetailReady) {
             fetchCourseDetail(courseId);
@@ -130,7 +146,21 @@ export function CoursePageClient() {
         <div className="min-h-screen bg-background flex flex-col">
             <SiteHeader />
             <main className="flex-1 bg-background">
-                {(!hasLoaded && !course) || (hasLoaded && course && !isDetailReady) ? (
+                {detailFailed ? (
+                    <div className="flex flex-1 flex-col items-center justify-center gap-4 mt-32 px-4 text-center">
+                        <AlertCircle className="h-8 w-8 text-muted-foreground" />
+                        <div className="space-y-1">
+                            <h1 className="text-lg font-semibold">Couldn&apos;t load this class</h1>
+                            <p className="text-sm text-muted-foreground">Something went wrong fetching the class details.</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button onClick={retryDetail}>Try again</Button>
+                            <Button variant="outline" asChild>
+                                <Link href="/browse">Back to browse</Link>
+                            </Button>
+                        </div>
+                    </div>
+                ) : ((!hasLoaded && !course) || (hasLoaded && course && !isDetailReady)) ? (
                     <div className="flex flex-1 items-center justify-center">
                         <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
                             <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
@@ -138,9 +168,12 @@ export function CoursePageClient() {
                         </div>
                     </div>
                 ) : !course ? (
-                    <div className="flex flex-1 flex-col items-center justify-center gap-4 mt-32">
+                    <div className="flex flex-1 flex-col items-center justify-center gap-4 mt-32 px-4 text-center">
                         <h1 className="text-2xl font-bold">Course Not Found</h1>
                         <p className="text-muted-foreground">The course you are looking for does not exist or has been removed.</p>
+                        <Button variant="outline" asChild>
+                            <Link href="/browse">Back to browse</Link>
+                        </Button>
                     </div>
                 ) : (
                     <CourseDetailContent course={course} />

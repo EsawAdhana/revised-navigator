@@ -20,6 +20,7 @@ import { Course, CourseEvaluation } from '@/types/course';
 import { CourseDescription } from './course-description';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { useMemo } from 'react';
+import { useQueryState, parseAsArrayOf, parseAsString } from 'nuqs';
 import { CalendarPreviewModal } from './calendar-preview-modal';
 import { isWimCourse } from '@/lib/wim-courses';
 import { compareTerms, getDefaultTerm, isFutureTerm as isTermInFuture } from '@/lib/terms';
@@ -118,6 +119,16 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
     const terms = useMemo(() => Object.keys(sectionsByTerm).sort(compareTerms), [sectionsByTerm]);
 
+    // Term(s) carried over from the browse filter (?terms=). When the user arrived
+    // having filtered to a specific quarter, open that quarter's tab if this course
+    // offers it, instead of defaulting to the latest offered term.
+    const [urlTerms] = useQueryState('terms', parseAsArrayOf(parseAsString));
+    const incomingPreferredTerm = useMemo(() => {
+        if (!urlTerms || urlTerms.length === 0) return null;
+        const offered = urlTerms.filter(t => terms.includes(t)).sort(compareTerms);
+        return offered[0] ?? null;
+    }, [urlTerms, terms]);
+
     // Precompute cross-listed enrollment per section so it isn't recomputed for every render/tab switch
     const enrollmentBySectionId = useMemo(() => {
         const map = new Map<number, ReturnType<typeof aggregateCrossListedSectionEnrollment>>();
@@ -134,6 +145,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         if (cartItem?.selectedTerm && terms.includes(cartItem.selectedTerm)) {
             return cartItem.selectedTerm;
         }
+        if (incomingPreferredTerm) return incomingPreferredTerm;
         return getDefaultTerm(terms);
     });
 
@@ -196,7 +208,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         if (cartItem?.selectedTerm && terms.includes(cartItem.selectedTerm)) {
             setActiveTerm(cartItem.selectedTerm);
         } else if (terms.length > 0 && !terms.includes(activeTerm)) {
-            setActiveTerm(getDefaultTerm(terms));
+            setActiveTerm(incomingPreferredTerm ?? getDefaultTerm(terms));
         }
     }, [course.id, cartItem?.selectedTerm, terms.length]); // eslint-disable-line react-hooks/exhaustive-deps -- activeTerm omitted to avoid loop; setActiveTerm is stable
 
@@ -263,7 +275,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
             {/* Header Area */}
             <div className="space-y-3">
                 <div className="flex items-center gap-3 pl-3 md:pl-4">
-                    <h1 className="text-2xl font-bold text-destructive tracking-tight font-[family-name:var(--font-outfit)]">
+                    <h1 className="text-2xl font-bold text-destructive tracking-tight">
                         {course.subject} {course.code}
                     </h1>
                 </div>
@@ -275,11 +287,9 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                         <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight shrink-0">UNITS:</span>
                         <span className="text-[18px] font-bold text-foreground tabular-nums">
                             {(() => {
-                                const u = (course.units || '').toString();
-                                const opts = parseUnitsOptions(u);
-                                if (opts.length === 1) return opts[0];
-                                if (opts.length > 1) return u;
-                                return 0;
+                                if (unitOptions.length === 1) return unitOptions[0];
+                                if (unitOptions.length > 1) return (unitsSource ?? course.units ?? '').toString();
+                                return '—';
                             })()}
                         </span>
                     </div>
@@ -289,7 +299,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                     </div>
                     <div className="order-3 flex flex-col md:flex-row md:items-center gap-0.5 md:gap-2 p-3 border-r border-border/40 shrink-0">
                         <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight shrink-0">LEVEL:</span>
-                        <span className="text-[18px] font-bold text-foreground">{formatLevel(course.sections?.[0]?.classLevel || course.code)}</span>
+                        <span className="text-[18px] font-bold text-foreground">{formatLevel(activeSection?.classLevel || course.code)}</span>
                     </div>
                     <div className="order-4 flex flex-col md:flex-row md:items-center gap-0.5 md:gap-2 p-3 min-w-0 shrink-0">
                         <span className="text-[15px] font-bold text-muted-foreground uppercase tracking-tight shrink-0">GER:</span>

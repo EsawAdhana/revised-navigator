@@ -26,7 +26,7 @@ export default function ErrorBoundary({
                     <AlertCircle size={48} className="relative z-10" />
                 </div>
 
-                <h2 className="text-3xl font-extrabold text-foreground tracking-tight mb-3 font-[family-name:var(--font-outfit)]">
+                <h2 className="text-3xl font-extrabold text-foreground tracking-tight mb-3">
                     Something went wrong!
                 </h2>
 
@@ -38,7 +38,7 @@ export default function ErrorBoundary({
                     <Button
                         onClick={() => reset()}
                         size="lg"
-                        className="gap-2 font-bold font-[family-name:var(--font-outfit)] min-w-[160px]"
+                        className="gap-2 font-bold min-w-[160px]"
                     >
                         <RefreshCcw size={18} />
                         Try Again
@@ -47,7 +47,7 @@ export default function ErrorBoundary({
                         variant="outline"
                         size="lg"
                         onClick={() => window.location.href = '/'}
-                        className="gap-2 font-bold font-[family-name:var(--font-outfit)] min-w-[160px]"
+                        className="gap-2 font-bold min-w-[160px]"
                     >
                         Return Home
                     </Button>

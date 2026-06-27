@@ -42,8 +42,8 @@ export default function BrowsePage() {
     <Suspense fallback={
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <Logo className="h-10 w-10 animate-float" />
-          <span className="text-sm font-medium text-muted-foreground animate-pulse">Loading courses…</span>
+          <Logo className="h-10 w-10 animate-pulse" />
+          <span className="text-sm font-medium text-muted-foreground">Loading courses…</span>
         </div>
       </div>
     }>

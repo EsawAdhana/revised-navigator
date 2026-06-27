@@ -3,14 +3,17 @@
 import React, { useMemo } from 'react'
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs'
 import { X } from 'lucide-react'
-import { abbreviateGer, unitsLabel } from '@/lib/utils'
+import { abbreviateGer, unitsLabel, formatComponent } from '@/lib/utils'
 import { formatMinutes } from '@/lib/schedule-utils'
-import { getDefaultTerm } from '@/lib/terms'
+import { useResetFilters } from '@/hooks/use-reset-filters'
+import { useSelectedTerms } from '@/hooks/use-selected-terms'
 
 export function ActiveFilterChips() {
+  const [query, setQuery] = useQueryState('q', { defaultValue: '' })
   const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false))
+  const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false))
   const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]))
-  const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([getDefaultTerm()]))
+  const [selectedTerms, setSelectedTerms] = useSelectedTerms()
   const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedFormats, setSelectedFormats] = useQueryState('formats', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedLevels, setSelectedLevels] = useQueryState('levels', parseAsArrayOf(parseAsString).withDefault([]))
@@ -20,6 +23,7 @@ export function ActiveFilterChips() {
   const [timeMax, setTimeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320))
   const [selectedGers, setSelectedGers] = useQueryState('gers', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedSchools, setSelectedSchools] = useQueryState('schools', parseAsArrayOf(parseAsString).withDefault([]))
+  const resetFilters = useResetFilters()
 
   const toggleFilter = (item: string, current: string[], setFn: (val: string[] | null) => void, isTerm = false) => {
     if (current.includes(item)) {
@@ -43,8 +47,14 @@ export function ActiveFilterChips() {
 
   const chips = useMemo(() => {
     const out: { id: string, label: string, onRemove: () => void }[] = []
+    if (query.trim()) {
+      out.push({ id: 'search', label: `Search: ${query.trim()}`, onRemove: () => setQuery(null) })
+    }
     if (hideConflicts) {
-      out.push({ id: 'showConflicts', label: 'Show conflicting', onRemove: () => setHideConflicts(false) })
+      out.push({ id: 'hideConflicts', label: 'Hiding conflicts', onRemove: () => setHideConflicts(false) })
+    }
+    if (hideUnavailable) {
+      out.push({ id: 'hideUnavailable', label: 'Hiding closed & waitlisted', onRemove: () => setHideUnavailable(false) })
     }
     excludedWords.forEach(word => {
       out.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })
@@ -58,7 +68,7 @@ export function ActiveFilterChips() {
       out.push({ id: `dept-${dept}`, label: dept, onRemove: () => removeDept(dept) })
     })
     selectedFormats.forEach(fmt => {
-      out.push({ id: `fmt-${fmt}`, label: fmt, onRemove: () => toggleFilter(fmt, selectedFormats, setSelectedFormats) })
+      out.push({ id: `fmt-${fmt}`, label: formatComponent(fmt), onRemove: () => toggleFilter(fmt, selectedFormats, setSelectedFormats) })
     })
     selectedLevels.forEach(lvl => {
       out.push({ id: `level-${lvl}`, label: lvl, onRemove: () => toggleFilter(lvl, selectedLevels, setSelectedLevels) })
@@ -94,7 +104,7 @@ export function ActiveFilterChips() {
       out.push({ id: `school-${school}`, label: school, onRemove: () => toggleFilter(school, selectedSchools, setSelectedSchools) })
     })
     return out
-  }, [hideConflicts, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
+  }, [query, hideConflicts, hideUnavailable, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
 
   if (chips.length === 0) return null
 
@@ -116,6 +126,15 @@ export function ActiveFilterChips() {
           </button>
         </span>
       ))}
+      {chips.length > 1 && (
+        <button
+          type="button"
+          onClick={resetFilters}
+          className="inline-flex items-center h-8 sm:h-7 px-2.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        >
+          Clear all
+        </button>
+      )}
     </div>
   )
 }

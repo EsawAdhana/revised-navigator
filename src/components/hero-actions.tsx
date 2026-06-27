@@ -12,7 +12,7 @@ export function HeroActions() {
       <Button
         asChild
         size="lg"
-        className="h-12 px-7 text-base font-semibold rounded-full font-[family-name:var(--font-outfit)] shadow-sm hover:shadow-md transition-all hover:scale-[1.02] active:scale-[0.99]"
+        className="h-12 px-7 text-base font-semibold rounded-lg shadow-sm transition-colors"
       >
         <Link href="/browse">
           Browse courses
@@ -25,7 +25,7 @@ export function HeroActions() {
         variant="outline"
         size="lg"
         signingInLabel="Redirecting to Stanford…"
-        className="h-12 px-7 text-base font-semibold rounded-full border-border/70 hover:bg-secondary/60 transition-all hover:scale-[1.02] active:scale-[0.99] gap-2"
+        className="h-12 px-7 text-base font-semibold rounded-lg border-border/70 hover:bg-secondary/60 transition-colors gap-2"
       />
     </div>
   )

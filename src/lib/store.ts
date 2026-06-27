@@ -10,6 +10,8 @@ type CourseStore = {
   isEnriching: boolean
   hasEnriched: boolean
   enrichedCourseIds: Set<string>
+  catalogError: boolean
+  failedDetailIds: Set<string>
   fetchCourses: () => Promise<void>
   fetchCourseDetail: (courseId: string) => Promise<void>
   fetchCourseDetails: (courseIds: string[]) => Promise<void>
@@ -146,6 +148,8 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
   isEnriching: false,
   hasEnriched: false,
   enrichedCourseIds: new Set(),
+  catalogError: false,
+  failedDetailIds: new Set(),
 
   fetchCourses: async () => {
     if (fetchCoursesInFlight) return fetchCoursesInFlight
@@ -162,10 +166,11 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
         hasLoaded: true,
         hasEnriched: true,
         isLoading: false,
+        catalogError: false,
         enrichedCourseIds: enrichedIdsFromCourses(stale),
       })
       // Fall through to fetch fresh in background
-    } else if (hasLoaded) {
+    } else if (hasLoaded && !get().catalogError) {
       return
     } else {
       set({ isLoading: true })
@@ -180,6 +185,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
           hasLoaded: true,
           hasEnriched: true,
           isLoading: false,
+          catalogError: false,
           enrichedCourseIds: enrichedIdsFromCourses(cached),
         })
         return
@@ -200,6 +206,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
           isLoading: false,
           isEnriching: true,
           hasEnriched: false,
+          catalogError: false,
         })
       }
 
@@ -216,6 +223,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
         isLoading: false,
         isEnriching: false,
         hasEnriched: true,
+        catalogError: false,
         enrichedCourseIds: new Set(fullCourses.map(c => c.id)),
       })
     } catch (err) {
@@ -223,7 +231,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
       // Preserve stale data on error — don't overwrite with empty array
       const { courses } = get()
       if (courses.length === 0) {
-        set({ hasLoaded: true, isLoading: false, isEnriching: false })
+        set({ hasLoaded: true, isLoading: false, isEnriching: false, catalogError: true })
       } else {
         set({ isLoading: false, isEnriching: false })
       }
@@ -294,12 +302,20 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
 
       // Use functional set to read fresh state — parallel calls would otherwise
       // each overwrite with their own stale snapshot of courses/enrichedCourseIds
-      set(state => ({
-        courses: state.courses.map(c => c.id === courseId ? enriched : c),
-        enrichedCourseIds: new Set([...state.enrichedCourseIds, courseId]),
-      }))
+      set(state => {
+        const failedDetailIds = new Set(state.failedDetailIds)
+        failedDetailIds.delete(courseId)
+        return {
+          courses: state.courses.map(c => c.id === courseId ? enriched : c),
+          enrichedCourseIds: new Set([...state.enrichedCourseIds, courseId]),
+          failedDetailIds,
+        }
+      })
     } catch (err) {
       console.error(`Failed to fetch detail for ${courseId}:`, err)
+      set(state => ({
+        failedDetailIds: new Set([...state.failedDetailIds, courseId]),
+      }))
     }
   },
 }))

@@ -10,13 +10,13 @@ export default function NotFound() {
                 <SiteHeader />
             </Suspense>
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                <h1 className="text-6xl font-extrabold text-foreground tracking-tight mb-2 font-[family-name:var(--font-outfit)]">
+                <h1 className="text-6xl font-extrabold text-foreground tracking-tight mb-2">
                     404
                 </h1>
                 <p className="text-lg text-muted-foreground mb-8 max-w-md">
                     The page you&apos;re looking for doesn&apos;t exist or has been moved.
                 </p>
-                <Button asChild size="lg" className="font-bold font-[family-name:var(--font-outfit)]">
+                <Button asChild size="lg" className="font-bold">
                     <Link href="/">Return Home</Link>
                 </Button>
             </div>

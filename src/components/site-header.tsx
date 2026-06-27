@@ -60,7 +60,7 @@ export function SiteHeader() {
 
                 <Link href={homeHref} className="flex items-center gap-2.5 md:min-w-[120px] group py-1 px-1 sm:px-2 -ml-1 sm:-ml-2 rounded-lg hover:bg-secondary/50 transition-colors">
                     <Logo className="h-9 w-9 sm:h-10 sm:w-10 shrink-0" />
-                    <h1 className="text-2xl tracking-tight font-[family-name:var(--font-outfit)] font-bold text-primary select-none hidden sm:block transition-colors duration-300 group-hover:text-cardinal-red">
+                    <h1 className="font-display text-2xl tracking-tight font-semibold text-primary select-none hidden sm:block transition-colors duration-300 group-hover:text-cardinal-red">
                         Stanford Root
                     </h1>
                 </Link>
@@ -82,7 +82,7 @@ export function SiteHeader() {
                 <Button
                     asChild
                     variant="ghost"
-                    className="relative rounded-full h-9 w-9 px-0 md:w-auto md:px-4 text-sm font-medium gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-all"
+                    className="relative rounded-lg h-9 w-9 px-0 md:w-auto md:px-4 text-sm font-medium gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-all"
                 >
                     <Link href={scheduleHref}>
                         <CalendarDays className="h-5 w-5 md:h-4 md:w-4" />
@@ -95,7 +95,7 @@ export function SiteHeader() {
                         source="header"
                         size="default"
                         signingInLabel="Signing in…"
-                        className="ml-1 rounded-full h-9 px-4 text-sm font-medium gap-2"
+                        className="ml-1 rounded-lg h-9 px-4 text-sm font-medium gap-2"
                     >
                         Log in
                     </StanfordLoginButton>

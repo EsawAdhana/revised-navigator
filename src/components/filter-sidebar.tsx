@@ -8,7 +8,8 @@ import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, formatComponent, i
 import { searchCourses } from '@/lib/search-utils';
 import { filterCourses, type CourseFilterCriteria, type FacetKey } from '@/lib/course-filter';
 import { formatMinutes } from '@/lib/schedule-utils';
-import { getDefaultTerm, compareTerms } from '@/lib/terms';
+import { compareTerms } from '@/lib/terms';
+import { useSelectedTerms } from '@/hooks/use-selected-terms';
 import type { Course } from '@/types/course';
 import { CheckboxItem, FilterGroup } from '@/components/ui/filter-components';
 import { Input } from '@/components/ui/input';
@@ -83,7 +84,7 @@ export function FilterSidebar() {
     // State
     const [query] = useQueryState('q', { defaultValue: '' });
     const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
-    const [selectedTerms, setSelectedTerms] = useQueryState('terms', parseAsArrayOf(parseAsString).withDefault([getDefaultTerm()]));
+    const [selectedTerms, setSelectedTerms] = useSelectedTerms();
     const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
     const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
@@ -498,7 +499,7 @@ export function FilterSidebar() {
                                 <span>{dept}</span>
                                 <button
                                     onClick={() => removeDept(dept)}
-                                    className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                                    className="text-muted-foreground hover:text-foreground opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                                 >
                                     <X size={14} />
                                 </button>

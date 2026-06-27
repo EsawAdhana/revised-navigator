@@ -23,7 +23,7 @@ export default function TermsPage() {
           </Link>
         </div>
 
-        <h1 className="text-3xl font-bold text-foreground mt-8 mb-2 font-[family-name:var(--font-outfit)]">Terms of Service</h1>
+        <h1 className="text-3xl font-bold text-foreground mt-8 mb-2">Terms of Service</h1>
         <p className="text-sm text-muted-foreground mb-10">Last updated: June 9, 2026</p>
 
         <div className="prose prose-neutral dark:prose-invert max-w-none space-y-6 text-sm text-foreground/80 leading-relaxed">

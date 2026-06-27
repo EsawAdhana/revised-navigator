@@ -106,7 +106,7 @@ export function filterCourses(
 
   if (formatsSet.size > 0 && exclude !== 'formats') {
     result = result.filter(c => {
-      if (!c.sections || c.sections.length === 0) return true
+      if (!c.sections || c.sections.length === 0) return false
       return c.sections.some(s => s.component && formatsSet.has(s.component))
     })
   }
@@ -129,7 +129,7 @@ export function filterCourses(
 
   if (gersSet.size > 0 && exclude !== 'gers') {
     result = result.filter(c => {
-      if (!c.sections || c.sections.length === 0) return true
+      if (!c.sections || c.sections.length === 0) return false
       return c.sections.some(s => s.gers && s.gers.some(g => gersSet.has(g)))
     })
   }
@@ -164,7 +164,11 @@ export function filterCourses(
     const max = Math.min(1320, timeMax)
     result = result.filter(c => {
       if (!c.sections || c.sections.length === 0) return true
-      return c.sections.some(s => s.meetings?.some(m => {
+      const sectionsToCheck = hasTermFilter
+        ? c.sections.filter(s => s.term && termsSet.has(s.term))
+        : c.sections
+      if (sectionsToCheck.length === 0) return true
+      return sectionsToCheck.some(s => s.meetings?.some(m => {
         const range = parseTimeRange(m.time || '')
         if (!range?.startTime) return false
         const startMins = timeToMinutes(range.startTime)

@@ -4,7 +4,6 @@ import { Logo } from '@/components/logo';
 import { HeroActions } from '@/components/hero-actions';
 import { LandingRedirect } from '@/components/landing-redirect';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { LandingPreview } from '@/components/landing-preview';
 
 export const metadata: Metadata = {
   title: 'Stanford Root — Search every Stanford course and evaluation',
@@ -30,7 +29,7 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section className="mx-auto w-full max-w-6xl px-6 pt-12 sm:pt-16">
+      <section className="mx-auto flex w-full max-w-6xl flex-1 items-center justify-center px-6 pb-16">
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="animate-fade-in-up text-balance text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-5xl">
             Every Stanford course and evaluation, in one search.
@@ -46,17 +45,11 @@ export default function LandingPage() {
             Built on Stanford&rsquo;s official course catalog and student evaluations.
           </p>
         </div>
-
-        {/* What you can do */}
-        <div className="mt-16 pb-24 sm:mt-20">
-          <LandingPreview />
-        </div>
       </section>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-border/40 px-6 py-8">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 text-sm text-muted-foreground sm:flex-row">
-          <span>&copy; {new Date().getFullYear()} Stanford Root. All rights reserved.</span>
+      <footer className="mt-auto border-t border-border/40">
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-center gap-2 px-5 py-6 text-sm text-muted-foreground sm:flex-row sm:gap-6">
           <div className="flex items-center gap-6">
             <Link href="/privacy" className="transition-colors hover:text-foreground">
               Privacy
@@ -65,6 +58,7 @@ export default function LandingPage() {
               Terms
             </Link>
           </div>
+          <span>&copy; {new Date().getFullYear()} Stanford Root. All rights reserved.</span>
         </div>
       </footer>
     </main>

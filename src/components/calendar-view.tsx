@@ -8,7 +8,7 @@ import { promptLoginToSyncOnce } from '@/lib/login-nudge';
 import { track } from '@/lib/analytics';
 import { isMeetingOptional, parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
 import { cn, unitsLabel, decodeHtmlEntities } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search, AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -44,6 +44,7 @@ type CalendarViewProps = {
   totalUnitsMin: number
   totalUnitsMax: number
   isOverload: boolean
+  isIgnored: boolean
   onIgnoreOverload: () => void
   expectedHoursPerWeek?: number | null
   expectedHoursLoading?: boolean
@@ -53,7 +54,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMin, totalUnitsMax, isOverload, onIgnoreOverload, expectedHoursPerWeek, expectedHoursLoading }: CalendarViewProps) {
+export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMin, totalUnitsMax, isOverload, isIgnored, onIgnoreOverload, expectedHoursPerWeek, expectedHoursLoading }: CalendarViewProps) {
   const items = useCartStore(s => s.items)
   const addItem = useCartStore(s => s.addItem)
   const removeItem = useCartStore(s => s.removeItem)
@@ -282,7 +283,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                                   <TooltipTrigger asChild>
                                     <button
                                       type="button"
-                                      className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 z-20"
+                                      className="absolute right-1 top-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 z-20"
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         toggleOptionalMeeting(ev.courseId, ev.day, ev.startTime, ev.endTime)
@@ -292,12 +293,12 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                                     </button>
                                   </TooltipTrigger>
                                   <TooltipContent side="top">
-                                    {ev.isOptional ? 'Show on schedule — will count as a conflict when "Show conflicting" is off' : 'Hide from schedule — won\'t count as a conflict when "Show conflicting" is off'}
+                                    {ev.isOptional ? 'Ignored for conflict checks — click to include this meeting again' : 'Click to ignore this meeting in conflict checks (it stays dimmed on your schedule)'}
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
                               <div className="pl-0.5">
-                                <div className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate font-[family-name:var(--font-outfit)]">
+                                <div className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate">
                                   {ev.courseCode}
                                 </div>
                                 <div className="text-[9px] sm:text-[10px] opacity-80 truncate hidden sm:block">
@@ -384,7 +385,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                           }}
                         >
                           <div className="min-w-0 pr-3">
-                            <div className="text-sm font-semibold truncate font-[family-name:var(--font-outfit)] text-primary">
+                            <div className="text-sm font-semibold truncate text-primary">
                               {course.subject} {course.code}
                             </div>
                             <div className="text-xs text-muted-foreground truncate">{decodeHtmlEntities(course.title)}</div>
@@ -400,11 +401,31 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
               )}
             </div>
 
+            {isOverload && !isIgnored && (
+              <div className="flex items-start gap-2 rounded-xl border border-destructive/50 bg-destructive/5 p-3 text-destructive shrink-0">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium leading-tight">Over the 20-unit limit</p>
+                  <p className="text-xs opacity-80 mt-0.5">
+                    {totalUnitsMax} units exceeds Stanford&apos;s standard 20-unit maximum for this term.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Dismiss overload warning"
+                  onClick={onIgnoreOverload}
+                  className="rounded p-1 hover:bg-destructive/10 transition-colors shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
             {/* Metrics Layout */}
             <div className="grid grid-cols-2 gap-3 shrink-0">
               <div className={cn(
                 "p-3 rounded-xl border bg-card flex flex-col items-center justify-center transition-colors",
-                isOverload ? "border-destructive/50 bg-destructive/5 text-destructive" : ""
+                isOverload && !isIgnored ? "border-destructive/50 bg-destructive/5 text-destructive" : ""
               )}>
                 <span className="text-2xl font-semibold leading-none mb-1">
                   {currentTermCourses.length === 0 || (totalUnitsMin === 0 && totalUnitsMax === 0) ? '0' : totalUnitsMin === totalUnitsMax ? totalUnitsMin : `${totalUnitsMin}-${totalUnitsMax}`}
@@ -445,19 +466,19 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate font-[family-name:var(--font-outfit)]">{course.subject} {course.code}</div>
+                          <div className="font-medium truncate">{course.subject} {course.code}</div>
                           <div className="text-xs text-muted-foreground truncate">{decodeHtmlEntities(course.title)}</div>
                         </div>
                         <Button
                           variant="ghost" size="icon"
-                          className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="h-7 w-7 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                           onClick={(e) => { e.stopPropagation(); removeItem(course.id); }}
                         >
                           <Trash2 size={14} />
                         </Button>
                       </div>
                       <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                        {lines.length === 0 ? <div>Time TBA</div> : lines.map((line, i) => <div key={i}>{line}</div>)}
+                        {lines.length === 0 ? <div className="italic">Time TBA · not shown on calendar</div> : lines.map((line, i) => <div key={i}>{line}</div>)}
                       </div>
                     </div>
                   );

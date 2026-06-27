@@ -10,6 +10,9 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			display: ['var(--font-display)', 'ui-serif', 'Georgia', 'serif']
+  		},
   		colors: {
   			'cardinal-red': {
   				DEFAULT: '#8C1515',

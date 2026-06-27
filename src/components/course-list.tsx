@@ -6,8 +6,10 @@ import { useSearchParams } from 'next/navigation';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
 import { useCourseStore } from '@/lib/store';
 import { CourseCard } from './course-card';
-import { SearchX, ArrowUp } from 'lucide-react';
+import { SearchX, ArrowUp, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { ActiveFilterChips } from './active-filter-chips';
+import { useResetFilters } from '@/hooks/use-reset-filters';
 import {
   Select,
   SelectContent,
@@ -20,6 +22,8 @@ const SCROLL_STORAGE_KEY = 'course-list-scroll';
 
 export function CourseList() {
   const { courses, isLoading, getSortDisplayValue, getRatingForCourse, sortBy, setSortBy, sortOrder, setSortOrder } = useFilteredCourses();
+  const catalogError = useCourseStore(s => s.catalogError);
+  const fetchCourses = useCourseStore(s => s.fetchCourses);
   const vListRef = useRef<VListHandle>(null);
   const [showJumpTop, setShowJumpTop] = useState(false);
   const scrollOffsetRef = useRef(0);
@@ -51,6 +55,11 @@ export function CourseList() {
 
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
+  const resetFilters = useResetFilters();
+
+  const hasSearchQuery = (searchParams.get('q') ?? '').trim().length > 0;
+  const FILTER_PARAM_KEYS = ['q', 'depts', 'terms', 'formats', 'levels', 'gers', 'schools', 'exclude', 'unitMin', 'unitMax', 'timeMin', 'timeMax', 'hideConflicts', 'hideUnavailable'];
+  const hasAnyFilter = FILTER_PARAM_KEYS.some(k => searchParams.has(k));
 
   const prefetchCourseDetail = useCallback((courseId: string) => {
     useCourseStore.getState().fetchCourseDetail(courseId);
@@ -181,11 +190,27 @@ export function CourseList() {
 
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
         {courses.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-            <SearchX size={32} className="text-muted-foreground/30" />
-            <p className="text-sm font-medium">No courses match your filters.</p>
-            <p className="text-xs text-muted-foreground/60">Try adjusting your search or filters.</p>
-          </div>
+          catalogError ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <AlertCircle size={32} className="text-muted-foreground/40" />
+              <p className="text-sm font-medium">Couldn&apos;t load courses.</p>
+              <p className="text-xs text-muted-foreground/60">Check your connection and try again.</p>
+              <Button size="sm" variant="outline" onClick={() => fetchCourses()} className="mt-1">Retry</Button>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <SearchX size={32} className="text-muted-foreground/30" />
+              <p className="text-sm font-medium">
+                {hasSearchQuery ? 'No courses match your search.' : 'No courses match your filters.'}
+              </p>
+              <p className="text-xs text-muted-foreground/60">
+                {hasSearchQuery ? 'Try a different search or clearing your filters.' : 'Try adjusting your filters.'}
+              </p>
+              {hasAnyFilter && (
+                <Button size="sm" variant="outline" onClick={resetFilters} className="mt-1">Clear all filters</Button>
+              )}
+            </div>
+          )
         ) : (
           <>
             {/* List area — full width when A-Z (scrubber overlays); otherwise flex-1 */}

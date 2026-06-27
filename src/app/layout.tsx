@@ -1,35 +1,40 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Inter, Outfit } from "next/font/google";
+import { Inter, Fraunces } from "next/font/google";
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthProvider } from '@/components/auth-provider';
 import { AnalyticsProvider } from '@/components/analytics-provider';
+import { HumanBehaviorProvider } from '@/components/humanbehavior-provider';
 import { DeferredShell } from '@/components/deferred-shell';
 import { ThemedToaster } from '@/components/themed-toaster';
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
-const outfit = Outfit({ subsets: ["latin"], variable: '--font-outfit' });
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-display",
+});
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://stanford-root.vercel.app';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: "Stanford Root — A better way to browse Stanford courses",
-  description: "Search Stanford's full course catalog, read student evaluations, and build your weekly schedule — fast, clean, and free.",
+  title: "Stanford Root — Search every Stanford course and evaluation",
+  description: "Browse Stanford's full course catalog, read real student course evaluations, and build a conflict-free weekly schedule.",
   applicationName: "Stanford Root",
   openGraph: {
-    title: "Stanford Root — A better way to browse Stanford courses",
-    description: "Search Stanford's full course catalog, read student evaluations, and build your weekly schedule.",
+    title: "Stanford Root — Search every Stanford course and evaluation",
+    description: "Browse Stanford's full course catalog, read real student course evaluations, and build a conflict-free weekly schedule.",
     url: siteUrl,
     siteName: "Stanford Root",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Stanford Root — A better way to browse Stanford courses",
-    description: "Search Stanford's full course catalog, read student evaluations, and build your weekly schedule.",
+    title: "Stanford Root — Search every Stanford course and evaluation",
+    description: "Browse Stanford's full course catalog, read real student course evaluations, and build a conflict-free weekly schedule.",
   },
 };
 
@@ -40,7 +45,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} ${outfit.variable}`}>
+      <body className={`${inter.className} ${fraunces.variable}`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <NuqsAdapter>
             <Suspense fallback={null}>
@@ -49,6 +54,7 @@ export default function RootLayout({
               </AuthProvider>
             </Suspense>
             <AnalyticsProvider />
+            <HumanBehaviorProvider />
             <ThemedToaster />
             <DeferredShell />
           </NuqsAdapter>
