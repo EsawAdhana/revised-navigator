@@ -171,11 +171,15 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         }
     }, [activeTerm]);
 
-    // Units: use active section or course; support variable units (e.g. 3-4)
+    // Units: use active section or course; support variable units (e.g. 3-4).
+    // Section units are often blank ("") in the data, so fall back to course units
+    // for blanks too (plain ?? would keep the empty string and show "—").
     const unitsSource = (() => {
         const secs = sectionsByTerm[activeTerm]
         const section = secs?.find(s => s.classId === (cartItem?.selectedSectionId ?? secs?.[0]?.classId)) ?? secs?.[0]
-        return section?.units ?? course?.units
+        const secUnits = section?.units
+        const hasSecUnits = secUnits !== undefined && secUnits !== null && String(secUnits).trim() !== ''
+        return hasSecUnits ? secUnits : course?.units
     })()
     const unitOptions = course ? parseUnitsOptions(unitsSource ?? course.units) : []
     const hasVariable = unitOptions.length > 1
