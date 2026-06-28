@@ -76,7 +76,22 @@ export function parseICS(icsContent: string): Course[] {
     let inEvent = false
     let currentEvent: Partial<SimpleEvent> = {}
 
+    // Calendar-level term (our export writes "X-WR-CALNAME:Stanford Schedule - Spring 2026").
+    // When present, use it for every event instead of inferring the term from each
+    // event's date. This makes export→import round-trips land in the exact same term and
+    // prevents a single class from being split across two quarters when its meeting days
+    // straddle a month boundary at the approximate term-start anchor.
+    let calendarTerm: string | null = null
+
     for (const line of lines) {
+        if (!calendarTerm && line.startsWith('X-WR-CALNAME')) {
+            const m = line.match(/\b(Winter|Spring|Summer|Autumn|Fall)\s+(\d{4})\b/i)
+            if (m) {
+                const season = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase()
+                calendarTerm = `${season === 'Fall' ? 'Autumn' : season} ${m[2]}`
+            }
+        }
+
         if (line.startsWith('BEGIN:VEVENT')) {
             inEvent = true
             currentEvent = {}
@@ -110,7 +125,7 @@ export function parseICS(icsContent: string): Course[] {
     const grouped: Record<string, SimpleEvent[]> = {}
 
     for (const ev of events) {
-        const term = getCurrentTerm(ev.start)
+        const term = calendarTerm ?? getCurrentTerm(ev.start)
         const key = `${ev.summary}|${term}`
         if (!grouped[key]) grouped[key] = []
         grouped[key].push(ev)
