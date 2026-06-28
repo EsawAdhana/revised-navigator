@@ -86,6 +86,20 @@ export function CoursePageClient() {
         return found;
     }, [courses, courseId, getItem]);
 
+    // Resolve the catalog course for this URL id, tolerant of casing/spacing and
+    // cross-list alternates (e.g. "cs106a" or "CS 106A" -> "CS106A"). Used to
+    // redirect to the canonical id so the (case-sensitive) detail API resolves.
+    const resolvedTarget = useMemo(() => {
+        if (!courses.length) return undefined;
+        const primaryMap = getCrossListPrimaryMap(courses);
+        const canonicalNorm = resolveToCanonicalPrimary(normalizeCourseId(courseId), primaryMap);
+        return courses.find(c => normalizeCourseId(c.id) === canonicalNorm);
+    }, [courses, courseId]);
+
+    // True while we have a matching course under a different id and are about to
+    // redirect — show the loader instead of flashing "Course Not Found".
+    const isRedirecting = Boolean(hasLoaded && !course && resolvedTarget && resolvedTarget.id !== courseId);
+
     const isDetailReady = Boolean(
         course && (hasEnriched || hasFullCourseData(course))
     );
@@ -110,17 +124,12 @@ export function CoursePageClient() {
     }, [hasLoaded, course, courseId, isDetailReady, fetchCourseDetail]);
 
     useEffect(() => {
-        if (!hasLoaded || !course || !courses.length) return;
-        const primaryMap = getCrossListPrimaryMap(courses);
-        const norm = normalizeCourseId(courseId);
-        const canonicalNorm = resolveToCanonicalPrimary(norm, primaryMap);
-        if (canonicalNorm === norm) return;
-        const primaryCourse = courses.find(c => normalizeCourseId(c.id) === canonicalNorm);
-        if (primaryCourse && primaryCourse.id !== courseId) {
+        if (!hasLoaded || !resolvedTarget) return;
+        if (resolvedTarget.id !== courseId) {
             const search = typeof window !== 'undefined' ? window.location.search : '';
-            router.replace(`/courses/${encodeURIComponent(primaryCourse.id)}${search || ''}`);
+            router.replace(`/courses/${encodeURIComponent(resolvedTarget.id)}${search || ''}`);
         }
-    }, [hasLoaded, course, courseId, courses, router]);
+    }, [hasLoaded, courseId, resolvedTarget, router]);
 
     if (!mounted) {
         return (
@@ -160,7 +169,7 @@ export function CoursePageClient() {
                             </Button>
                         </div>
                     </div>
-                ) : ((!hasLoaded && !course) || (hasLoaded && course && !isDetailReady)) ? (
+                ) : ((!hasLoaded && !course) || (hasLoaded && course && !isDetailReady) || isRedirecting) ? (
                     <div className="flex flex-1 items-center justify-center">
                         <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
                             <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
