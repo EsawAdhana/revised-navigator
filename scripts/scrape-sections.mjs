@@ -170,12 +170,9 @@ function parseSection(sectionNode, courseNode) {
         classId: parseInt(sectionNode?.classId, 10) || 0,
         sectionNumber: String(sectionNode?.sectionNumber || ''),
         component: sectionNode?.component || '',
-        units: (() => {
-            const min = textVal(sectionNode?.minUnits)
-            const max = textVal(sectionNode?.maxUnits)
-            if (min && max && min !== max) return `${min}-${max}`
-            return max || min || ''
-        })(),
+        // ExploreCourses puts section units in a single <units> element (e.g. "3" or "1-3"),
+        // not minUnits/maxUnits — reading the wrong field left every section's units blank.
+        units: textVal(sectionNode?.units) || '',
         grading: courseNode?.grading || '',
         classLevel: textVal(sectionNode?.classLevel) || '',
         instructionalMode: sectionNode?.instructionalMode || '',
