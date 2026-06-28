@@ -128,7 +128,11 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
 
   const formatMeetingLine = (meeting: { days: string[], startTime: string, endTime: string, location?: string }) => {
     const days = (meeting.days || []).join('/')
-    const time = meeting.endTime ? `${meeting.startTime} - ${meeting.endTime}` : meeting.startTime
+    // Section times can include seconds ("2:30:00 PM"); drop them for display.
+    const stripSeconds = (t: string) => t.replace(/(\d{1,2}:\d{2}):\d{2}/, '$1')
+    const start = stripSeconds(meeting.startTime)
+    const end = stripSeconds(meeting.endTime)
+    const time = end ? `${start} - ${end}` : start
     const location = meeting.location && meeting.location !== 'TBA' ? ` • ${meeting.location}` : ''
     if (!days && !time) return null
     if (!days) return `${time}${location}`
