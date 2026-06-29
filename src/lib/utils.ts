@@ -165,7 +165,7 @@ export function getSchoolFromSubject(subject: string) {
   const s = subject.trim().toUpperCase()
 
   const engineering = new Set([
-    'AA', 'AFRICAAM', // keep unknowns out of eng
+    'AA',
     'BIOE', 'CS', 'CME', 'EE', 'MS&E', 'MSE', 'ENGR', 'ME', 'MATSCI', 'ENERGY', 'STS'
   ])
 

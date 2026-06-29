@@ -5,6 +5,7 @@ import {
   pullSchedule,
   cancelDebouncedPush,
   resetSyncState,
+  suspendPush,
 } from './schedule-sync'
 import { useCartStore } from './cart-store'
 import { useEvaluationStore } from './evaluation-store'
@@ -39,7 +40,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return
       }
 
-      set({ user, session, isLoading: false })
+      if (user) {
+        // Returned signed-in (e.g. via OAuth callback): clear any leftover
+        // "Redirecting…" loading state from before the redirect.
+        dismissAuthLoading()
+        set({ user, session, isLoading: false, isSigningIn: false })
+      } else {
+        set({ user, session, isLoading: false })
+      }
     }).catch((err) => {
       console.error('Failed to get session:', err)
       set({ user: null, session: null, isLoading: false })
@@ -50,17 +58,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (user && !user.email?.endsWith('@stanford.edu')) {
         void supabase.auth.signOut().catch(err => console.error('Failed to sign out non-Stanford user:', err))
-        set({ user: null, session: null, isLoading: false })
+        set({ user: null, session: null, isLoading: false, isSigningIn: false })
         if (event === 'SIGNED_IN') {
           showAuthError('stanford_required')
         }
         return
       }
 
-      set({ user, session, isLoading: false })
-
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && user) {
+        dismissAuthLoading()
+        set({ user, session, isLoading: false, isSigningIn: false })
         pullSchedule(user.id)
+      } else {
+        set({ user, session, isLoading: false })
       }
 
       if (event === 'SIGNED_IN' && user) {
@@ -68,7 +78,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     })
 
-    return () => subscription.unsubscribe()
+    // If the page is restored from the back/forward cache (e.g. the browser
+    // bounces back from Google's OAuth screen, or the user hits "back"), the
+    // pre-redirect "signing in" state is frozen in place. Clear it so the
+    // loading toast and disabled login buttons don't get stuck.
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        dismissAuthLoading()
+        set({ isSigningIn: false })
+      }
+    }
+    window.addEventListener('pageshow', handlePageShow)
+
+    return () => {
+      subscription.unsubscribe()
+      window.removeEventListener('pageshow', handlePageShow)
+    }
   },
 
   signInWithGoogle: async (options) => {
@@ -125,11 +150,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    // Suspend pushes before clearing local state: clearCart() triggers the
+    // cart subscription, which would otherwise push an empty schedule and wipe
+    // the user's saved server schedule. resetSyncState() lifts the suspension.
+    suspendPush()
     cancelDebouncedPush()
-    resetSyncState()
     useCartStore.getState().clearCart()
     useEvaluationStore.getState().clearAll()
     await supabase.auth.signOut()
+    resetSyncState()
     set({ user: null, session: null })
   }
 }))

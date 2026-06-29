@@ -52,7 +52,13 @@ export async function middleware(request: NextRequest) {
     !url.searchParams.has('code') &&
     !url.searchParams.has('auth_error')
   ) {
-    return NextResponse.redirect(new URL('/browse', url.origin))
+    // Preserve any refreshed-session cookies getUser() set on supabaseResponse,
+    // otherwise the redirect drops them and the session can silently expire.
+    const redirect = NextResponse.redirect(new URL('/browse', url.origin))
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirect.cookies.set(cookie)
+    })
+    return redirect
   }
 
   return supabaseResponse

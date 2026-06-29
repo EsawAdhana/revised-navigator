@@ -66,6 +66,10 @@ export async function POST(request: Request) {
     const ids = courseIds.filter((id): id is string =>
       typeof id === 'string' && id.length > 0 && id.length <= MAX_COURSE_ID_LENGTH)
 
+    if (ids.length === 0) {
+      return NextResponse.json({}, { headers: { 'Cache-Control': 'private, no-store' } })
+    }
+
     const supabase = getPublicClient()
     // Single query — Supabase supports .in() with many values (up to 1000+)
     const { data, error } = await supabase

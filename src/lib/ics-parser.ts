@@ -40,6 +40,11 @@ function parseICSDate(icsDate: string): Date | null {
     )
 }
 
+/** Reverses RFC 5545 text escaping applied on export (\\ \; \, \n). */
+function unescapeICS(s: string): string {
+    return s.replace(/\\([\\;,nN])/g, (_, ch) => (ch === 'n' || ch === 'N' ? '\n' : ch))
+}
+
 function getDayStr(date: Date): string {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     return days[date.getDay()]
@@ -109,9 +114,9 @@ export function parseICS(icsContent: string): Course[] {
         if (!inEvent) continue
 
         if (line.startsWith('SUMMARY:')) {
-            currentEvent.summary = line.substring(8).trim() // Remove 'SUMMARY:'
+            currentEvent.summary = unescapeICS(line.substring(8).trim()) // Remove 'SUMMARY:'
         } else if (line.startsWith('LOCATION:')) {
-            currentEvent.location = line.substring(9).trim()
+            currentEvent.location = unescapeICS(line.substring(9).trim())
         } else if (line.startsWith('DTSTART')) {
             const value = line.slice(line.indexOf(':') + 1)
             currentEvent.start = parseICSDate(value) || undefined

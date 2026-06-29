@@ -185,6 +185,16 @@ export function resetSyncState() {
   _lastPulledUserId = null
   lastItemCount = -1
   _localHydrated = false
+  _pushSuspended = false
+}
+
+/**
+ * Blocks `debouncedPush` from writing to the server. Used during sign-out so
+ * clearing the local cart doesn't push an empty schedule and wipe the user's
+ * saved server schedule. `resetSyncState()` lifts the suspension.
+ */
+export function suspendPush() {
+  _pushSuspended = true
 }
 
 /** Stable signature of the full schedule (id + term + section + units + optional meetings),
@@ -279,9 +289,10 @@ async function _pullSchedule(userId: string): Promise<void> {
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let lastItemCount = -1
+let _pushSuspended = false
 
 export function debouncedPush(userId: string) {
-  if (_pullActive) return
+  if (_pullActive || _pushSuspended) return
   if (debounceTimer) clearTimeout(debounceTimer)
   const currentCount = useCartStore.getState().items.length
 
