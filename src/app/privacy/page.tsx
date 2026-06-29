@@ -5,6 +5,7 @@ import { SiteHeader } from '@/components/site-header'
 
 export const metadata: Metadata = {
   title: 'Privacy Policy — Stanford Root',
+  alternates: { canonical: '/privacy' },
 };
 
 export default function PrivacyPage() {

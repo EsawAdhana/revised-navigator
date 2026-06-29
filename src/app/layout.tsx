@@ -8,6 +8,7 @@ import { AnalyticsProvider } from '@/components/analytics-provider';
 import { HumanBehaviorProvider } from '@/components/humanbehavior-provider';
 import { DeferredShell } from '@/components/deferred-shell';
 import { ThemedToaster } from '@/components/themed-toaster';
+import { SITE_URL } from '@/lib/site';
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -17,7 +18,7 @@ const fraunces = Fraunces({
   variable: "--font-display",
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://stanford-root.vercel.app';
+const siteUrl = SITE_URL;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

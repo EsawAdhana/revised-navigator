@@ -123,6 +123,15 @@ export function CoursePageClient() {
         }
     }, [hasLoaded, course, courseId, isDetailReady, fetchCourseDetail]);
 
+    // The server renders a crawlable course summary (#ssr-course-summary) for SEO.
+    // Once the interactive view is ready, hide it so users don't see duplicate content;
+    // if loading fails it stays as a graceful fallback.
+    useEffect(() => {
+        if (course && isDetailReady) {
+            document.getElementById('ssr-course-summary')?.style.setProperty('display', 'none');
+        }
+    }, [course, isDetailReady]);
+
     useEffect(() => {
         if (!hasLoaded || !resolvedTarget) return;
         if (resolvedTarget.id !== courseId) {

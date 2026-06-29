@@ -5,6 +5,7 @@ import { SiteHeader } from '@/components/site-header'
 
 export const metadata: Metadata = {
   title: 'Terms of Service — Stanford Root',
+  alternates: { canonical: '/terms' },
 };
 
 export default function TermsPage() {

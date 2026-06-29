@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   title: 'Stanford Root — Search every Stanford course and evaluation',
   description:
     "Browse Stanford's full course catalog, read real student course evaluations, and build a conflict-free weekly schedule.",
+  alternates: { canonical: '/' },
 };
 
 export default function LandingPage() {
