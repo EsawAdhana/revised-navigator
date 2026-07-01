@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import type { Metadata } from 'next';
 import type { Course, Section } from '@/types/course';
 import { getPublicClient, mergeCourseRows, FULL_COURSE_COLUMNS } from '@/lib/supabase-admin';
@@ -17,8 +18,9 @@ import { CoursePageClient } from './course-page-client';
 // Cache the server render (metadata + SSR summary + JSON-LD) for a day.
 export const revalidate = 86400;
 
-/** Fetch and merge all rows for a course_id into one Course (multi-term/cross-list aware). */
-async function fetchCourse(courseId: string): Promise<Course | null> {
+/** Fetch and merge all rows for a course_id into one Course (multi-term/cross-list aware).
+ *  React-cached so generateMetadata and the page share one query per render. */
+const fetchCourse = cache(async (courseId: string): Promise<Course | null> => {
     try {
         const supabase = getPublicClient();
         const { data } = await supabase
@@ -45,7 +47,7 @@ async function fetchCourse(courseId: string): Promise<Course | null> {
     } catch {
         return null;
     }
-}
+});
 
 function plainText(html: string): string {
     return decodeHtmlEntities((html || '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();

@@ -163,20 +163,25 @@ const WIM_COURSES: ReadonlySet<string> = new Set([
     "URBANST 202A",
 ]);
 
-/** Check if a course matches any WIM course entry.
- *  Matches against "SUBJECT CODE" format, handling cross-listings. */
-export function isWimCourse(subject: string, code: string): boolean {
-    const courseId = `${subject} ${code}`.trim();
-    // Direct match
-    if (WIM_COURSES.has(courseId)) return true;
-    // Check if this course appears as part of a cross-listed entry
+/** Every id that matches a WIM entry: full entries plus each part of cross-listed
+ *  ("/"-separated) entries. Precomputed once so isWimCourse is a single Set lookup
+ *  instead of a scan over all entries per course (it runs for every catalog row). */
+const WIM_COURSE_IDS: ReadonlySet<string> = (() => {
+    const ids = new Set<string>();
     for (const entry of WIM_COURSES) {
+        ids.add(entry);
         if (entry.includes('/')) {
-            const parts = entry.split('/');
-            for (const part of parts) {
-                if (part.trim() === courseId) return true;
+            for (const part of entry.split('/')) {
+                const trimmed = part.trim();
+                if (trimmed) ids.add(trimmed);
             }
         }
     }
-    return false;
+    return ids;
+})();
+
+/** Check if a course matches any WIM course entry.
+ *  Matches against "SUBJECT CODE" format, handling cross-listings. */
+export function isWimCourse(subject: string, code: string): boolean {
+    return WIM_COURSE_IDS.has(`${subject} ${code}`.trim());
 }

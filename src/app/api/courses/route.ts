@@ -4,16 +4,18 @@ import { getPublicClient, mergeCourseRows, FULL_COURSE_COLUMNS, LIGHT_COURSE_COL
 const PAGE_SIZE = 1000
 const CONCURRENCY = 5
 
-// In-memory cache (survives across requests in the same serverless instance)
-let cachedLight: any[] | null = null
-let cachedFull: any[] | null = null
+// In-memory cache (survives across requests in the same serverless instance).
+// Stored pre-serialized: the full payload is ~45 MB of JSON, and re-running
+// JSON.stringify per request would dwarf the handler's other work.
+let cachedLight: string | null = null
+let cachedFull: string | null = null
 let lightTimestamp = 0
 let fullTimestamp = 0
 const CACHE_TTL = 1000 * 60 * 15 // 15 min
 
 // In-flight promises so concurrent cold requests share one DB scan (stampede guard)
-let lightInFlight: Promise<any[]> | null = null
-let fullInFlight: Promise<any[]> | null = null
+let lightInFlight: Promise<string> | null = null
+let fullInFlight: Promise<string> | null = null
 
 async function fetchAllRows(columns: string) {
   const supabase = getPublicClient()
@@ -48,27 +50,27 @@ async function fetchAllRows(columns: string) {
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800' }
 
-async function getFull(): Promise<any[]> {
+async function getFull(): Promise<string> {
   if (cachedFull && Date.now() - fullTimestamp < CACHE_TTL) return cachedFull
   if (!fullInFlight) {
     fullInFlight = (async () => {
       const merged = mergeCourseRows(await fetchAllRows(FULL_COURSE_COLUMNS))
-      cachedFull = merged
+      cachedFull = JSON.stringify(merged)
       fullTimestamp = Date.now()
-      return merged
+      return cachedFull
     })().finally(() => { fullInFlight = null })
   }
   return fullInFlight
 }
 
-async function getLight(): Promise<any[]> {
+async function getLight(): Promise<string> {
   if (cachedLight && Date.now() - lightTimestamp < CACHE_TTL) return cachedLight
   if (!lightInFlight) {
     lightInFlight = (async () => {
       const merged = mergeCourseRows(await fetchAllRows(LIGHT_COURSE_COLUMNS))
-      cachedLight = merged
+      cachedLight = JSON.stringify(merged)
       lightTimestamp = Date.now()
-      return merged
+      return cachedLight
     })().finally(() => { lightInFlight = null })
   }
   return lightInFlight
@@ -79,8 +81,10 @@ export async function GET(request: Request) {
   const full = searchParams.get('full') === '1'
 
   try {
-    const data = full ? await getFull() : await getLight()
-    return NextResponse.json(data, { headers: CACHE_HEADERS })
+    const json = full ? await getFull() : await getLight()
+    return new NextResponse(json, {
+      headers: { ...CACHE_HEADERS, 'Content-Type': 'application/json' },
+    })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to fetch courses'
     console.error('Failed to fetch courses:', err)

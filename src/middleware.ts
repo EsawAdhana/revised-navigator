@@ -65,7 +65,11 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Excludes /api/*: the middleware only exists for the `/` -> /browse redirect
+  // and page-navigation session refresh, while getUser() is a network round
+  // trip to Supabase that would otherwise tax every API call and analytics
+  // beacon (API routes that need auth verify it themselves).
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api/|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

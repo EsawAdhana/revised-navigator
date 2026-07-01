@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
-import { useCourseStore } from '@/lib/store';
+import { useCourseStore, getCoursesById } from '@/lib/store';
 import { parseMeetingTimes, parseTimeRange, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils';
 import { cn, decodeHtmlEntities, parseUnitsOptions } from '@/lib/utils';
 import { AlertTriangle, CalendarPlus, Calendar, Clock, MapPin } from 'lucide-react';
@@ -59,8 +59,8 @@ export function CalendarPreviewModal({
     onConfirm,
     initialSelectedUnits,
 }: CalendarPreviewModalProps) {
-    const { items } = useCartStore();
-    const { courses } = useCourseStore();
+    const items = useCartStore(s => s.items);
+    const courses = useCourseStore(s => s.courses);
 
     // Section may have 0, empty, or invalid units; use course as fallback (e.g. section "0" vs course "4")
     const sectionOpts = parseUnitsOptions(section.units ?? '');
@@ -87,8 +87,9 @@ export function CalendarPreviewModal({
                 : ((c.terms && c.terms.includes(term)));
             return forTerm && c.id !== course.id;
         });
+        const byId = getCoursesById(courses);
         return filtered.map(item => {
-            const fullCourse = courses.find(c => c.id === item.id);
+            const fullCourse = byId.get(item.id);
             if (fullCourse?.sections && fullCourse.sections.length > 0) {
                 return { ...fullCourse, ...item, sections: fullCourse.sections };
             }

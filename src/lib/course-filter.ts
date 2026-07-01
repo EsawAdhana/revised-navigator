@@ -1,7 +1,7 @@
 import type { Course } from '@/types/course'
 import type { CartItem } from '@/lib/cart-store'
 import { getSchoolFromSubject, formatLevel, parseUnitsOptions, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils'
-import { parseMeetingTimes, parseTimeRange, parseDays, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils'
+import { parseMeetingTimes, timeToMinutes, isMeetingOptional, getParsedSectionMeetings } from '@/lib/schedule-utils'
 
 export type CourseFilterCriteria = {
   excludedWords: string[]
@@ -22,7 +22,11 @@ export type CourseFilterCriteria = {
 /** When computing facet counts, the facet whose own filter should be omitted. */
 export type FacetKey = 'exclude' | 'depts' | 'terms' | 'formats' | 'levels' | 'gers' | 'schools' | 'units' | 'times'
 
-type Meeting = { days: string[]; startTime: string; endTime: string }
+/** The facet dimensions the sidebar shows counts for. */
+export type CountedFacetKey = 'depts' | 'terms' | 'formats' | 'levels' | 'gers' | 'schools'
+export const COUNTED_FACET_KEYS: CountedFacetKey[] = ['depts', 'terms', 'formats', 'levels', 'gers', 'schools']
+
+type Meeting = { days: string[]; startTime: string; endTime: string; startMinutes: number; endMinutes: number }
 
 function hasOverlap(m1: Meeting, m2: Meeting, cartItem?: CartItem): boolean {
   let commonDays = m1.days.filter(d => m2.days.includes(d))
@@ -31,21 +35,208 @@ function hasOverlap(m1: Meeting, m2: Meeting, cartItem?: CartItem): boolean {
   }
   if (commonDays.length === 0) return false
   if (!m1.endTime || !m2.endTime) return false
-  const start1 = timeToMinutes(m1.startTime)
-  const end1 = timeToMinutes(m1.endTime)
-  const start2 = timeToMinutes(m2.startTime)
-  const end2 = timeToMinutes(m2.endTime)
-  return start1 < end2 && start2 < end1
+  return m1.startMinutes < m2.endMinutes && m2.startMinutes < m1.endMinutes
 }
 
-function parseSectionMeetings(section: { meetings?: { days?: string; time?: string }[] }): Meeting[] {
-  return (section.meetings || []).flatMap(m => {
-    const normalizedDays = parseDays(m.days || '')
-    if (normalizedDays.length === 0) return []
-    const range = parseTimeRange(m.time || '')
-    if (!range?.startTime) return []
-    return [{ days: normalizedDays, startTime: range.startTime, endTime: range.endTime }]
-  })
+/** Section meetings usable for conflict checks (must have days and a start time). */
+function conflictMeetings(section: { meetings?: { days?: string; time?: string }[] }): Meeting[] {
+  return getParsedSectionMeetings(section).filter(m => m.days.length > 0)
+}
+
+type CourseCheck = (c: Course) => boolean
+
+type FilterChecks = {
+  exclude: CourseCheck | null
+  depts: CourseCheck | null
+  terms: CourseCheck | null
+  formats: CourseCheck | null
+  levels: CourseCheck | null
+  gers: CourseCheck | null
+  schools: CourseCheck | null
+  units: CourseCheck | null
+  times: CourseCheck | null
+  conflicts: CourseCheck | null
+  unavailable: CourseCheck | null
+}
+
+/**
+ * Builds one predicate per filter dimension (null when that filter is
+ * inactive). Both the visible-list filter (filterCourses) and the sidebar
+ * facet counts (filterCoursesForFacets) are composed from these, so the two
+ * can never disagree on semantics.
+ */
+function buildChecks(criteria: CourseFilterCriteria, cartItems: CartItem[]): FilterChecks {
+  const {
+    excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels,
+    selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax,
+    hideConflicts, hideUnavailable,
+  } = criteria
+
+  const deptsSet = new Set(selectedDepts ?? [])
+  const termsSet = new Set(selectedTerms ?? [])
+  const formatsSet = new Set(selectedFormats ?? [])
+  const levelsSet = new Set(selectedLevels ?? [])
+  const gersSet = new Set(selectedGers ?? [])
+  const schoolsSet = new Set(selectedSchools ?? [])
+  const hasTermFilter = termsSet.size > 0 && !termsSet.has('any')
+
+  let exclude: CourseCheck | null = null
+  if (excludedWords && excludedWords.length > 0) {
+    const excludedList = excludedWords.map(w => w.toLowerCase())
+    exclude = (c) => {
+      const textToCheck = `${c.title} ${c.description} ${c.code}`.toLowerCase()
+      return !excludedList.some(word => textToCheck.includes(word))
+    }
+  }
+
+  const depts: CourseCheck | null = deptsSet.size > 0
+    ? (c) => deptsSet.has(c.subject)
+    : null
+
+  const terms: CourseCheck | null = hasTermFilter
+    ? (c) => {
+        if (c.terms) return c.terms.some(t => termsSet.has(t))
+        return c.selectedTerm != null && termsSet.has(c.selectedTerm)
+      }
+    : null
+
+  const formats: CourseCheck | null = formatsSet.size > 0
+    ? (c) => {
+        if (!c.sections || c.sections.length === 0) return false
+        return c.sections.some(s => s.component && formatsSet.has(s.component))
+      }
+    : null
+
+  const levels: CourseCheck | null = levelsSet.size > 0
+    ? (c) => {
+        if (c.sections && c.sections.length > 0) {
+          const sectionsToCheck = hasTermFilter
+            ? c.sections.filter(s => s.term && termsSet.has(s.term))
+            : c.sections
+          const sectionMatch = sectionsToCheck.length > 0
+            ? sectionsToCheck.some(s => s.classLevel && String(s.classLevel).trim() && levelsSet.has(formatLevel(s.classLevel)))
+            : false
+          if (sectionMatch) return true
+        }
+        return levelsSet.has(formatLevel(c.code || ''))
+      }
+    : null
+
+  const gers: CourseCheck | null = gersSet.size > 0
+    ? (c) => {
+        if (!c.sections || c.sections.length === 0) return false
+        return c.sections.some(s => s.gers && s.gers.some(g => gersSet.has(g)))
+      }
+    : null
+
+  const schools: CourseCheck | null = schoolsSet.size > 0
+    ? (c) => schoolsSet.has(getSchoolFromSubject(c.subject))
+    : null
+
+  let units: CourseCheck | null = null
+  if (unitMin > 1 || unitMax < 5) {
+    const min = Math.max(1, unitMin)
+    const max = Math.min(5, unitMax)
+    const maxOpen = max >= 5
+    const checkUnits = (uStr: string | number) => {
+      const opts = parseUnitsOptions(uStr)
+      if (opts.length === 0) return false
+      return opts.some(u => u >= min && (maxOpen ? true : u <= max))
+    }
+    units = (c) => {
+      if (c.sections && c.sections.length > 0) {
+        const sectionsToCheck = hasTermFilter
+          ? c.sections.filter(s => s.term && termsSet.has(s.term))
+          : c.sections
+        const sectionMatch = sectionsToCheck.length > 0
+          ? sectionsToCheck.some(s => checkUnits(s.units))
+          : false
+        if (sectionMatch) return true
+      }
+      return checkUnits(c.units)
+    }
+  }
+
+  let times: CourseCheck | null = null
+  if (timeMin > 420 || timeMax < 1320) {
+    const min = Math.max(420, timeMin)
+    const max = Math.min(1320, timeMax)
+    times = (c) => {
+      if (!c.sections || c.sections.length === 0) return true
+      const sectionsToCheck = hasTermFilter
+        ? c.sections.filter(s => s.term && termsSet.has(s.term))
+        : c.sections
+      if (sectionsToCheck.length === 0) return true
+      return sectionsToCheck.some(s =>
+        getParsedSectionMeetings(s).some(m => m.startMinutes >= min && m.startMinutes <= max)
+      )
+    }
+  }
+
+  let conflicts: CourseCheck | null = null
+  if (hideConflicts) {
+    // Parse each cart item's meetings once, not once per candidate section.
+    const cartParsed = cartItems.map(item => ({
+      item,
+      meetings: parseMeetingTimes(item, item.selectedTerm).map(m => ({
+        days: m.days,
+        startTime: m.startTime,
+        endTime: m.endTime,
+        startMinutes: timeToMinutes(m.startTime),
+        endMinutes: m.endTime ? timeToMinutes(m.endTime) : 0,
+      })),
+    }))
+    conflicts = (c) => {
+      if (!c.sections || c.sections.length === 0) return true
+      let sectionsToCheck = c.sections
+      if (termsSet.size > 0) {
+        sectionsToCheck = sectionsToCheck.filter(s => termsSet.has(s.term))
+      }
+      if (sectionsToCheck.length === 0) return true
+      return sectionsToCheck.some(section => {
+        const cartForTerm = cartParsed.filter(cp => cp.item.selectedTerm === section.term)
+        if (cartForTerm.length === 0) return true
+        const sectionMeetings = conflictMeetings(section)
+        if (sectionMeetings.length === 0) return true
+        const isOverlapping = cartForTerm.some(cp => {
+          if (cp.item.id === c.id) return false
+          return cp.meetings.some(cm => sectionMeetings.some(sm => hasOverlap(sm, cm, cp.item)))
+        })
+        return !isOverlapping
+      })
+    }
+  }
+
+  const unavailable: CourseCheck | null = hideUnavailable
+    ? (c) => {
+        if (!c.sections || c.sections.length === 0) return true
+        let sectionsToCheck = c.sections
+        if (termsSet.size > 0) {
+          sectionsToCheck = sectionsToCheck.filter(s => termsSet.has(s.term))
+        }
+        if (sectionsToCheck.length === 0) return true
+        return sectionsToCheck.some(s => s.status?.toLowerCase() === 'open')
+      }
+    : null
+
+  return { exclude, depts, terms, formats, levels, gers, schools, units, times, conflicts, unavailable }
+}
+
+// Valid (gradeable) + canonical cross-list primary courses, memoized by
+// catalog array identity. This prefix of the pipeline is identical for every
+// filter pass, and the canonical resolution is the expensive part.
+const validCanonicalCache = new WeakMap<Course[], Course[]>()
+function getValidCanonical(courses: Course[], primaryMap: Map<string, string>): Course[] {
+  let result = validCanonicalCache.get(courses)
+  if (!result) {
+    result = courses.filter(c => {
+      if (!c.grading || c.grading.trim() === '' || c.grading === 'TBD') return false
+      const norm = normalizeCourseId(c.id)
+      return resolveToCanonicalPrimary(norm, primaryMap) === norm
+    })
+    validCanonicalCache.set(courses, result)
+  }
+  return result
 }
 
 /**
@@ -64,157 +255,76 @@ export function filterCourses(
   cartItems: CartItem[],
   exclude?: FacetKey,
 ): Course[] {
-  const {
-    excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels,
-    selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax,
-    hideConflicts, hideUnavailable,
-  } = criteria
+  const k = buildChecks(criteria, cartItems)
+  return getValidCanonical(courses, primaryMap).filter(c =>
+    (exclude === 'exclude' || !k.exclude || k.exclude(c)) &&
+    (exclude === 'depts' || !k.depts || k.depts(c)) &&
+    (exclude === 'terms' || !k.terms || k.terms(c)) &&
+    (exclude === 'formats' || !k.formats || k.formats(c)) &&
+    (exclude === 'levels' || !k.levels || k.levels(c)) &&
+    (exclude === 'gers' || !k.gers || k.gers(c)) &&
+    (exclude === 'units' || !k.units || k.units(c)) &&
+    (exclude === 'times' || !k.times || k.times(c)) &&
+    (!k.conflicts || k.conflicts(c)) &&
+    (!k.unavailable || k.unavailable(c)) &&
+    (exclude === 'schools' || !k.schools || k.schools(c))
+  )
+}
 
-  const deptsSet = new Set(selectedDepts ?? [])
-  const termsSet = new Set(selectedTerms ?? [])
-  const formatsSet = new Set(selectedFormats ?? [])
-  const levelsSet = new Set(selectedLevels ?? [])
-  const gersSet = new Set(selectedGers ?? [])
-  const schoolsSet = new Set(selectedSchools ?? [])
-  const hasTermFilter = termsSet.size > 0 && !termsSet.has('any')
+/**
+ * Per-facet course lists for the sidebar counts, computed in ONE pass instead
+ * of one full filter pass per facet dimension.
+ *
+ * For facet X the eligible set is "passes every filter except X's own". A
+ * course passing all non-facet filters ("rest") either passes all six facet
+ * dimensions (counts toward every facet) or fails exactly one (counts only
+ * toward the facet it fails) — courses failing two or more count nowhere.
+ *
+ * Facets with no active selection share the SAME array instance, so callers
+ * applying a search query can dedupe by identity.
+ */
+export function filterCoursesForFacets(
+  courses: Course[],
+  criteria: CourseFilterCriteria,
+  primaryMap: Map<string, string>,
+  cartItems: CartItem[],
+): Record<CountedFacetKey, Course[]> {
+  const k = buildChecks(criteria, cartItems)
+  const restChecks = [k.exclude, k.units, k.times, k.conflicts, k.unavailable]
+    .filter((f): f is CourseCheck => f !== null)
+  const dims: [CountedFacetKey, CourseCheck | null][] = [
+    ['depts', k.depts],
+    ['terms', k.terms],
+    ['formats', k.formats],
+    ['levels', k.levels],
+    ['gers', k.gers],
+    ['schools', k.schools],
+  ]
 
-  // Valid courses only (must have a grade basis), then canonical cross-list primary
-  let result = courses.filter(c => c.grading && c.grading.trim() !== '' && c.grading !== 'TBD')
-  result = result.filter(c => {
-    const norm = normalizeCourseId(c.id)
-    return resolveToCanonicalPrimary(norm, primaryMap) === norm
-  })
-
-  if (excludedWords && excludedWords.length > 0 && exclude !== 'exclude') {
-    const excludedSet = new Set(excludedWords.map(w => w.toLowerCase()))
-    result = result.filter(c => {
-      const textToCheck = `${c.title} ${c.description} ${c.code}`.toLowerCase()
-      return ![...excludedSet].some(word => textToCheck.includes(word))
-    })
+  const allPass: Course[] = []
+  const extras: Record<CountedFacetKey, Course[]> = {
+    depts: [], terms: [], formats: [], levels: [], gers: [], schools: [],
   }
 
-  if (deptsSet.size > 0 && exclude !== 'depts') {
-    result = result.filter(c => deptsSet.has(c.subject))
-  }
-
-  if (hasTermFilter && exclude !== 'terms') {
-    result = result.filter(c => {
-      if (c.terms) return c.terms.some(t => termsSet.has(t))
-      return c.selectedTerm != null && termsSet.has(c.selectedTerm)
-    })
-  }
-
-  if (formatsSet.size > 0 && exclude !== 'formats') {
-    result = result.filter(c => {
-      if (!c.sections || c.sections.length === 0) return false
-      return c.sections.some(s => s.component && formatsSet.has(s.component))
-    })
-  }
-
-  if (levelsSet.size > 0 && exclude !== 'levels') {
-    result = result.filter(c => {
-      const inferFromCode = () => levelsSet.has(formatLevel(c.code || ''))
-      if (c.sections && c.sections.length > 0) {
-        const sectionsToCheck = hasTermFilter
-          ? c.sections.filter(s => s.term && termsSet.has(s.term))
-          : c.sections
-        const sectionMatch = sectionsToCheck.length > 0
-          ? sectionsToCheck.some(s => s.classLevel && String(s.classLevel).trim() && levelsSet.has(formatLevel(s.classLevel)))
-          : false
-        if (sectionMatch) return true
+  outer:
+  for (const c of getValidCanonical(courses, primaryMap)) {
+    for (const f of restChecks) {
+      if (!f(c)) continue outer
+    }
+    let failKey: CountedFacetKey | null = null
+    for (const [key, fn] of dims) {
+      if (fn && !fn(c)) {
+        if (failKey !== null) continue outer // failed 2+ dimensions
+        failKey = key
       }
-      return inferFromCode()
-    })
+    }
+    if (failKey === null) allPass.push(c)
+    else extras[failKey].push(c)
   }
 
-  if (gersSet.size > 0 && exclude !== 'gers') {
-    result = result.filter(c => {
-      if (!c.sections || c.sections.length === 0) return false
-      return c.sections.some(s => s.gers && s.gers.some(g => gersSet.has(g)))
-    })
+  const result = {} as Record<CountedFacetKey, Course[]>
+  for (const [key] of dims) {
+    result[key] = extras[key].length > 0 ? allPass.concat(extras[key]) : allPass
   }
-
-  const unitsFilterActive = unitMin > 1 || unitMax < 5
-  if (unitsFilterActive && exclude !== 'units') {
-    const min = Math.max(1, unitMin)
-    const max = Math.min(5, unitMax)
-    const maxOpen = max >= 5
-    result = result.filter(c => {
-      const checkUnits = (uStr: string | number) => {
-        const opts = parseUnitsOptions(uStr)
-        if (opts.length === 0) return false
-        return opts.some(u => u >= min && (maxOpen ? true : u <= max))
-      }
-      if (c.sections && c.sections.length > 0) {
-        const sectionsToCheck = hasTermFilter
-          ? c.sections.filter(s => s.term && termsSet.has(s.term))
-          : c.sections
-        const sectionMatch = sectionsToCheck.length > 0
-          ? sectionsToCheck.some(s => checkUnits(s.units))
-          : false
-        if (sectionMatch) return true
-      }
-      return checkUnits(c.units)
-    })
-  }
-
-  const timeFilterActive = timeMin > 420 || timeMax < 1320
-  if (timeFilterActive && exclude !== 'times') {
-    const min = Math.max(420, timeMin)
-    const max = Math.min(1320, timeMax)
-    result = result.filter(c => {
-      if (!c.sections || c.sections.length === 0) return true
-      const sectionsToCheck = hasTermFilter
-        ? c.sections.filter(s => s.term && termsSet.has(s.term))
-        : c.sections
-      if (sectionsToCheck.length === 0) return true
-      return sectionsToCheck.some(s => s.meetings?.some(m => {
-        const range = parseTimeRange(m.time || '')
-        if (!range?.startTime) return false
-        const startMins = timeToMinutes(range.startTime)
-        return startMins >= min && startMins <= max
-      }))
-    })
-  }
-
-  if (hideConflicts) {
-    result = result.filter(c => {
-      if (!c.sections || c.sections.length === 0) return true
-      let sectionsToCheck = c.sections
-      if (termsSet.size > 0) {
-        sectionsToCheck = sectionsToCheck.filter(s => termsSet.has(s.term))
-      }
-      if (sectionsToCheck.length === 0) return true
-      return sectionsToCheck.some(section => {
-        const cartItemsForTerm = cartItems.filter(item => item.selectedTerm === section.term)
-        if (cartItemsForTerm.length === 0) return true
-        const sectionMeetings = parseSectionMeetings(section)
-        if (sectionMeetings.length === 0) return true
-        const isOverlapping = cartItemsForTerm.some(cartItem => {
-          if (cartItem.id === c.id) return false
-          const cartMeetings = parseMeetingTimes(cartItem, cartItem.selectedTerm)
-          return cartMeetings.some(cm => sectionMeetings.some(sm => hasOverlap(sm, cm, cartItem)))
-        })
-        return !isOverlapping
-      })
-    })
-  }
-
-  if (hideUnavailable) {
-    result = result.filter(c => {
-      if (!c.sections || c.sections.length === 0) return true
-      let sectionsToCheck = c.sections
-      if (termsSet.size > 0) {
-        sectionsToCheck = sectionsToCheck.filter(s => termsSet.has(s.term))
-      }
-      if (sectionsToCheck.length === 0) return true
-      return sectionsToCheck.some(s => s.status?.toLowerCase() === 'open')
-    })
-  }
-
-  if (schoolsSet.size > 0 && exclude !== 'schools') {
-    result = result.filter(c => schoolsSet.has(getSchoolFromSubject(c.subject)))
-  }
-
   return result
 }

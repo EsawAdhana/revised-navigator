@@ -38,26 +38,15 @@ function openIDB(): Promise<IDBDatabase> {
   })
 }
 
-async function readCache(): Promise<Course[] | null> {
-  try {
-    const db = await openIDB()
-    return new Promise((resolve) => {
-      const req = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(IDB_KEY)
-      req.onsuccess = () => {
-        const entry = req.result
-        if (!entry || entry.v !== CACHE_VERSION) return resolve(null)
-        if (Date.now() - entry.ts > CACHE_TTL) return resolve(null)
-        resolve(entry.data)
-      }
-      req.onerror = () => resolve(null)
-    })
-  } catch {
-    return null
-  }
-}
+type CacheEntry = { data: Course[]; ts: number }
 
-/** Returns cache even if expired, for stale-while-revalidate. Null if older than 24h. */
-async function readStaleCache(): Promise<Course[] | null> {
+/**
+ * Single IndexedDB read for the catalog cache. Returns null when missing,
+ * version-mismatched, or older than 24h. Callers decide fresh vs stale from
+ * `ts` (fresh = within CACHE_TTL: skip network; stale = render immediately
+ * and revalidate in the background).
+ */
+async function readCacheEntry(): Promise<CacheEntry | null> {
   try {
     const db = await openIDB()
     return new Promise((resolve) => {
@@ -66,7 +55,7 @@ async function readStaleCache(): Promise<Course[] | null> {
         const entry = req.result
         if (!entry || entry.v !== CACHE_VERSION) return resolve(null)
         if (Date.now() - entry.ts > STALE_MAX_AGE) return resolve(null)
-        resolve(entry.data)
+        resolve({ data: entry.data, ts: entry.ts })
       }
       req.onerror = () => resolve(null)
     })
@@ -92,6 +81,21 @@ async function writeCache(courses: Course[]) {
 /** Light catalog rows omit description and sections; full rows include at least one. */
 export function hasFullCourseData(course: Course): boolean {
   return Boolean(course.description?.trim()) || (course.sections?.length ?? 0) > 0
+}
+
+/**
+ * Memoized id -> Course map for a given courses array (keyed by array identity,
+ * which only changes when the catalog is replaced). Use instead of
+ * `courses.find(...)` in hot paths — the catalog has ~9k entries.
+ */
+const coursesByIdCache = new WeakMap<Course[], Map<string, Course>>()
+export function getCoursesById(courses: Course[]): Map<string, Course> {
+  let map = coursesByIdCache.get(courses)
+  if (!map) {
+    map = new Map(courses.map(c => [c.id, c]))
+    coursesByIdCache.set(courses, map)
+  }
+  return map
 }
 
 let fetchCoursesInFlight: Promise<void> | null = null
@@ -158,18 +162,20 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
     const { isLoading, hasLoaded } = get()
     if (isLoading) return
 
-    // Stale-while-revalidate: show cached data immediately on refresh (even if expired)
-    const stale = await readStaleCache()
-    if (stale) {
+    // Show cached data immediately (fresh or stale). A fresh cache (< TTL)
+    // skips the network entirely; a stale one revalidates in the background.
+    const entry = await readCacheEntry()
+    if (entry) {
       set({
-        courses: stale,
+        courses: entry.data,
         hasLoaded: true,
         hasEnriched: true,
         isLoading: false,
         catalogError: false,
-        enrichedCourseIds: enrichedIdsFromCourses(stale),
+        enrichedCourseIds: enrichedIdsFromCourses(entry.data),
       })
-      // Fall through to fetch fresh in background
+      if (Date.now() - entry.ts <= CACHE_TTL) return
+      // Stale: fall through to fetch fresh in background
     } else if (hasLoaded && !get().catalogError) {
       return
     } else {
@@ -177,24 +183,10 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
     }
 
     try {
-      // ── Fresh cache hit: skip fetch ──
-      const cached = await readCache()
-      if (cached && !stale) {
-        set({
-          courses: cached,
-          hasLoaded: true,
-          hasEnriched: true,
-          isLoading: false,
-          catalogError: false,
-          enrichedCourseIds: enrichedIdsFromCourses(cached),
-        })
-        return
-      }
-
       // ── Phase 1: light data (card-level only) — small + fast, renders the list ──
       // Skip when stale full data is already on screen, so a background revalidate
       // doesn't momentarily downgrade visible courses (sections/descriptions) to light.
-      if (!stale) {
+      if (!entry) {
         const lightRes = await fetch('/api/courses')
         if (!lightRes.ok) throw new Error(`API error: ${lightRes.status}`)
         const lightRows: any[] = await lightRes.json()
@@ -243,14 +235,15 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
 
   fetchCourseDetails: async (courseIds: string[]) => {
     const { courses, enrichedCourseIds } = get()
+    const byId = getCoursesById(courses)
     const toFetch = courseIds.filter(id => {
       if (enrichedCourseIds.has(id)) return false
-      const existing = courses.find(c => c.id === id)
+      const existing = byId.get(id)
       return !existing || !hasFullCourseData(existing)
     })
     if (toFetch.length === 0) {
       const locallyEnriched = courseIds.filter(id => {
-        const existing = courses.find(c => c.id === id)
+        const existing = byId.get(id)
         return existing && hasFullCourseData(existing) && !enrichedCourseIds.has(id)
       })
       if (locallyEnriched.length > 0) {
@@ -286,7 +279,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
 
   fetchCourseDetail: async (courseId: string) => {
     if (get().enrichedCourseIds.has(courseId)) return
-    const existing = get().courses.find(c => c.id === courseId)
+    const existing = getCoursesById(get().courses).get(courseId)
     if (existing && hasFullCourseData(existing)) {
       set(state => ({
         enrichedCourseIds: new Set([...state.enrichedCourseIds, courseId]),

@@ -42,10 +42,13 @@ interface CourseCardProps {
   rating?: number | null;
   style?: React.CSSProperties;
   onClick?: (e: React.MouseEvent) => void;
-  onMouseEnter?: () => void;
+  /** Called with the course id on hover (e.g. detail prefetch). Pass a STABLE
+   *  callback — the card is memoized, and an inline closure from the parent
+   *  would defeat the memo for every visible card on every list render. */
+  onHoverPrefetch?: (courseId: string) => void;
 }
 
-export const CourseCard = React.memo(({ course, href, sortDisplayValue, rating, style, onClick, onMouseEnter }: CourseCardProps) => {
+export const CourseCard = React.memo(({ course, href, sortDisplayValue, rating, style, onClick, onHoverPrefetch }: CourseCardProps) => {
   const cardContent = (
     <div
       className="group relative w-full min-w-0 rounded-xl bg-card text-card-foreground border border-border/60 hover:border-border shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-all duration-200 cursor-pointer px-3 py-4 sm:px-4 overflow-hidden"
@@ -112,7 +115,12 @@ export const CourseCard = React.memo(({ course, href, sortDisplayValue, rating, 
   return (
     <div style={style} className="w-full min-w-0 py-1.5">
       {href ? (
-        <Link href={href} onClick={onClick} onMouseEnter={onMouseEnter} className="block no-underline text-inherit">
+        <Link
+          href={href}
+          onClick={onClick}
+          onMouseEnter={onHoverPrefetch ? () => onHoverPrefetch(course.id) : undefined}
+          className="block no-underline text-inherit"
+        >
           {cardContent}
         </Link>
       ) : (

@@ -62,7 +62,12 @@ export function CourseList() {
   const hasAnyFilter = FILTER_PARAM_KEYS.some(k => searchParams.has(k));
 
   const prefetchCourseDetail = useCallback((courseId: string) => {
-    useCourseStore.getState().fetchCourseDetail(courseId);
+    const state = useCourseStore.getState();
+    // Skip enriched courses (fetchCourseDetail would no-op, but this avoids the
+    // call entirely) and known-failed ids, so a failing course doesn't refetch
+    // on every hover. The detail page has its own explicit retry.
+    if (state.enrichedCourseIds.has(courseId) || state.failedDetailIds.has(courseId)) return;
+    state.fetchCourseDetail(courseId);
   }, []);
 
   const saveScrollOnClick = useCallback((e: React.MouseEvent) => {
@@ -243,7 +248,7 @@ export function CourseList() {
                     sortDisplayValue={getSortDisplayValue(course)}
                     rating={getRatingForCourse(course)}
                     onClick={saveScrollOnClick}
-                    onMouseEnter={() => prefetchCourseDetail(course.id)}
+                    onHoverPrefetch={prefetchCourseDetail}
                   />
                   </div>
                 ))}

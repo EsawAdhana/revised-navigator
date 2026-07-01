@@ -13,6 +13,7 @@ export function SearchBar() {
   const [localValue, setLocalValue] = useState(query);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<number | null>(null)
+  const lastTrackedRef = useRef('')
 
   useEffect(() => {
     setLocalValue(query);
@@ -21,15 +22,25 @@ export function SearchBar() {
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current)
     debounceRef.current = window.setTimeout(() => {
-      const trimmed = localValue.trim()
-      setQuery(trimmed ? localValue : null)
-      if (trimmed) track('search_performed', { length: trimmed.length })
+      setQuery(localValue.trim() ? localValue : null)
     }, 250)
 
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
     }
   }, [localValue, setQuery])
+
+  // Track only on commit (Enter/blur), not per debounced keystroke — otherwise
+  // typing a sentence fires a beacon per word.
+  const commitQuery = () => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current)
+    const trimmed = localValue.trim()
+    setQuery(trimmed ? localValue : null)
+    if (trimmed && trimmed !== lastTrackedRef.current) {
+      lastTrackedRef.current = trimmed
+      track('search_performed', { length: trimmed.length })
+    }
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -65,13 +76,9 @@ export function SearchBar() {
         onChange={handleChange}
         onKeyDown={(e) => {
           if (e.key !== 'Enter') return
-          if (debounceRef.current) window.clearTimeout(debounceRef.current)
-          setQuery(localValue.trim() ? localValue : null)
+          commitQuery()
         }}
-        onBlur={() => {
-          if (debounceRef.current) window.clearTimeout(debounceRef.current)
-          setQuery(localValue.trim() ? localValue : null)
-        }}
+        onBlur={commitQuery}
       />
       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
         <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded-md border border-border/40 bg-background/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/40 shadow-[0_1px_0_0_hsl(var(--border)/0.3)]">

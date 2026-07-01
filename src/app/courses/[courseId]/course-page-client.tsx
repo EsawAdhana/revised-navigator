@@ -146,7 +146,7 @@ export function CoursePageClient() {
                 <SiteHeader />
                 <main className="flex-1 bg-background">
                     {isDetailReady && course ? (
-                        <CourseDetailContent course={course} />
+                        <CourseDetailContent key={course.id} course={course} />
                     ) : (
                         <div className="flex flex-1 items-center justify-center">
                             <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
@@ -194,7 +194,9 @@ export function CoursePageClient() {
                         </Button>
                     </div>
                 ) : (
-                    <CourseDetailContent course={course} />
+                    // key resets per-course UI state (term carousel, selected units,
+                    // preview modal) when navigating course -> course
+                    <CourseDetailContent key={course.id} course={course} />
                 )}
             </main>
         </div>

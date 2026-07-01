@@ -161,6 +161,47 @@ export function isMeetingOptional(course: Course, day: string, startTime: string
   return Boolean(course.optionalMeetings?.includes(key))
 }
 
+export type ParsedSectionMeeting = {
+  days: string[]
+  startTime: string
+  endTime: string
+  startMinutes: number
+  endMinutes: number
+}
+
+// Parsed meeting times per section object, memoized by section identity.
+// Section objects are stable for the lifetime of a catalog load, and the
+// filter pipeline re-visits every section on each filter change — parsing the
+// day/time strings once instead of per pass is a large win (~95k sections).
+const parsedSectionMeetingsCache = new WeakMap<object, ParsedSectionMeeting[]>()
+
+/**
+ * Meetings with a parseable start time for a section (days may be empty, e.g.
+ * TBA days with a known time — callers that need days filter on days.length).
+ * Time strings are exactly what parseTimeRange returns, so keys built from
+ * them (e.g. optional-meeting keys) match the unmemoized parse.
+ */
+export function getParsedSectionMeetings(
+  section: { meetings?: { days?: string; time?: string }[] }
+): ParsedSectionMeeting[] {
+  const cached = parsedSectionMeetingsCache.get(section)
+  if (cached) return cached
+
+  const parsed: ParsedSectionMeeting[] = (section.meetings || []).flatMap(m => {
+    const range = parseTimeRange(m.time || '')
+    if (!range?.startTime) return []
+    return [{
+      days: parseDays(m.days || ''),
+      startTime: range.startTime,
+      endTime: range.endTime,
+      startMinutes: timeToMinutes(range.startTime),
+      endMinutes: range.endTime ? timeToMinutes(range.endTime) : 0,
+    }]
+  })
+  parsedSectionMeetingsCache.set(section, parsed)
+  return parsed
+}
+
 export function parseMeetingTimes(course: Course, term?: string): ParsedMeeting[] {
   const section = pickSectionForTerm(course, term)
   if (!section) return []

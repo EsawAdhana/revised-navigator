@@ -17,7 +17,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 export function SiteHeader() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const { user, isLoading, signOut } = useAuthStore();
+    // Scoped selectors so the header (mounted on every page) doesn't re-render
+    // on unrelated auth-store changes (e.g. isSigningIn toggles).
+    const user = useAuthStore(s => s.user);
+    const isLoading = useAuthStore(s => s.isLoading);
+    const signOut = useAuthStore(s => s.signOut);
 
     const scheduleHref = useMemo(() => {
         const params = new URLSearchParams(searchParams.toString());

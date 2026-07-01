@@ -6,7 +6,7 @@ import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
 import { cn, getSchoolFromSubject, abbreviateGer, unitsLabel, formatComponent, isAllowedGer, formatLevel, parseUnitsOptions, getCrossListPrimaryMap } from '@/lib/utils';
 import { searchCourses } from '@/lib/search-utils';
-import { filterCourses, type CourseFilterCriteria, type FacetKey } from '@/lib/course-filter';
+import { filterCoursesForFacets, COUNTED_FACET_KEYS, type CourseFilterCriteria } from '@/lib/course-filter';
 import { formatMinutes } from '@/lib/schedule-utils';
 import { compareTerms } from '@/lib/terms';
 import { useSelectedTerms } from '@/hooks/use-selected-terms';
@@ -148,34 +148,31 @@ export function FilterSidebar() {
         hideUnavailable,
     }), [excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable]);
 
-    // Base result with all facet filters applied — reused for any facet that has no active selection
-    const facetBase = useMemo(
-        () => filterCourses(courses, facetCriteria, primaryMap, cartItems),
+    // Per-facet course lists (each facet's own selection omitted), computed in
+    // ONE pass over the catalog instead of one full filter pass per facet.
+    const facetLists = useMemo(
+        () => filterCoursesForFacets(courses, facetCriteria, primaryMap, cartItems),
         [courses, facetCriteria, primaryMap, cartItems]
     );
-    const facetBaseSearched = useMemo(
-        () => (query ? searchCourses(facetBase, query) : facetBase),
-        [facetBase, query]
-    );
 
-    // Filtered courses for a facet's count: omit that facet's own selection so it
-    // doesn't zero out its own options. Reuses the base when the facet is inactive.
-    const getFilteredCoursesForFacets = (excludeFilter?: FacetKey): Course[] => {
-        const isActive = (() => {
-            switch (excludeFilter) {
-                case 'depts': return selectedDepts.length > 0;
-                case 'terms': return selectedTerms.length > 0 && !selectedTerms.includes('any');
-                case 'formats': return selectedFormats.length > 0;
-                case 'levels': return selectedLevels.length > 0;
-                case 'gers': return selectedGers.length > 0;
-                case 'schools': return selectedSchools.length > 0;
-                default: return true;
+    // Apply the search query per facet list. Facets with no active selection
+    // share the same array instance, so identity-dedupe keeps this to a single
+    // search in the common case.
+    const searchedFacetLists = useMemo(() => {
+        if (!query) return facetLists;
+        const searchedByList = new Map<Course[], Course[]>();
+        const out = {} as typeof facetLists;
+        for (const key of COUNTED_FACET_KEYS) {
+            const list = facetLists[key];
+            let searched = searchedByList.get(list);
+            if (!searched) {
+                searched = searchCourses(list, query);
+                searchedByList.set(list, searched);
             }
-        })();
-        if (!isActive) return facetBaseSearched;
-        const filtered = filterCourses(courses, facetCriteria, primaryMap, cartItems, excludeFilter);
-        return query ? searchCourses(filtered, query) : filtered;
-    };
+            out[key] = searched;
+        }
+        return out;
+    }, [facetLists, query]);
 
     // Compute Facets based on filtered courses
     const facets = useMemo(() => {
@@ -188,13 +185,13 @@ export function FilterSidebar() {
         const gers = new Map<string, number>();
         const schools = new Map<string, number>();
 
-        // Get filtered courses for each facet type (excluding that facet's filter)
-        const coursesForDepts = getFilteredCoursesForFacets('depts');
-        const coursesForTerms = getFilteredCoursesForFacets('terms');
-        const coursesForFormats = getFilteredCoursesForFacets('formats');
-        const coursesForLevels = getFilteredCoursesForFacets('levels');
-        const coursesForGers = getFilteredCoursesForFacets('gers');
-        const coursesForSchools = getFilteredCoursesForFacets('schools');
+        // Filtered courses per facet type (that facet's own filter excluded)
+        const coursesForDepts = searchedFacetLists.depts;
+        const coursesForTerms = searchedFacetLists.terms;
+        const coursesForFormats = searchedFacetLists.formats;
+        const coursesForLevels = searchedFacetLists.levels;
+        const coursesForGers = searchedFacetLists.gers;
+        const coursesForSchools = searchedFacetLists.schools;
 
         // Compute dept facets
         coursesForDepts.forEach(c => {
@@ -265,7 +262,7 @@ export function FilterSidebar() {
             gers: Array.from(gers.entries()).sort((a, b) => a[0].localeCompare(b[0])),
             schools,
         };
-    }, [courses, excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, query, hideConflicts, cartItems]);
+    }, [searchedFacetLists]);
 
     const filteredDepts = useMemo(() => {
         if (!deptQuery) return facets.depts;

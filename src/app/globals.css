@@ -78,14 +78,11 @@
     @apply border-border;
   }
 
-  /* Remove focus rings / emphasis on click (no blue/red borders) */
-  *:focus {
+  /* Remove focus rings on pointer interaction (no blue/red borders on click),
+     but keep them for keyboard navigation (:focus-visible) — otherwise tab
+     focus is invisible, which fails WCAG 2.4.7. */
+  *:focus:not(:focus-visible) {
     outline: none;
-  }
-  *:focus-visible {
-    outline: none;
-    --tw-ring-shadow: none;
-    box-shadow: none;
   }
 
   body {

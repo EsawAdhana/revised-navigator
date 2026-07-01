@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { CourseList } from '@/components/course-list';
 import { SiteHeader } from '@/components/site-header';
 import { Logo } from '@/components/logo';
+import { useMediaQuery } from '@/hooks/use-media-query';
 
 const FilterSidebar = dynamic(
   () => import('@/components/filter-sidebar').then(m => ({ default: m.FilterSidebar })),
@@ -21,13 +22,18 @@ const FilterSidebar = dynamic(
 );
 
 function BrowseContent() {
+  // The aside is display:none on mobile; skip mounting the sidebar entirely
+  // there so phones don't compute facet counts for an invisible component.
+  // (The mobile filter Sheet in SiteHeader mounts its own copy when opened.)
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">
       <SiteHeader />
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[280px] border-r border-border/40 bg-background hidden md:block overflow-y-auto custom-scrollbar shrink-0">
-          <FilterSidebar />
+          {isDesktop && <FilterSidebar />}
         </aside>
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-secondary/20 relative">
           <CourseList />

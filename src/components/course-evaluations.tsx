@@ -508,7 +508,10 @@ interface CourseEvaluationsProps {
 }
 
 export function CourseEvaluations({ courseIds, subject, code, forcedTab }: CourseEvaluationsProps) {
-  const { fetchBulkEvaluations, getMergedEvaluations, isLoadingCourse, hasErrorForCourse } = useEvaluationStore()
+  const fetchBulkEvaluations = useEvaluationStore(state => state.fetchBulkEvaluations)
+  const getMergedEvaluations = useEvaluationStore(state => state.getMergedEvaluations)
+  const loadingCourses = useEvaluationStore(state => state.loadingCourses)
+  const errorCourses = useEvaluationStore(state => state.errorCourses)
   const evaluationsById = useEvaluationStore(state => state.evaluations)
   const user = useAuthStore(state => state.user)
   const authLoading = useAuthStore(state => state.isLoading)
@@ -523,8 +526,8 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
     }
   }, [forcedTab])
 
-  const isLoading = courseIds.some(id => isLoadingCourse(id))
-  const hasError = courseIds.some(id => hasErrorForCourse(id))
+  const isLoading = courseIds.some(id => !!loadingCourses[id])
+  const hasError = courseIds.some(id => !!errorCourses[id])
   const evaluations = useMemo(() => getMergedEvaluations(courseIds), [getMergedEvaluations, courseIds, evaluationsById])
 
   const courseIdsKey = courseIds.join(',')
