@@ -17,6 +17,7 @@ export type CourseFilterCriteria = {
   timeMax: number
   hideConflicts: boolean
   hideUnavailable: boolean
+  hideStudyAbroad: boolean
 }
 
 /** When computing facet counts, the facet whose own filter should be omitted. */
@@ -57,6 +58,7 @@ type FilterChecks = {
   times: CourseCheck | null
   conflicts: CourseCheck | null
   unavailable: CourseCheck | null
+  studyAbroad: CourseCheck | null
 }
 
 /**
@@ -69,7 +71,7 @@ function buildChecks(criteria: CourseFilterCriteria, cartItems: CartItem[]): Fil
   const {
     excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels,
     selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax,
-    hideConflicts, hideUnavailable,
+    hideConflicts, hideUnavailable, hideStudyAbroad,
   } = criteria
 
   const deptsSet = new Set(selectedDepts ?? [])
@@ -219,7 +221,13 @@ function buildChecks(criteria: CourseFilterCriteria, cartItems: CartItem[]): Fil
       }
     : null
 
-  return { exclude, depts, terms, formats, levels, gers, schools, units, times, conflicts, unavailable }
+  // Bing Overseas Studies Program courses all use subject codes prefixed with
+  // "OSP" (OSPFLOR, OSPMADRD, OSPPARIS, ...). Hidden by default.
+  const studyAbroad: CourseCheck | null = hideStudyAbroad
+    ? (c) => !(c.subject || '').toUpperCase().startsWith('OSP')
+    : null
+
+  return { exclude, depts, terms, formats, levels, gers, schools, units, times, conflicts, unavailable, studyAbroad }
 }
 
 // Valid (gradeable) + canonical cross-list primary courses, memoized by
@@ -267,6 +275,7 @@ export function filterCourses(
     (exclude === 'times' || !k.times || k.times(c)) &&
     (!k.conflicts || k.conflicts(c)) &&
     (!k.unavailable || k.unavailable(c)) &&
+    (!k.studyAbroad || k.studyAbroad(c)) &&
     (exclude === 'schools' || !k.schools || k.schools(c))
   )
 }
@@ -290,7 +299,7 @@ export function filterCoursesForFacets(
   cartItems: CartItem[],
 ): Record<CountedFacetKey, Course[]> {
   const k = buildChecks(criteria, cartItems)
-  const restChecks = [k.exclude, k.units, k.times, k.conflicts, k.unavailable]
+  const restChecks = [k.exclude, k.units, k.times, k.conflicts, k.unavailable, k.studyAbroad]
     .filter((f): f is CourseCheck => f !== null)
   const dims: [CountedFacetKey, CourseCheck | null][] = [
     ['depts', k.depts],

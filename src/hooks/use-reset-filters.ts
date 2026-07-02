@@ -22,7 +22,8 @@ export function useResetFilters() {
     timeMin: parseAsInteger.withDefault(420),
     timeMax: parseAsInteger.withDefault(1320),
     hideConflicts: parseAsBoolean.withDefault(false),
-    hideUnavailable: parseAsBoolean.withDefault(false),
+    hideUnavailable: parseAsBoolean.withDefault(true),
+    hideStudyAbroad: parseAsBoolean.withDefault(true),
   })
 
   return useCallback(() => {
@@ -41,6 +42,7 @@ export function useResetFilters() {
       timeMax: null,
       hideConflicts: null,
       hideUnavailable: null,
+      hideStudyAbroad: null,
     })
   }, [setFilters])
 }

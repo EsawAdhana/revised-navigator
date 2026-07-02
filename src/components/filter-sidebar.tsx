@@ -86,7 +86,9 @@ export function FilterSidebar() {
     const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedTerms, setSelectedTerms] = useSelectedTerms();
     const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
-    const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false));
+    // Closed/waitlisted and study abroad (BOSP) courses are hidden by default.
+    const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(true));
+    const [hideStudyAbroad, setHideStudyAbroad] = useQueryState('hideStudyAbroad', parseAsBoolean.withDefault(true));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
 
     // New Filters
@@ -146,7 +148,8 @@ export function FilterSidebar() {
         timeMax,
         hideConflicts,
         hideUnavailable,
-    }), [excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable]);
+        hideStudyAbroad,
+    }), [excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, hideStudyAbroad]);
 
     // Per-facet course lists (each facet's own selection omitted), computed in
     // ONE pass over the catalog instead of one full filter pass per facet.
@@ -322,20 +325,20 @@ export function FilterSidebar() {
                     <div className="flex items-center gap-2 min-h-8">
                         <input
                             type="checkbox"
-                            id="showConflicts"
-                            checked={!hideConflicts}
-                            onChange={(e) => setHideConflicts(!e.target.checked)}
+                            id="hideConflicts"
+                            checked={hideConflicts}
+                            onChange={(e) => setHideConflicts(e.target.checked)}
                             className="h-4 w-4 shrink-0 rounded border-input text-primary accent-primary outline-none"
                         />
                         <TooltipProvider delayDuration={300}>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <label htmlFor="showConflicts" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
-                                        Show conflicting classes
+                                    <label htmlFor="hideConflicts" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
+                                        Hide conflicting classes
                                     </label>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" align="start" className="max-w-[240px]">
-                                    Include courses that overlap with courses on your schedule.
+                                    Hide courses that overlap with courses on your schedule.
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>
@@ -357,6 +360,27 @@ export function FilterSidebar() {
                                 </TooltipTrigger>
                                 <TooltipContent side="top" align="start" className="max-w-[240px]">
                                     Hide courses with no open sections in the selected term.
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </div>
+                    <div className="flex items-center gap-2 min-h-8">
+                        <input
+                            type="checkbox"
+                            id="hideStudyAbroad"
+                            checked={hideStudyAbroad}
+                            onChange={(e) => setHideStudyAbroad(e.target.checked)}
+                            className="h-4 w-4 shrink-0 rounded border-input text-primary accent-primary outline-none"
+                        />
+                        <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <label htmlFor="hideStudyAbroad" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
+                                        Hide study abroad
+                                    </label>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" align="start" className="max-w-[240px]">
+                                    Hide Bing Overseas Studies Program (BOSP) courses taught abroad.
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>

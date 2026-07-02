@@ -26,7 +26,9 @@ export function useFilteredCourses() {
     const [timeMin] = useQueryState('timeMin', parseAsInteger.withDefault(420));
     const [timeMax] = useQueryState('timeMax', parseAsInteger.withDefault(1320));
     const [hideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
-    const [hideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false));
+    // Closed/waitlisted and study abroad (BOSP) courses are hidden by default.
+    const [hideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(true));
+    const [hideStudyAbroad] = useQueryState('hideStudyAbroad', parseAsBoolean.withDefault(true));
     const [excludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
     const [sortBy, setSortBy] = useQueryState('sort', parseAsString.withDefault('az'));
     const [sortOrder, setSortOrder] = useQueryState('order', parseAsString);
@@ -55,6 +57,7 @@ export function useFilteredCourses() {
             timeMax,
             hideConflicts,
             hideUnavailable,
+            hideStudyAbroad,
         }, primaryMap, cartItems);
 
         // Filter by Query
@@ -79,7 +82,7 @@ export function useFilteredCourses() {
 
         // All filtering is done; this is the set we will sort (sort is the last step)
         return result;
-    }, [courses, primaryMap, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, cartItems, excludedWords]);
+    }, [courses, primaryMap, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, hideStudyAbroad, cartItems, excludedWords]);
 
     // Precompute difficulty/hours/rating per course (with cross-list lookup) — O(n) total, not O(n²)
     const metricsByCourseId = useMemo(() => {

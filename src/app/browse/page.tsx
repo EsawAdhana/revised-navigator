@@ -4,6 +4,7 @@ import React, { Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { CourseList } from '@/components/course-list';
 import { SiteHeader } from '@/components/site-header';
+import { AnnouncementBanner } from '@/components/announcement-banner';
 import { Logo } from '@/components/logo';
 import { useMediaQuery } from '@/hooks/use-media-query';
 
@@ -29,6 +30,7 @@ function BrowseContent() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">
+      <AnnouncementBanner />
       <SiteHeader />
 
       <div className="flex flex-1 overflow-hidden">

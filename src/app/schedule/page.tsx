@@ -19,6 +19,7 @@ import { aggregateMetrics } from '@/components/course-evaluations';
 import { Logo } from '@/components/logo';
 import { parseMeetingTimes, timeToMinutes, parseDays } from '@/lib/schedule-utils';
 import { getDefaultTerm, getApproxTermStart } from '@/lib/terms';
+import { useAvailableTerms } from '@/hooks/use-selected-terms';
 import { cn, parseUnitsOptions } from '@/lib/utils';
 import {
   Popover,
@@ -53,9 +54,20 @@ function ScheduleContent() {
 
   const QUARTERS = ['Winter', 'Spring', 'Summer', 'Autumn']
 
+  const availableTerms = useAvailableTerms()
   const [currentTerm, setCurrentTerm] = useState(getDefaultTerm())
+  const userPickedTermRef = useRef(false)
+
+  // Once the catalog loads, land on the same default term as Browse (the most
+  // recent Autumn during the summer gap) so courses added from that preview
+  // show up here — unless the user has already navigated to another term.
+  useEffect(() => {
+    if (userPickedTermRef.current || availableTerms.length === 0) return
+    setCurrentTerm(getDefaultTerm(availableTerms))
+  }, [availableTerms])
 
   const nextTerm = () => {
+    userPickedTermRef.current = true
     setCurrentTerm(prev => {
       const [q, yStr] = prev.split(' ')
       const year = parseInt(yStr)
@@ -66,6 +78,7 @@ function ScheduleContent() {
   }
 
   const prevTerm = () => {
+    userPickedTermRef.current = true
     setCurrentTerm(prev => {
       const [q, yStr] = prev.split(' ')
       const year = parseInt(yStr)

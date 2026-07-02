@@ -11,7 +11,6 @@ import { useSelectedTerms } from '@/hooks/use-selected-terms'
 export function ActiveFilterChips() {
   const [query, setQuery] = useQueryState('q', { defaultValue: '' })
   const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false))
-  const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(false))
   const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedTerms, setSelectedTerms] = useSelectedTerms()
   const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]))
@@ -52,9 +51,6 @@ export function ActiveFilterChips() {
     }
     if (hideConflicts) {
       out.push({ id: 'hideConflicts', label: 'Hiding conflicts', onRemove: () => setHideConflicts(false) })
-    }
-    if (hideUnavailable) {
-      out.push({ id: 'hideUnavailable', label: 'Hiding closed & waitlisted', onRemove: () => setHideUnavailable(false) })
     }
     excludedWords.forEach(word => {
       out.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })
@@ -104,7 +100,7 @@ export function ActiveFilterChips() {
       out.push({ id: `school-${school}`, label: school, onRemove: () => toggleFilter(school, selectedSchools, setSelectedSchools) })
     })
     return out
-  }, [query, hideConflicts, hideUnavailable, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
+  }, [query, hideConflicts, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
 
   if (chips.length === 0) return null
 

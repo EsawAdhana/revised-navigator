@@ -53,13 +53,27 @@ export function getCurrentTerm(now: Date = new Date()): string {
 }
 
 /**
- * The term to default UI to. Prefers the in-session term when it exists in the
- * available data, otherwise falls back to the latest available term (so the
- * app never lands users on an empty term right after a data rollover).
+ * The term to default UI to. Prefers the in-session term when it has data, with
+ * two exceptions that both land users on the most recent Autumn term:
+ *   - Summer: nobody enrolls over summer; students are planning the upcoming
+ *     autumn, whose catalog isn't published until August. Last year's autumn is
+ *     the best available preview.
+ *   - Rollover gap: the in-session term simply isn't in the catalog yet.
+ * Falls back to the in-session term (if present) then the latest available term,
+ * so the app never lands users on an empty term.
  */
 export function getDefaultTerm(availableTerms?: string[]): string {
   const current = getCurrentTerm()
   if (availableTerms && availableTerms.length > 0) {
+    const { season } = parseTerm(current)
+    if (season !== 'Summer' && availableTerms.includes(current)) return current
+    const autumns = availableTerms.filter(t => {
+      const s = parseTerm(t).season
+      return s === 'Autumn' || s === 'Fall'
+    })
+    if (autumns.length > 0) {
+      return [...autumns].sort(compareTerms)[autumns.length - 1]
+    }
     if (availableTerms.includes(current)) return current
     return [...availableTerms].sort(compareTerms)[availableTerms.length - 1]
   }
