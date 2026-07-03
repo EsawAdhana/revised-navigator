@@ -64,7 +64,7 @@ export function SiteHeader() {
 
                 <Link href={homeHref} className="flex items-center gap-2.5 md:min-w-[120px] group py-1 px-1 sm:px-2 -ml-1 sm:-ml-2 rounded-lg hover:bg-secondary/50 transition-colors">
                     <Logo className="h-9 w-9 sm:h-10 sm:w-10 shrink-0" />
-                    <h1 className="font-display text-2xl tracking-tight font-semibold text-primary select-none hidden sm:block transition-colors duration-300 group-hover:text-cardinal-red">
+                    <h1 className="font-display text-3xl tracking-tight text-foreground select-none hidden sm:block">
                         Stanford Root
                     </h1>
                 </Link>

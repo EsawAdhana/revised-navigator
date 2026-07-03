@@ -21,7 +21,7 @@ export function useResetFilters() {
     unitMax: parseAsInteger.withDefault(5),
     timeMin: parseAsInteger.withDefault(420),
     timeMax: parseAsInteger.withDefault(1320),
-    hideConflicts: parseAsBoolean.withDefault(false),
+    hideConflicts: parseAsBoolean.withDefault(true),
     hideUnavailable: parseAsBoolean.withDefault(true),
     hideStudyAbroad: parseAsBoolean.withDefault(true),
   })

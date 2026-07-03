@@ -20,7 +20,7 @@ export default function LandingPage() {
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 sm:px-8 h-16">
         <div className="flex items-center gap-2.5">
           <Logo className="h-8 w-8" />
-          <span className="font-display text-xl font-semibold tracking-tight text-foreground">
+          <span className="font-display text-2xl tracking-tight text-foreground">
             Stanford Root
           </span>
         </div>

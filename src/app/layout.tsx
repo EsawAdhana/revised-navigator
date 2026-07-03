@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Inter, Fraunces } from "next/font/google";
+import { Inter, Instrument_Serif } from "next/font/google";
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthProvider } from '@/components/auth-provider';
@@ -12,9 +12,9 @@ import { SITE_URL } from '@/lib/site';
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
-const fraunces = Fraunces({
+const instrumentSerif = Instrument_Serif({
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: "400",
   variable: "--font-display",
 });
 
@@ -46,7 +46,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} ${fraunces.variable}`}>
+      <body className={`${inter.className} ${instrumentSerif.variable}`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <NuqsAdapter>
             <Suspense fallback={null}>

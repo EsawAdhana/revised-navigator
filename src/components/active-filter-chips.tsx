@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useMemo } from 'react'
-import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs'
+import { useQueryState, parseAsArrayOf, parseAsString, parseAsInteger } from 'nuqs'
 import { X } from 'lucide-react'
 import { abbreviateGer, unitsLabel, formatComponent } from '@/lib/utils'
 import { formatMinutes } from '@/lib/schedule-utils'
@@ -10,7 +10,6 @@ import { useSelectedTerms } from '@/hooks/use-selected-terms'
 
 export function ActiveFilterChips() {
   const [query, setQuery] = useQueryState('q', { defaultValue: '' })
-  const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false))
   const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]))
   const [selectedTerms, setSelectedTerms] = useSelectedTerms()
   const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]))
@@ -48,9 +47,6 @@ export function ActiveFilterChips() {
     const out: { id: string, label: string, onRemove: () => void }[] = []
     if (query.trim()) {
       out.push({ id: 'search', label: `Search: ${query.trim()}`, onRemove: () => setQuery(null) })
-    }
-    if (hideConflicts) {
-      out.push({ id: 'hideConflicts', label: 'Hiding conflicts', onRemove: () => setHideConflicts(false) })
     }
     excludedWords.forEach(word => {
       out.push({ id: `exclude-${word}`, label: `Exclude: ${word}`, onRemove: () => removeExcludedWord(word) })
@@ -100,7 +96,7 @@ export function ActiveFilterChips() {
       out.push({ id: `school-${school}`, label: school, onRemove: () => toggleFilter(school, selectedSchools, setSelectedSchools) })
     })
     return out
-  }, [query, hideConflicts, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
+  }, [query, excludedWords, selectedTerms, selectedDepts, selectedFormats, selectedLevels, unitMin, unitMax, timeMin, timeMax, selectedGers, selectedSchools])
 
   if (chips.length === 0) return null
 

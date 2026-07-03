@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * Stanford Root brand mark — a sprout, recolorable via `currentColor`.
- * Defaults to the Cardinal primary; override with a text-color class if needed.
+ * Defaults to foreground (black in light mode, white in dark mode).
  */
 export function Logo({ className }: { className?: string }) {
   return (
@@ -12,7 +12,7 @@ export function Logo({ className }: { className?: string }) {
       fill="none"
       role="img"
       aria-label="Stanford Root"
-      className={cn('text-primary', className)}
+      className={cn('text-foreground', className)}
     >
       <path d="M24 41 V20" stroke="currentColor" strokeWidth={3.5} strokeLinecap="round" />
       <path d="M24 30 C15 30 9 24 9 15 C18 15 24 21 24 30 Z" fill="currentColor" />

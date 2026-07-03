@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Stanford Root — Thin Slab Direction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@300;400;500&family=Instrument+Serif&family=Rokkitt:wght@200;300;400&family=Josefin+Slab:wght@300;400&family=Roboto+Slab:wght@300;400&family=Aleo:wght@300;400&family=Bitter:wght@300;400&family=Petrona:wght@300;400&family=Crete+Round&family=Alegreya:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f4f4f5; padding:32px 28px 48px; }
+  .title { text-align:center; font-size:20px; font-weight:700; color:#18181b; }
+  .sub { text-align:center; font-size:13px; color:#71717a; margin:6px 0 28px; }
+
+  .row { display:grid; grid-template-columns:170px 1fr 1fr; max-width:1180px; margin:0 auto 14px; }
+  .row-label { display:flex; flex-direction:column; justify-content:center; padding-right:16px; }
+  .row-label .n { font-size:15px; font-weight:700; color:#18181b; }
+  .row-label .k { font-size:11px; color:#a1a1aa; text-transform:uppercase; letter-spacing:0.05em; margin-top:2px; }
+  .row-label .ref { font-size:11px; color:#8C1515; font-weight:600; margin-top:3px; }
+
+  .bar { height:64px; display:flex; align-items:center; gap:12px; padding:0 18px; background:var(--bg); }
+  .bar.light { --bg:#fff; --cardinal:#8C1515; --muted:#a1a1aa; --pill:#f4f4f5; border:1px solid #e4e4e7; border-radius:12px 0 0 12px; }
+  .bar.dark { --bg:#181716; --cardinal:#DA2F2F; --muted:#78736c; --pill:#232120; border:1px solid #38352f; border-left:none; border-radius:0 12px 12px 0; }
+  .bar svg { height:34px; width:34px; color:var(--cardinal); flex:none; }
+  .bar .wm { font-size:27px; letter-spacing:-0.01em; line-height:1; color:var(--cardinal); white-space:nowrap; }
+  .bar .search { flex:1; height:36px; border-radius:9px; background:var(--pill); display:flex; align-items:center; padding:0 12px; font-size:13px; color:var(--muted); min-width:60px; }
+  .bar .actions { display:flex; align-items:center; gap:14px; font-size:13px; color:var(--muted); flex:none; }
+  .colhead { display:grid; grid-template-columns:170px 1fr 1fr; max-width:1180px; margin:0 auto 8px; }
+  .colhead div { font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:#a1a1aa; font-weight:600; }
+  .colhead .c2, .colhead .c3 { padding-left:18px; }
+</style>
+</head>
+<body>
+  <div class="title">Stanford Root — thin slab-serif direction</div>
+  <div class="sub">Slab style (like Zilla Slab) at light/thin weights (like Instrument Serif). Weights noted per row.</div>
+
+  <div class="colhead"><div></div><div class="c2">Light</div><div class="c3">Dark</div></div>
+  <div id="rows"></div>
+
+  <template id="logo-tpl">
+    <svg viewBox="0 0 48 48" fill="none"><path d="M24 41 V20" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><path d="M24 30 C15 30 9 24 9 15 C18 15 24 21 24 30 Z" fill="currentColor"/><path d="M24 24 C33 24 39 18 39 9 C30 9 24 15 24 24 Z" fill="currentColor"/></svg>
+  </template>
+
+  <script>
+    const fonts = [
+      { name:"Zilla Slab", css:"'Zilla Slab', serif", w:300, kind:"slab · light" },
+      { name:"Zilla Slab", css:"'Zilla Slab', serif", w:400, kind:"slab · regular", ref:"your pick" },
+      { name:"Instrument Serif", css:"'Instrument Serif', serif", w:400, kind:"serif · thin", ref:"your pick" },
+      { name:"Rokkitt", css:"'Rokkitt', serif", w:200, kind:"slab · extralight" },
+      { name:"Rokkitt", css:"'Rokkitt', serif", w:300, kind:"slab · light" },
+      { name:"Josefin Slab", css:"'Josefin Slab', serif", w:300, kind:"slab · light geo" },
+      { name:"Roboto Slab", css:"'Roboto Slab', serif", w:300, kind:"slab · light" },
+      { name:"Aleo", css:"'Aleo', serif", w:300, kind:"slab · light" },
+      { name:"Bitter", css:"'Bitter', serif", w:300, kind:"slab · light" },
+      { name:"Petrona", css:"'Petrona', serif", w:300, kind:"slab · light" },
+      { name:"Crete Round", css:"'Crete Round', serif", w:400, kind:"slab · softened" },
+      { name:"Alegreya", css:"'Alegreya', serif", w:400, kind:"serif · calligraphic" },
+    ];
+    const rows = document.getElementById('rows');
+    const logoTpl = document.getElementById('logo-tpl');
+    function bar(theme, f) {
+      const b = document.createElement('div');
+      b.className = 'bar ' + theme;
+      b.appendChild(logoTpl.content.cloneNode(true));
+      const wm = document.createElement('span');
+      wm.className = 'wm'; wm.style.fontFamily = f.css; wm.style.fontWeight = f.w;
+      wm.textContent = 'Stanford Root';
+      const search = document.createElement('div'); search.className='search'; search.textContent='Search courses, e.g. CS 106B…';
+      const actions = document.createElement('div'); actions.className='actions'; actions.innerHTML='<span>Schedule</span><span>Log in</span>';
+      b.append(wm, search, actions);
+      return b;
+    }
+    fonts.forEach((f,i)=>{
+      const row=document.createElement('div'); row.className='row';
+      const label=document.createElement('div'); label.className='row-label';
+      label.innerHTML=`<span class="n">${i+1}. ${f.name} ${f.w}</span><span class="k">${f.kind}</span>`+(f.ref?`<span class="ref">${f.ref}</span>`:'');
+      row.append(label, bar('light',f), bar('dark',f));
+      rows.appendChild(row);
+    });
+  </script>
+</body>
+</html>

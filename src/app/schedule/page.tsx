@@ -429,7 +429,7 @@ END:VEVENT
           <div className="flex items-center">
             <Link href={backHref} className="flex items-center gap-2 px-2 py-1 -ml-2 rounded-lg hover:bg-secondary/50 transition-colors group">
               <Logo className="h-8 w-8 md:h-10 md:w-10" />
-              <h1 className="font-display text-xl md:text-2xl tracking-tight font-semibold text-primary select-none transition-colors duration-300 group-hover:text-cardinal-red">
+              <h1 className="font-display text-2xl md:text-3xl tracking-tight text-foreground select-none">
                 Stanford Root
               </h1>
             </Link>

@@ -85,7 +85,7 @@ export function FilterSidebar() {
     const [query] = useQueryState('q', { defaultValue: '' });
     const [selectedDepts, setSelectedDepts] = useQueryState('depts', parseAsArrayOf(parseAsString).withDefault([]));
     const [selectedTerms, setSelectedTerms] = useSelectedTerms();
-    const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(false));
+    const [hideConflicts, setHideConflicts] = useQueryState('hideConflicts', parseAsBoolean.withDefault(true));
     // Closed/waitlisted and study abroad (BOSP) courses are hidden by default.
     const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(true));
     const [hideStudyAbroad, setHideStudyAbroad] = useQueryState('hideStudyAbroad', parseAsBoolean.withDefault(true));
