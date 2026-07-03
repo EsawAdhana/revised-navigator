@@ -104,6 +104,13 @@ export function CoursePageClient({ initialCourse }: { initialCourse?: Course | n
         hasLoaded && course && !isDetailReady && failedDetailIds.has(courseId)
     );
 
+    // We only know a course truly doesn't exist once the catalog has loaded and
+    // we're not mid-redirect to a canonical id. Anything else that isn't ready
+    // yet (catalog still loading, or a partial course from cache/cart without
+    // full detail) should show the loader — never a blank/half-rendered page.
+    const showNotFound = hasLoaded && !course && !isRedirecting;
+    const showLoader = !detailFailed && !showNotFound && (!isDetailReady || isRedirecting);
+
     const retryDetail = () => {
         useCourseStore.setState(state => {
             const next = new Set(state.failedDetailIds);
@@ -155,7 +162,7 @@ export function CoursePageClient({ initialCourse }: { initialCourse?: Course | n
                             </Button>
                         </div>
                     </div>
-                ) : ((!hasLoaded && !course) || (hasLoaded && course && !isDetailReady) || isRedirecting) ? (
+                ) : showLoader ? (
                     <div className="flex flex-1 items-center justify-center">
                         <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
                             <Loader2 className="h-8 w-8 animate-spin text-primary/60" />

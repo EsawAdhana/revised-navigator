@@ -7,6 +7,7 @@ import { AuthProvider } from '@/components/auth-provider';
 import { AnalyticsProvider } from '@/components/analytics-provider';
 import { HumanBehaviorProvider } from '@/components/humanbehavior-provider';
 import { DeferredShell } from '@/components/deferred-shell';
+import { NavProgress } from '@/components/nav-progress';
 import { ThemedToaster } from '@/components/themed-toaster';
 import { SITE_URL } from '@/lib/site';
 import "./globals.css";
@@ -50,6 +51,9 @@ export default function RootLayout({
       <body className={`${inter.className} ${instrumentSerif.variable}`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <NuqsAdapter>
+            <Suspense fallback={null}>
+              <NavProgress />
+            </Suspense>
             <Suspense fallback={null}>
               <AuthProvider>
                 {children}
