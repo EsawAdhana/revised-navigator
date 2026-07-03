@@ -1,0 +1,49 @@
+import type { Course } from '@/types/course'
+import { isWimCourse } from '@/lib/wim-courses'
+import { isLanguageCourse } from '@/lib/language-courses'
+
+/**
+ * Map a raw Supabase course row (merged via mergeCourseRows) to a Course,
+ * injecting the WIM and Language GERs. Shared by the client store and the
+ * server-rendered course page so both produce identical Course objects.
+ */
+export function rowToCourse(row: any): Course {
+  const isWim = isWimCourse(row.subject, row.code)
+  const sections = row.sections || []
+
+  // Inject WIM GER if applicable
+  if (isWim) {
+    sections.forEach((s: any) => {
+      if (!s.gers) s.gers = []
+      if (!s.gers.includes('Writing in the Major (WIM)')) {
+        s.gers.push('Writing in the Major (WIM)')
+      }
+    })
+  }
+
+  // Inject Language GER if description/subject indicates a language course
+  if (isLanguageCourse(row.description || '', row.subject)) {
+    sections.forEach((s: any) => {
+      if (!s.gers) s.gers = []
+      if (!s.gers.includes('Language')) {
+        s.gers.push('Language')
+      }
+    })
+  }
+
+  return {
+    id: row.course_id,
+    subject: row.subject,
+    code: row.code,
+    title: row.title,
+    description: row.description || '',
+    units: row.units,
+    grading: row.grading || '',
+    instructors: row.instructors || [],
+    terms: row.terms || [],
+    sections: sections,
+    hours: row.hours != null ? Number(row.hours) : undefined,
+    quality: row.quality != null ? Number(row.quality) : undefined,
+    difficulty: row.difficulty != null ? Number(row.difficulty) : undefined,
+  }
+}

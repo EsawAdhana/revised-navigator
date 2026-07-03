@@ -33,7 +33,8 @@ export async function POST(request: Request) {
 
     const merged = mergeCourseRows(data || [])
     return NextResponse.json(merged, {
-      headers: { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800' }
+      // Data changes once a day (scrape + redeploy busts the CDN cache)
+      headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=86400' }
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to fetch courses'

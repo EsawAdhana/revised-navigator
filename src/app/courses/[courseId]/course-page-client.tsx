@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryState } from 'nuqs';
+import type { Course } from '@/types/course';
 import { useCourseStore, hasFullCourseData } from '@/lib/store';
 import { SiteHeader } from '@/components/site-header';
 import { useCartStore } from '@/lib/cart-store';
@@ -18,7 +19,7 @@ const CourseDetailContent = dynamic(
   { ssr: false }
 );
 
-export function CoursePageClient() {
+export function CoursePageClient({ initialCourse }: { initialCourse?: Course | null }) {
     const params = useParams();
     const router = useRouter();
     const rawCourseId = params.courseId as string;
@@ -30,6 +31,17 @@ export function CoursePageClient() {
         }
     })();
     const [mounted, setMounted] = useState(false);
+    // Tracks when the CourseDetailContent chunk has loaded. `dynamic()` starts
+    // the same import on first render; this resolves alongside it.
+    const [contentChunkReady, setContentChunkReady] = useState(false);
+    useEffect(() => {
+        let alive = true;
+        import('@/components/course-detail-content').then(
+            () => { if (alive) setContentChunkReady(true); },
+            () => { /* chunk load failure — leave the SSR summary visible */ }
+        );
+        return () => { alive = false; };
+    }, []);
 
     const [query] = useQueryState('q', { defaultValue: '' });
     const courses = useCourseStore(s => s.courses);
@@ -79,12 +91,18 @@ export function CoursePageClient() {
 
     const course = useMemo(() => {
         let found = courses.find(c => c.id === courseId);
+        // Prefer the server-fetched course over a light catalog row (no
+        // sections/description yet) so the detail view renders immediately
+        // instead of waiting for catalog enrichment.
+        if ((!found || !hasFullCourseData(found)) && initialCourse && initialCourse.id === courseId) {
+            found = initialCourse;
+        }
         if (!found) {
             const cartItem = getItem(courseId);
             if (cartItem) found = cartItem;
         }
         return found;
-    }, [courses, courseId, getItem]);
+    }, [courses, courseId, getItem, initialCourse]);
 
     // Resolve the catalog course for this URL id, tolerant of casing/spacing and
     // cross-list alternates (e.g. "cs106a" or "CS 106A" -> "CS106A"). Used to
@@ -127,10 +145,10 @@ export function CoursePageClient() {
     // Once the interactive view is ready, hide it so users don't see duplicate content;
     // if loading fails it stays as a graceful fallback.
     useEffect(() => {
-        if (course && isDetailReady) {
+        if (course && isDetailReady && contentChunkReady) {
             document.getElementById('ssr-course-summary')?.style.setProperty('display', 'none');
         }
-    }, [course, isDetailReady]);
+    }, [course, isDetailReady, contentChunkReady]);
 
     useEffect(() => {
         if (!hasLoaded || !resolvedTarget) return;

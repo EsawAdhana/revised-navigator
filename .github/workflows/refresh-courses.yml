@@ -1,6 +1,10 @@
 # Required repo secrets (Settings → Secrets and variables → Actions):
 #   NEXT_PUBLIC_SUPABASE_URL
 #   SUPABASE_SERVICE_ROLE_KEY
+# Optional:
+#   DEPLOY_HOOK_URL — deploy hook (e.g. Vercel project → Settings → Git → Deploy Hooks).
+#   Triggering a deploy after the scrape busts the 24h CDN/server cache on
+#   /api/courses so fresh data is served right away instead of up to a day later.
 # If schedules stop after repo inactivity: Actions → ... → enable workflows; run once via workflow_dispatch.
 name: Refresh Course Data
 on:
@@ -22,3 +26,13 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      - name: Trigger redeploy to bust the API cache
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$DEPLOY_HOOK_URL" ]; then
+            curl -fsS -X POST "$DEPLOY_HOOK_URL" > /dev/null
+            echo "Deploy hook triggered."
+          else
+            echo "DEPLOY_HOOK_URL not set; skipping cache bust (data may be served stale for up to 24h)."
+          fi

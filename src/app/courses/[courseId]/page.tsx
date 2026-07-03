@@ -11,6 +11,7 @@ import {
     parseUnitsOptions,
 } from '@/lib/utils';
 import { isWimCourse } from '@/lib/wim-courses';
+import { rowToCourse } from '@/lib/course-mapper';
 import { compareTerms } from '@/lib/terms';
 import { SITE_URL } from '@/lib/site';
 import { CoursePageClient } from './course-page-client';
@@ -28,22 +29,9 @@ const fetchCourse = cache(async (courseId: string): Promise<Course | null> => {
             .select(FULL_COURSE_COLUMNS)
             .eq('course_id', courseId);
         if (!data || data.length === 0) return null;
-        const row = mergeCourseRows(data)[0];
-        return {
-            id: row.course_id,
-            subject: row.subject,
-            code: row.code,
-            title: row.title,
-            description: row.description || '',
-            units: row.units,
-            grading: row.grading || '',
-            instructors: row.instructors || [],
-            terms: row.terms || [],
-            sections: row.sections || [],
-            hours: row.hours != null ? Number(row.hours) : undefined,
-            quality: row.quality != null ? Number(row.quality) : undefined,
-            difficulty: row.difficulty != null ? Number(row.difficulty) : undefined,
-        };
+        // Shared mapper keeps this identical to the client store's Course shape
+        // (including WIM/Language GER injection).
+        return rowToCourse(mergeCourseRows(data)[0]);
     } catch {
         return null;
     }
@@ -222,7 +210,7 @@ export default async function CoursePage({
                 />
             )}
             {course && <CourseSummary course={course} />}
-            <CoursePageClient />
+            <CoursePageClient initialCourse={course} />
         </>
     );
 }

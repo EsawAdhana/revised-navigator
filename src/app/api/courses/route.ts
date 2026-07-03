@@ -11,7 +11,10 @@ let cachedLight: string | null = null
 let cachedFull: string | null = null
 let lightTimestamp = 0
 let fullTimestamp = 0
-const CACHE_TTL = 1000 * 60 * 15 // 15 min
+// Course data only changes via the daily scrape (refresh-courses.yml), which
+// triggers a redeploy that resets this cache and the CDN cache. Within a
+// deployment the data is static, so cache for a day.
+const CACHE_TTL = 1000 * 60 * 60 * 24 // 24 h
 
 // In-flight promises so concurrent cold requests share one DB scan (stampede guard)
 let lightInFlight: Promise<string> | null = null
@@ -48,7 +51,9 @@ async function fetchAllRows(columns: string) {
   return rows.filter(r => r.grading && r.grading.trim() !== '' && r.grading !== 'TBD')
 }
 
-const CACHE_HEADERS = { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800' }
+// s-maxage matches the daily data refresh; the post-scrape redeploy busts the
+// CDN cache sooner, and stale-while-revalidate keeps expiry hits fast.
+const CACHE_HEADERS = { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=86400' }
 
 async function getFull(): Promise<string> {
   if (cachedFull && Date.now() - fullTimestamp < CACHE_TTL) return cachedFull
