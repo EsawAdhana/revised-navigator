@@ -16,6 +16,7 @@ const instrumentSerif = Instrument_Serif({
   subsets: ["latin"],
   weight: "400",
   variable: "--font-display",
+  adjustFontFallback: true,
 });
 
 const siteUrl = SITE_URL;

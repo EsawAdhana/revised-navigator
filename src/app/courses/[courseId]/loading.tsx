@@ -1,14 +1,33 @@
-import { Loader2 } from 'lucide-react';
+import { Suspense } from 'react';
+import { SiteHeader } from '@/components/site-header';
 
+function HeaderFallback() {
+    return <div className="h-14 sm:h-16 border-b border-border/50 bg-background/90" />;
+}
+
+/** Route-level loading UI — matches the course page shell so navigations
+ *  don't flash a centered spinner before snapping into layout. */
 export default function CourseLoading() {
     return (
         <div className="min-h-screen bg-background flex flex-col">
-            <div className="h-14 border-b bg-background/80 backdrop-blur" />
+            <Suspense fallback={<HeaderFallback />}>
+                <SiteHeader />
+            </Suspense>
             <main className="flex-1 bg-background">
-                <div className="flex flex-1 items-center justify-center">
-                    <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
-                        <span className="text-sm text-muted-foreground">Loading class information...</span>
+                <div className="mx-auto max-w-6xl px-5 py-6 md:py-8">
+                    <div className="h-8 w-48 rounded bg-muted/40 mb-2" />
+                    <div className="h-10 w-full max-w-2xl rounded bg-muted/30 mb-6" />
+                    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+                        <div className="space-y-4">
+                            <div className="h-10 w-56 rounded-lg bg-muted/30" />
+                            <div className="h-32 rounded-xl bg-muted/20" />
+                            <div className="h-48 rounded-xl bg-muted/20" />
+                        </div>
+                        <div className="space-y-3">
+                            <div className="h-6 w-24 rounded bg-muted/30" />
+                            <div className="h-40 rounded-xl bg-muted/20" />
+                            <div className="h-40 rounded-xl bg-muted/20" />
+                        </div>
                     </div>
                 </div>
             </main>

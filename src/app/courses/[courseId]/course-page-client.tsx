@@ -1,23 +1,18 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import dynamic from 'next/dynamic';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryState } from 'nuqs';
 import type { Course } from '@/types/course';
 import { useCourseStore, hasFullCourseData } from '@/lib/store';
 import { SiteHeader } from '@/components/site-header';
+import { CourseDetailContent } from '@/components/course-detail-content';
 import { useCartStore } from '@/lib/cart-store';
 import { searchCourses } from '@/lib/search-utils';
 import { compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary } from '@/lib/utils';
 import { Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-
-const CourseDetailContent = dynamic(
-  () => import('@/components/course-detail-content').then(m => ({ default: m.CourseDetailContent })),
-  { ssr: false }
-);
 
 export function CoursePageClient({ initialCourse }: { initialCourse?: Course | null }) {
     const params = useParams();
@@ -30,19 +25,6 @@ export function CoursePageClient({ initialCourse }: { initialCourse?: Course | n
             return rawCourseId;
         }
     })();
-    const [mounted, setMounted] = useState(false);
-    // Tracks when the CourseDetailContent chunk has loaded. `dynamic()` starts
-    // the same import on first render; this resolves alongside it.
-    const [contentChunkReady, setContentChunkReady] = useState(false);
-    useEffect(() => {
-        let alive = true;
-        import('@/components/course-detail-content').then(
-            () => { if (alive) setContentChunkReady(true); },
-            () => { /* chunk load failure — leave the SSR summary visible */ }
-        );
-        return () => { alive = false; };
-    }, []);
-
     const [query] = useQueryState('q', { defaultValue: '' });
     const courses = useCourseStore(s => s.courses);
     const hasLoaded = useCourseStore(s => s.hasLoaded);
@@ -50,10 +32,6 @@ export function CoursePageClient({ initialCourse }: { initialCourse?: Course | n
     const fetchCourseDetail = useCourseStore(s => s.fetchCourseDetail);
     const failedDetailIds = useCourseStore(s => s.failedDetailIds);
     const getItem = useCartStore(s => s.getItem);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
 
     const prevQueryAndId = useRef({ query: (query || '').trim(), courseId });
 
@@ -141,14 +119,15 @@ export function CoursePageClient({ initialCourse }: { initialCourse?: Course | n
         }
     }, [hasLoaded, course, courseId, isDetailReady, fetchCourseDetail]);
 
-    // The server renders a crawlable course summary (#ssr-course-summary) for SEO.
-    // Once the interactive view is ready, hide it so users don't see duplicate content;
-    // if loading fails it stays as a graceful fallback.
+    // If the interactive view fails, reveal the crawlable SSR summary as fallback.
     useEffect(() => {
-        if (course && isDetailReady && contentChunkReady) {
-            document.getElementById('ssr-course-summary')?.style.setProperty('display', 'none');
+        const el = document.getElementById('ssr-course-summary');
+        if (!el) return;
+        const showFallback = detailFailed || (hasLoaded && !course && !isRedirecting);
+        if (showFallback) {
+            el.classList.remove('sr-only');
         }
-    }, [course, isDetailReady, contentChunkReady]);
+    }, [detailFailed, hasLoaded, course, isRedirecting]);
 
     useEffect(() => {
         if (!hasLoaded || !resolvedTarget) return;
@@ -157,26 +136,6 @@ export function CoursePageClient({ initialCourse }: { initialCourse?: Course | n
             router.replace(`/courses/${encodeURIComponent(resolvedTarget.id)}${search || ''}`);
         }
     }, [hasLoaded, courseId, resolvedTarget, router]);
-
-    if (!mounted) {
-        return (
-            <div className="min-h-screen bg-background flex flex-col">
-                <SiteHeader />
-                <main className="flex-1 bg-background">
-                    {isDetailReady && course ? (
-                        <CourseDetailContent key={course.id} course={course} />
-                    ) : (
-                        <div className="flex flex-1 items-center justify-center">
-                            <div className="flex flex-col items-center gap-3 animate-fade-in mt-32">
-                                <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
-                                <span className="text-sm text-muted-foreground">Loading class information...</span>
-                            </div>
-                        </div>
-                    )}
-                </main>
-            </div>
-        );
-    }
 
     return (
         <div className="min-h-screen bg-background flex flex-col">

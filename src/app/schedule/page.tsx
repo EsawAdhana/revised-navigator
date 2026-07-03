@@ -17,6 +17,7 @@ import { useAuthStore } from '@/lib/auth-store';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { aggregateMetrics } from '@/components/course-evaluations';
 import { Logo } from '@/components/logo';
+import { SchedulePageShell } from '@/components/schedule-page-shell';
 import { parseMeetingTimes, timeToMinutes, parseDays } from '@/lib/schedule-utils';
 import { getDefaultTerm, getApproxTermStart } from '@/lib/terms';
 import { useAvailableTerms } from '@/hooks/use-selected-terms';
@@ -510,14 +511,7 @@ END:VEVENT
 
 export default function SchedulePage() {
   return (
-    <Suspense fallback={
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <Logo className="h-10 w-10 animate-pulse" />
-          <span className="text-sm font-medium text-muted-foreground">Loading schedule…</span>
-        </div>
-      </div>
-    }>
+    <Suspense fallback={<SchedulePageShell />}>
       <ScheduleContent />
     </Suspense>
   );

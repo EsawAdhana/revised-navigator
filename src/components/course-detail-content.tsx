@@ -263,7 +263,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     };
 
     return (
-        <div className="container max-w-[95rem] mx-auto p-4 md:px-8 md:pt-4 md:pb-10 space-y-4 animate-in fade-in zoom-in-95 duration-300">
+        <div className="container max-w-[95rem] mx-auto p-4 md:px-8 md:pt-4 md:pb-10 space-y-4">
             {/* Calendar Preview Modal */}
             {previewSection && (
                 <CalendarPreviewModal

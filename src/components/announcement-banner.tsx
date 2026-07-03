@@ -1,24 +1,33 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { Megaphone, X } from 'lucide-react'
 
 // Bump the key whenever the announcement content changes so it re-shows.
 const STORAGE_KEY = 'root_announcement_2026_2027_dismissed'
+const DISMISS_EVENT = 'root-announcement-dismiss'
 const CALENDAR_URL =
   'https://studentservices.stanford.edu/calendar-events/academic-calendars/future-academic-calendars/stanford-academic-calendar-2026-2027'
 
-export function AnnouncementBanner() {
-  const [dismissed, setDismissed] = useState(true)
+function readDismissed(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 
-  useEffect(() => {
-    try {
-      setDismissed(localStorage.getItem(STORAGE_KEY) === '1')
-    } catch {
-      // localStorage unavailable (private mode, etc.) — just show it.
-      setDismissed(false)
-    }
-  }, [])
+function subscribeDismiss(onStoreChange: () => void) {
+  window.addEventListener(DISMISS_EVENT, onStoreChange)
+  return () => window.removeEventListener(DISMISS_EVENT, onStoreChange)
+}
+
+export function AnnouncementBanner() {
+  const dismissed = useSyncExternalStore(
+    subscribeDismiss,
+    readDismissed,
+    () => true,
+  )
 
   function dismiss() {
     try {
@@ -26,13 +35,13 @@ export function AnnouncementBanner() {
     } catch {
       // Ignore persistence failures; worst case it shows again next visit.
     }
-    setDismissed(true)
+    window.dispatchEvent(new Event(DISMISS_EVENT))
   }
 
   if (dismissed) return null
 
   return (
-    <div className="relative border-b border-cardinal-red/25 border-l-4 border-l-cardinal-red bg-cardinal-red/5 px-4 py-2.5 pr-10 text-sm text-foreground dark:border-cardinal-red-light/40 dark:border-l-cardinal-red-light dark:bg-cardinal-red-light/10">
+    <div suppressHydrationWarning className="relative border-b border-cardinal-red/25 border-l-4 border-l-cardinal-red bg-cardinal-red/5 px-4 py-2.5 pr-10 text-sm text-foreground dark:border-cardinal-red-light/40 dark:border-l-cardinal-red-light dark:bg-cardinal-red-light/10">
       <div className="mx-auto flex max-w-5xl items-start gap-2.5">
         <Megaphone
           className="mt-0.5 h-4 w-4 shrink-0 text-cardinal-red dark:text-cardinal-red-light"

@@ -14,6 +14,8 @@ import { isWimCourse } from '@/lib/wim-courses';
 import { rowToCourse } from '@/lib/course-mapper';
 import { compareTerms } from '@/lib/terms';
 import { SITE_URL } from '@/lib/site';
+import { getDepartmentCourses } from '@/lib/departments';
+import Link from 'next/link';
 import { CoursePageClient } from './course-page-client';
 
 // Cache the server render (metadata + SSR summary + JSON-LD) for a day.
@@ -131,8 +133,9 @@ function courseJsonLd(course: Course) {
     };
 }
 
-/** Server-rendered, crawlable course summary (hidden by the client once the
- *  interactive view is ready — see course-page-client.tsx). */
+/** Server-rendered, crawlable course summary. Visually hidden (`sr-only`) so
+ *  users never see it stacked above the header during hydration; crawlers still
+ *  read the DOM. Shown as a fallback only if the client fails to load. */
 function CourseSummary({ course }: { course: Course }) {
     const code = `${course.subject} ${course.code}`;
     const description = plainText(course.description);
@@ -153,7 +156,7 @@ function CourseSummary({ course }: { course: Course }) {
     });
 
     return (
-        <section id="ssr-course-summary" aria-label={`${code} overview`} className="mx-auto max-w-3xl px-5 py-8">
+        <section id="ssr-course-summary" aria-label={`${code} overview`} className="sr-only mx-auto max-w-3xl px-5 py-8">
             <h1 className="text-2xl font-bold">{code}: {decodeHtmlEntities(course.title)}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
                 {[unitsLabel && `${unitsLabel} units`, course.grading, gers.length > 0 && `GER: ${gers.join(', ')}`]
@@ -192,6 +195,61 @@ function CourseSummary({ course }: { course: Course }) {
     );
 }
 
+/** Server-rendered links to nearby courses in the same department. Stays visible
+ *  below the interactive view so crawlers (and users) always see real links
+ *  between course pages — course pages are otherwise only reachable via the sitemap. */
+async function RelatedCourses({ course }: { course: Course }) {
+    let deptCourses: Awaited<ReturnType<typeof getDepartmentCourses>>;
+    try {
+        deptCourses = await getDepartmentCourses(course.subject);
+    } catch {
+        return null;
+    }
+    const others = deptCourses.filter((c) => c.id !== course.id);
+    if (others.length === 0) return null;
+
+    // Window of 12 courses around this one in code order (neighbors are the
+    // most relevant: same level, often the same series).
+    const idx = deptCourses.findIndex((c) => c.id === course.id);
+    const center = idx === -1 ? 0 : idx;
+    const start = Math.max(0, Math.min(center - 6, others.length - 12));
+    const related = others.slice(start, start + 12);
+
+    return (
+        <section aria-label={`More ${course.subject} courses`} className="border-t border-border/40">
+            <div className="mx-auto max-w-3xl px-5 py-8">
+                <h2 className="text-lg font-semibold">More {course.subject} courses</h2>
+                <ul className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 text-sm">
+                    {related.map((c) => (
+                        <li key={c.id}>
+                            <Link
+                                href={`/courses/${encodeURIComponent(c.id)}`}
+                                prefetch={false}
+                                className="text-muted-foreground hover:text-primary transition-colors"
+                            >
+                                {c.subject} {c.code}: {decodeHtmlEntities(c.title)}
+                            </Link>
+                        </li>
+                    ))}
+                </ul>
+                <p className="mt-4 text-sm text-muted-foreground">
+                    <Link
+                        href={`/browse/${encodeURIComponent(course.subject)}`}
+                        prefetch={false}
+                        className="underline hover:text-primary transition-colors"
+                    >
+                        All {course.subject} courses
+                    </Link>
+                    {' · '}
+                    <Link href="/browse/departments" prefetch={false} className="underline hover:text-primary transition-colors">
+                        All departments
+                    </Link>
+                </p>
+            </div>
+        </section>
+    );
+}
+
 export default async function CoursePage({
     params,
 }: {
@@ -209,8 +267,9 @@ export default async function CoursePage({
                     dangerouslySetInnerHTML={{ __html: JSON.stringify(courseJsonLd(course)) }}
                 />
             )}
-            {course && <CourseSummary course={course} />}
             <CoursePageClient initialCourse={course} />
+            {course && <CourseSummary course={course} />}
+            {course && <RelatedCourses course={course} />}
         </>
     );
 }
