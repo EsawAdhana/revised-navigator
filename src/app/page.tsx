@@ -52,6 +52,12 @@ export default function LandingPage() {
       <footer className="mt-auto border-t border-border/40">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-center gap-2 px-5 py-6 text-sm text-muted-foreground sm:flex-row sm:gap-6">
           <div className="flex items-center gap-6">
+            <Link href="/browse" className="transition-colors hover:text-foreground">
+              Browse courses
+            </Link>
+            <Link href="/browse/departments" className="transition-colors hover:text-foreground">
+              Departments
+            </Link>
             <Link href="/privacy" className="transition-colors hover:text-foreground">
               Privacy
             </Link>
