@@ -83,8 +83,8 @@ export default async function DepartmentPage({
         </nav>
         <h1 className="text-3xl font-bold tracking-tight">{subject} courses at Stanford</h1>
         <p className="mt-2 text-muted-foreground">
-          {courses.length} {subject} {courses.length === 1 ? 'course' : 'courses'} in
-          Stanford&rsquo;s catalog, with ratings and hours per week from real student evaluations.
+          {courses.length} {subject} {courses.length === 1 ? 'course' : 'courses'}{' '}
+          in Stanford&rsquo;s catalog, with ratings and hours per week from real student evaluations.
         </p>
         <ul className="mt-8 divide-y divide-border/40">
           {courses.map((course) => {
