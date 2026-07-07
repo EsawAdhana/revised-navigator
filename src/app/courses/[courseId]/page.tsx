@@ -195,9 +195,9 @@ function CourseSummary({ course }: { course: Course }) {
     );
 }
 
-/** Server-rendered links to nearby courses in the same department. Stays visible
- *  below the interactive view so crawlers (and users) always see real links
- *  between course pages — course pages are otherwise only reachable via the sitemap. */
+/** Server-rendered links to nearby courses in the same department. Visually hidden
+ *  (`sr-only`) so crawlers get internal links between course pages without cluttering
+ *  the UI — department browse pages cover human navigation. */
 async function RelatedCourses({ course }: { course: Course }) {
     let deptCourses: Awaited<ReturnType<typeof getDepartmentCourses>>;
     try {
@@ -216,7 +216,7 @@ async function RelatedCourses({ course }: { course: Course }) {
     const related = others.slice(start, start + 12);
 
     return (
-        <section aria-label={`More ${course.subject} courses`} className="border-t border-border/40">
+        <section aria-label={`More ${course.subject} courses`} className="sr-only">
             <div className="mx-auto max-w-3xl px-5 py-8">
                 <h2 className="text-lg font-semibold">More {course.subject} courses</h2>
                 <ul className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 text-sm">

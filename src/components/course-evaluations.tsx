@@ -10,6 +10,7 @@ import {
   ExternalLink, Clock, Search, X, Lock
 } from 'lucide-react'
 import { cn, decodeHtmlEntities } from '@/lib/utils'
+import { isDevEvalsUnlocked } from '@/lib/dev-flags'
 import { compareTerms } from '@/lib/terms'
 import type { CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
 
@@ -208,13 +209,10 @@ function HoursHistogram({ options }: { options: EvalOption[] }) {
                 </span>
               )}
               <div
-                className="w-full rounded-t transition-all duration-300"
+                className="w-full rounded-t bg-primary transition-all duration-300 hover:brightness-110"
                 style={{
                   height: `${Math.max(height, bucket.count > 0 ? 4 : 0)}%`,
-                  backgroundColor: '#8C151599'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#8C1515CC'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#8C151599'}
               />
             </div>
           )
@@ -515,6 +513,7 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
   const evaluationsById = useEvaluationStore(state => state.evaluations)
   const user = useAuthStore(state => state.user)
   const authLoading = useAuthStore(state => state.isLoading)
+  const canViewEvals = Boolean(user) || isDevEvalsUnlocked()
   const [activeTermFilter, setActiveTermFilter] = useState<string>('all')
   const [activeTab, setActiveTab] = useState<EvalTab>(forcedTab || 'overview')
   const [expandedInstructor, setExpandedInstructor] = useState<string | null>(null)
@@ -532,12 +531,12 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
 
   const courseIdsKey = courseIds.join(',')
   useEffect(() => {
-    if (user && courseIds.length > 0) fetchBulkEvaluations(courseIds)
-  }, [courseIdsKey, fetchBulkEvaluations, user])
+    if (canViewEvals && courseIds.length > 0) fetchBulkEvaluations(courseIds)
+  }, [courseIdsKey, fetchBulkEvaluations, canViewEvals])
 
   useEffect(() => {
-    if (!authLoading && !user) track('eval_gate_viewed', { subject, code })
-  }, [authLoading, user, subject, code])
+    if (!authLoading && !canViewEvals) track('eval_gate_viewed', { subject, code })
+  }, [authLoading, canViewEvals, subject, code])
 
   // Unique terms (newest first)
   const evalTerms = useMemo(() => {
@@ -594,8 +593,8 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
     }
   }, [activeTab])
 
-  // Gated: course evaluations are Stanford-login-only
-  if (!user) {
+  // Gated: course evaluations are Stanford-login-only (dev bypass via NEXT_PUBLIC_DEV_UNLOCK_EVALS)
+  if (!canViewEvals) {
     if (authLoading) {
       return (
         <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">

@@ -10,6 +10,7 @@ import { promptLoginToSyncOnce } from '@/lib/login-nudge';
 import { track } from '@/lib/analytics';
 import { Section } from '@/types/course';
 import { cn, getSyllabusUrl, parseUnitsOptions, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities, getCrossListGroupIds, aggregateCrossListedSectionEnrollment } from '@/lib/utils';
+import { isDevEvalsUnlocked } from '@/lib/dev-flags';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSyllabusValidity } from '@/hooks/use-syllabus-validity';
@@ -90,12 +91,13 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const getMergedEvaluations = useEvaluationStore(s => s.getMergedEvaluations);
     const evaluationsById = useEvaluationStore(state => state.evaluations);
     const user = useAuthStore(s => s.user);
+    const canViewEvals = Boolean(user) || isDevEvalsUnlocked();
 
     const crossListIds = useMemo(() => getCrossListGroupIds(course.id, courses), [course.id, courses]);
 
     useEffect(() => {
-        if (user && crossListIds.length > 0) fetchBulkEvaluations(crossListIds);
-    }, [crossListIds, fetchBulkEvaluations, user]);
+        if (canViewEvals && crossListIds.length > 0) fetchBulkEvaluations(crossListIds);
+    }, [crossListIds, fetchBulkEvaluations, canViewEvals]);
 
     const evaluations = useMemo(() => getMergedEvaluations(crossListIds), [getMergedEvaluations, crossListIds, evaluationsById]);
 
