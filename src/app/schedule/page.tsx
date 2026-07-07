@@ -17,6 +17,7 @@ import { useAuthStore } from '@/lib/auth-store';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { aggregateMetrics } from '@/components/course-evaluations';
 import { Logo } from '@/components/logo';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { SchedulePageShell } from '@/components/schedule-page-shell';
 import { parseMeetingTimes, timeToMinutes, parseDays } from '@/lib/schedule-utils';
 import { getDefaultTerm, getApproxTermStart } from '@/lib/terms';
@@ -436,6 +437,7 @@ END:VEVENT
             </Link>
           </div>
           <div className="flex items-center gap-3 ml-auto">
+            <ThemeToggle />
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">

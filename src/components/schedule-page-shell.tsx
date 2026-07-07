@@ -11,7 +11,10 @@ export function SchedulePageShell() {
             <div className="h-8 w-8 md:h-10 md:w-10 rounded-full bg-muted/40 shrink-0" />
             <div className="h-8 w-[8.5rem] md:h-9 rounded bg-muted/40" />
           </div>
-          <div className="h-9 w-24 rounded-lg bg-muted/40" />
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-9 rounded-full bg-muted/40 shrink-0" />
+            <div className="h-9 w-24 rounded-lg bg-muted/40" />
+          </div>
         </div>
       </header>
       <main className="flex-1 overflow-auto px-4 md:px-6 pt-4 md:pt-6 pb-16">
