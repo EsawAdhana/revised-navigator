@@ -41,6 +41,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      humanbehavior-js:
+        specifier: ^0.8.1
+        version: 0.8.1
       lucide-react:
         specifier: ^0.562.0
         version: 0.562.0(react@19.2.7)
@@ -65,9 +68,6 @@ importers:
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      stripe:
-        specifier: ^22.2.3
-        version: 22.2.3(@types/node@25.9.4)
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.6.0
@@ -1697,6 +1697,9 @@ packages:
   hermes-parser@0.25.1:
     resolution: {integrity: sha512-6pEjquH3rqaI6cYAXYPcz9MS4rY6R4ngRgrgfDshRptUZIc3lw0MCIJIGDj9++mfySOuPTHB4nrSW99BCvOPIA==}
 
+  humanbehavior-js@0.8.1:
+    resolution: {integrity: sha512-13gXaPRN2p1Gsq32B2EThIM34L0fkI+maTQXrnX4X9iEJyw3mQDaycQCa3hTMi/zREYkfEaOgRxWLhZMuVWbMQ==}
+
   iceberg-js@0.8.1:
     resolution: {integrity: sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA==}
     engines: {node: '>=20.0.0'}
@@ -2400,15 +2403,6 @@ packages:
   strip-json-comments@3.1.1:
     resolution: {integrity: sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==}
     engines: {node: '>=8'}
-
-  stripe@22.2.3:
-    resolution: {integrity: sha512-9lrggvLtjO4Ef5WXH4t50ckHJcJgTD72xFB+KJgZCSszAH9zMV1BqU6PwmWbRLdcdX7LK6PbErBapiGK7pIb+g==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      '@types/node': '>=18'
-    peerDependenciesMeta:
-      '@types/node':
-        optional: true
 
   strnum@2.4.1:
     resolution: {integrity: sha512-M9eUSMT2dCB2cTNPG7UYj6KuK7RJR2SN2+yCV/fTW3xzTCS6EaGZ5pSMgDIjB7r8zSfTGk+dvvn9rTjpVS9Mwg==}
@@ -4372,6 +4366,8 @@ snapshots:
     dependencies:
       hermes-estree: 0.25.1
 
+  humanbehavior-js@0.8.1: {}
+
   iceberg-js@0.8.1: {}
 
   ignore@5.3.2: {}
@@ -5110,10 +5106,6 @@ snapshots:
   strip-bom@3.0.0: {}
 
   strip-json-comments@3.1.1: {}
-
-  stripe@22.2.3(@types/node@25.9.4):
-    optionalDependencies:
-      '@types/node': 25.9.4
 
   strnum@2.4.1:
     dependencies:

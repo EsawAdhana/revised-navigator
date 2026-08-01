@@ -19,7 +19,12 @@ const nextConfig = {
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-          { key: 'Content-Security-Policy', value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 https://*.supabase.co wss://*.supabase.co https://syllabus.stanford.edu; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" }
+          {
+            key: 'Content-Security-Policy',
+            // Human Behavior ingest (staging + prod) must be in connect-src or the SDK is blocked in the browser.
+            value:
+              "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 https://*.supabase.co wss://*.supabase.co https://syllabus.stanford.edu https://*.humanbehavior.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+          }
         ]
       }
     ]

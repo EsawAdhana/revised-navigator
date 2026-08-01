@@ -39,3 +39,5 @@ CLAUDE.md
 .env.example
 public/google*.html
 public/robots.txt
+.vercel
+.env*
