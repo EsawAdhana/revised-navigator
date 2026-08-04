@@ -9,8 +9,8 @@
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "scrape:sections": "node --env-file=.env.local scripts/scrape-sections.mjs",
-    "build:next": "next build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "next build"
   },
   "keywords": [],
   "author": "",
