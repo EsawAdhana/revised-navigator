@@ -162,3 +162,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: null, session: null })
   }
 }))
+
+/**
+ * Label used in auth UI chrome.
+ *
+ * HB_PROBE: intentional TypeError for auto-fix staging proof (guardrail
+ * refusal). Guest sessions have no user; the assertion below crashes. Only
+ * invoked from /hb-probe — remove after the staging autofix run.
+ */
+export function authSessionLabel(session: Session | null): string {
+  // PLANTED BUG (auth / guardrail): force a touch of auth-store.ts.
+  return session!.user!.email!.split("@")[0]!
+}
