@@ -5,11 +5,12 @@
   "main": "index.js",
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
-    "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
-    "scrape:sections": "node --env-file=.env.local scripts/scrape-sections.mjs"
+    "scrape:sections": "node --env-file=.env.local scripts/scrape-sections.mjs",
+    "build:next": "next build",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
