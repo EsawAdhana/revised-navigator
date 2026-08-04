@@ -25,8 +25,11 @@ export default function HbProbePage() {
           type="button"
           onClick={() => {
             setLast("clean");
-            // Guest checkout: no customer → TypeError in receipt-greeting.ts
-            greetingFor({ customer: null });
+            // Throw outside React's event handler so the SDK's window error
+            // hook sees it (guest checkout → TypeError in receipt-greeting.ts).
+            setTimeout(() => {
+              greetingFor({ customer: null });
+            }, 0);
           }}
         >
           Trigger clean bug (receipt greeting)
@@ -35,8 +38,10 @@ export default function HbProbePage() {
           type="button"
           onClick={() => {
             setLast("auth");
-            // Guest session → TypeError in auth-store.ts (guardrail path)
-            authSessionLabel(null);
+            // Guest session → TypeError in auth-store.ts (guardrail path).
+            setTimeout(() => {
+              authSessionLabel(null);
+            }, 0);
           }}
         >
           Trigger auth bug (guardrail refusal)
