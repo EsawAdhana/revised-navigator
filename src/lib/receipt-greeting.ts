@@ -1,9 +1,7 @@
 /**
  * Guest vs named-customer receipt greeting.
  *
- * HB_PROBE: intentional TypeError for auto-fix staging proof.
- * Guest checkouts leave `customer` unset; the non-null assertion below crashes.
- * Remove this file (and /hb-probe) after the staging autofix run.
+ * Guest checkouts leave `customer` unset, so fall back to a name-less thanks.
  */
 
 export type ReceiptOrder = {
@@ -11,6 +9,6 @@ export type ReceiptOrder = {
 }
 
 export function greetingFor(order: ReceiptOrder): string {
-  // PLANTED BUG (clean): guest checkout has no customer.
-  return `Thanks, ${order.customer!.name}!`
+  const name = order.customer?.name
+  return name ? `Thanks, ${name}!` : "Thanks for your order!"
 }
