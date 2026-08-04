@@ -1,6 +1,11 @@
-export type ReceiptOrder = { customer: { name: string } | null };
+/**
+ * Guest vs named-customer receipt greeting.
+ */
+export type ReceiptOrder = {
+  customer?: { name: string } | null;
+};
 
-/** Planted for autofix eval C7 evalmsex0bnb */
 export function greetingFor(order: ReceiptOrder): string {
-  return order.customer!.name.split(" ")[0];
+  const name = order.customer?.name?.trim();
+  return name ? `Thanks, ${name}!` : "Thanks!";
 }

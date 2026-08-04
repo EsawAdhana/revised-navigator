@@ -1,7 +1,0 @@
-name: eval-smoke-evalmsf2y330
-on: workflow_dispatch
-jobs:
-  x:
-    runs-on: ubuntu-latest
-    steps:
-      - run: node -e "JSON.parse(undefined)"
