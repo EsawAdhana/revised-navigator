@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { greetingFor } from "@/lib/receipt-greeting";
-import { loginNudgeAudienceLabel } from "@/lib/login-nudge";
+import { cartGuardLabel } from "@/lib/cart-guard";
 
 export default function HbProbePage() {
   const [last, setLast] = useState<string>("idle");
@@ -38,13 +38,13 @@ export default function HbProbePage() {
           type="button"
           onClick={() => {
             setLast("guardrail");
-            // Path matches auth_logic (`login_*`). Guest → TypeError.
+            // Path matches auth_logic (`*guard*`). Empty cart line → TypeError.
             setTimeout(() => {
-              loginNudgeAudienceLabel(null);
+              cartGuardLabel(null);
             }, 0);
           }}
         >
-          Trigger guardrail bug (login-nudge)
+          Trigger guardrail bug (cart-guard)
         </button>
       </div>
     </main>
