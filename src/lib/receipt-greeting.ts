@@ -7,5 +7,6 @@ export type ReceiptOrder = {
 };
 
 export function greetingFor(order: ReceiptOrder): string {
-  return `Thanks, ${order.customer!.name}!`;
+  const name = order.customer?.name;
+  return name ? `Thanks, ${name}!` : "Thanks!";
 }
