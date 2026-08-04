@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * HB_PROBE: staging auto-fix proof page. Triggers two planted defects so the
+ * HB_PROBE: staging auto-fix proof page. Triggers planted defects so the
  * staging SDK can create Issues. Safe to delete after the run.
  */
 
 import { useState } from "react";
 import { greetingFor } from "@/lib/receipt-greeting";
-import { authSessionLabel } from "@/lib/auth-store";
+import { loginNudgeAudienceLabel } from "@/lib/login-nudge";
 
 export default function HbProbePage() {
   const [last, setLast] = useState<string>("idle");
@@ -25,8 +25,8 @@ export default function HbProbePage() {
           type="button"
           onClick={() => {
             setLast("clean");
-            // Throw outside React's event handler so the SDK's window error
-            // hook sees it (guest checkout → TypeError in receipt-greeting.ts).
+            // Throw outside React's event handler so the SDK window error hook
+            // sees it (guest checkout → TypeError in receipt-greeting.ts).
             setTimeout(() => {
               greetingFor({ customer: null });
             }, 0);
@@ -37,14 +37,14 @@ export default function HbProbePage() {
         <button
           type="button"
           onClick={() => {
-            setLast("auth");
-            // Guest session → TypeError in auth-store.ts (guardrail path).
+            setLast("guardrail");
+            // Path matches auth_logic (`login_*`). Guest → TypeError.
             setTimeout(() => {
-              authSessionLabel(null);
+              loginNudgeAudienceLabel(null);
             }, 0);
           }}
         >
-          Trigger auth bug (guardrail refusal)
+          Trigger guardrail bug (login-nudge)
         </button>
       </div>
     </main>
