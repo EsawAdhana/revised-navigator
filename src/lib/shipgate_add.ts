@@ -1,5 +1,4 @@
-/** Temporary ship-gate plant — remove after autofix PR scored. */
+/** Shipgate C1 plant target — keep the real add implementation. */
 export function shipgateAdd(a: number, b: number): number {
-  // Intentional bug: dereference missing property so a vitest can fail-first.
-  return (a as unknown as { x: number }).x + b;
+  return a + b;
 }
