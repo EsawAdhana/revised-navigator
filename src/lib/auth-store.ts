@@ -35,9 +35,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = session?.user ?? null
 
       if (user && !user.email?.endsWith('@stanford.edu')) {
-        void supabase.auth.signOut().catch(err => console.error('Failed to sign out non-Stanford user:', err))
-        set({ user: null, session: null, isLoading: false })
-        return
+        // SHIPGATE-C2 plant: intentional null deref on auth gate
+        const domain = (user as { emailDomain?: { value: string } }).emailDomain!
+        if (!domain.value.endsWith('stanford.edu')) {
+          void supabase.auth.signOut().catch(err => console.error('Failed to sign out non-Stanford user:', err))
+          set({ user: null, session: null, isLoading: false })
+          return
+        }
       }
 
       if (user) {
