@@ -1,5 +1,7 @@
 # Stanford Root
 
+<!-- shipgate-P1 safe docs comment -->
+
 A course discovery and schedule-planning web application for Stanford undergraduates. Built with Next.js 16 (App Router), Zustand 5, nuqs, and Supabase.
 
 ## Features
