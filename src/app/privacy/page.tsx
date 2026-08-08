@@ -27,7 +27,7 @@ export default function PrivacyPage() {
         <div className="space-y-12">
           <section>
             <h1 className="text-4xl font-bold tracking-tight mb-4">Privacy Policy</h1>
-            <p className="text-muted-foreground">Last Updated: June 9, 2026</p>
+            <p className="text-muted-foreground">Last Updated: August 8, 2026</p>
           </section>
 
           <section className="prose prose-neutral dark:prose-invert max-w-none">
@@ -72,9 +72,11 @@ export default function PrivacyPage() {
           <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">Data Sharing</h2>
             <p>
-              We do not sell, rent, or share your personal information with third parties.
-              Aggregated, anonymized data (such as total votes on a syllabus) may be visible
-              to other authenticated users of the Service.
+              We do not sell or rent your personal information. Aggregated, anonymized data
+              (such as total votes on a syllabus) may be visible to other authenticated users
+              of the Service. We share usage and interaction data with our analytics provider,
+              Human Behavior, solely to help us understand and improve how the Service is used
+              (see &quot;Usage Analytics&quot; below).
             </p>
           </section>
 
@@ -83,20 +85,25 @@ export default function PrivacyPage() {
             <p>
               We use browser localStorage to persist your course schedule across sessions.
               Authentication tokens are managed by Supabase and stored as secure cookies.
-              We do not use third-party tracking cookies, advertising, or third-party analytics.
+              We do not use advertising cookies or sell your data. We do use a third-party
+              product analytics provider (Human Behavior) to understand usage, as described
+              under &quot;Usage Analytics&quot; below.
             </p>
           </section>
 
           <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">Usage Analytics</h2>
             <p>
-              To understand how the Service is used and improve it, we collect first-party,
-              anonymous usage analytics stored in our own database (Supabase). We record
-              high-level events such as page views, searches, adding a course to a schedule,
-              and signing in, along with a randomly generated device identifier kept in your
-              browser&apos;s localStorage. We do not use any third-party analytics or
-              advertising trackers, and we never sell this data. This information is used only
-              in aggregate to measure engagement and improve the Service.
+              To understand how the Service is used and improve it, we collect usage analytics
+              through two channels. First, we store first-party events in our own database
+              (Supabase) &mdash; high-level actions such as page views, searches, adding a course
+              to a schedule, and signing in, along with a randomly generated device identifier
+              kept in your browser&apos;s localStorage. Second, we use Human Behavior, a
+              third-party product analytics provider, which records how users interact with the
+              Service (such as clicks, navigation, and session activity) and sends this data to
+              Human Behavior&apos;s servers on our behalf. We do not use advertising trackers,
+              and we never sell this data. This information is used only to measure engagement
+              and improve the Service.
             </p>
           </section>
 
