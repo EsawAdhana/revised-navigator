@@ -14,6 +14,7 @@ export function SchedulePageShell() {
           <div className="flex items-center gap-2">
             <div className="h-9 w-9 rounded-full bg-muted/40 shrink-0" />
             <div className="h-9 w-24 rounded-lg bg-muted/40" />
+            <div className="h-9 w-20 rounded-lg bg-muted/40" />
           </div>
         </div>
       </header>

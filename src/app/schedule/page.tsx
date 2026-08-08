@@ -8,8 +8,9 @@ const CalendarView = dynamic(
   { ssr: false }
 );
 import { Button } from '@/components/ui/button';
-import { ArrowDownUp, Download, Upload } from 'lucide-react';
+import { ArrowDownUp, Download, LogOut, Upload } from 'lucide-react';
 import Link from 'next/link';
+import { StanfordLoginButton } from '@/components/stanford-login-button';
 import { useSearchParams } from 'next/navigation';
 import { useCartStore } from '@/lib/cart-store';
 import { useCourseStore } from '@/lib/store';
@@ -36,6 +37,9 @@ function ScheduleContent() {
   const items = useCartStore(s => s.items)
   const courses = useCourseStore(s => s.courses)
   const hasLoaded = useCourseStore(s => s.hasLoaded)
+  const user = useAuthStore(s => s.user)
+  const isLoading = useAuthStore(s => s.isLoading)
+  const signOut = useAuthStore(s => s.signOut)
   const [ignoredOverloads, setIgnoredOverloads] = useState<Record<string, boolean>>({})
 
   // Eagerly fetch sections for cart items instead of waiting for the full Phase 2 catalog fetch
@@ -51,7 +55,7 @@ function ScheduleContent() {
     const params = new URLSearchParams(searchParams.toString())
     params.delete('courseId')
     const qs = params.toString()
-    return qs ? `/?${qs}` : '/'
+    return qs ? `/browse?${qs}` : '/browse'
   }, [searchParams])
 
   const QUARTERS = ['Winter', 'Spring', 'Summer', 'Autumn']
@@ -146,7 +150,6 @@ function ScheduleContent() {
   const isOverload = totalUnitsMax > 20
   const isIgnored = ignoredOverloads[currentTerm]
 
-  const user = useAuthStore(s => s.user)
   const fetchBulkEvaluations = useEvaluationStore(s => s.fetchBulkEvaluations)
   const getEvaluations = useEvaluationStore(s => s.getEvaluations)
   const loadingCourses = useEvaluationStore(s => s.loadingCourses)
@@ -486,6 +489,50 @@ END:VEVENT
               accept=".ics,.ical"
               onChange={handleFileChange}
             />
+
+            {!user && !isLoading && (
+              <StanfordLoginButton
+                source="header"
+                size="default"
+                signingInLabel="Signing in…"
+                className="rounded-lg h-9 px-4 text-sm font-medium gap-2"
+              >
+                Log in
+              </StanfordLoginButton>
+            )}
+
+            {user && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full transition-transform active:scale-95">
+                    {user.user_metadata?.avatar_url ? (
+                      <img
+                        src={user.user_metadata.avatar_url}
+                        alt=""
+                        className="h-8 w-8 rounded-full ring-2 ring-border/60 ring-offset-1 ring-offset-background hover:ring-primary/40 transition-all"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary ring-2 ring-border/60 ring-offset-1 ring-offset-background hover:ring-primary/40 transition-all">
+                        {(user.email || '?')[0].toUpperCase()}
+                      </div>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-48 p-1" align="end" sideOffset={8}>
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-b border-border/40 mb-1">
+                    {user.email}
+                  </div>
+                  <button
+                    onClick={signOut}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-sm transition-colors"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign out
+                  </button>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
         </div>
       </header>

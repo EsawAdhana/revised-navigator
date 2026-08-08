@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
-import { useAuthStore } from '@/lib/auth-store'
 import {
   Dialog,
   DialogContent,
@@ -31,18 +32,17 @@ const TYPES = [
 ] as const
 
 export function FeedbackDialog() {
+  const pathname = usePathname()
+  const onFaq = pathname.toLowerCase() === '/faq'
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [type, setType] = useState<string>('feedback')
   const [submitting, setSubmitting] = useState(false)
-  const user = useAuthStore((state) => state.user)
 
   useEffect(() => {
     setMounted(true)
   }, [])
-
-  if (!user) return null
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -79,7 +79,7 @@ export function FeedbackDialog() {
   }
 
   const floatingButton = (
-    <div className="fixed bottom-6 right-6 z-[9999]">
+    <div className="fixed bottom-6 right-6 z-40">
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
           <button
@@ -101,7 +101,23 @@ export function FeedbackDialog() {
           <DialogHeader>
             <DialogTitle>Feedback</DialogTitle>
             <DialogDescription>
-              Leave feedback (reactions, praise, bugs) or a request/idea. It goes straight to the team.
+              {onFaq ? (
+                <>
+                  Send anonymous feedback. Feedback is never attached to your Stanford account.
+                </>
+              ) : (
+                <>
+                  Find an answer in the{' '}
+                  <Link
+                    href="/faq"
+                    onClick={() => setOpen(false)}
+                    className="font-medium text-foreground underline underline-offset-2"
+                  >
+                    FAQs page
+                  </Link>{' '}
+                  or send anonymous feedback. Feedback is never attached to your Stanford account.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="grid gap-4">

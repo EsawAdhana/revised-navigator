@@ -233,7 +233,7 @@ export function CourseList() {
               )}
               <VList
                 ref={vListRef}
-                className={`h-full w-full scrollbar-hide pb-4 px-2 sm:px-4 ${sortBy === 'az' ? 'pr-6 sm:pr-7' : ''}`}
+                className={`h-full w-full scrollbar-hide pb-24 px-2 sm:px-4 ${sortBy === 'az' ? 'pr-6 sm:pr-7' : ''}`}
                 onScroll={(offset) => {
                   scrollOffsetRef.current = offset;
                   const shouldShow = offset > SCROLL_THRESHOLD;

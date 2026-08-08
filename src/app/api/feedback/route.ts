@@ -1,11 +1,11 @@
 import { NextResponse, after } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-import { cookies } from 'next/headers'
-import { rateLimit } from '@/lib/rate-limit'
+import { getClientIp, rateLimit } from '@/lib/rate-limit'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const supabaseFeedbackKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey
 const resendApiKey = process.env.RESEND_API_KEY || ''
 const feedbackEmailTo = process.env.FEEDBACK_EMAIL_TO || ''
 const fromEmail = process.env.RESEND_FROM_EMAIL || 'Stanford Root <onboarding@resend.dev>'
@@ -14,41 +14,20 @@ const MAX_TEXT_LENGTH = 2000
 const ALLOWED_TYPES = ['feedback', 'request'] as const
 
 export async function POST (request: Request) {
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabaseFeedbackKey) {
     return NextResponse.json(
       { error: 'Feedback is not configured' },
       { status: 503 }
     )
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll () {
-        return cookieStore.getAll()
-      },
-      setAll (cookiesToSet) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
-        } catch {
-          // Ignored when called from Route Handler
-        }
-      }
-    }
+  // Do not read auth cookies. Feedback stays anonymous even for signed-in users.
+  const supabase = createClient(supabaseUrl, supabaseFeedbackKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
   })
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  if (!user.email?.endsWith('@stanford.edu')) {
-    return NextResponse.json({ error: 'Stanford account required' }, { status: 403 })
-  }
-
-  // Best-effort throttle: 5 submissions / hour per user.
-  if (!rateLimit(`feedback:${user.id}`, 5, 60 * 60 * 1000)) {
+  // Best-effort throttle: 5 submissions / hour per IP.
+  if (!rateLimit(`feedback:${getClientIp(request)}`, 5, 60 * 60 * 1000)) {
     return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 })
   }
 
@@ -98,7 +77,7 @@ export async function POST (request: Request) {
           from: fromEmail,
           to: feedbackEmailTo,
           subject: `[Stanford Root] New feedback: ${typeInput}`,
-          text: `Type: ${typeInput}\nFrom: ${user.email}\n\n${text}`
+          text: `Type: ${typeInput}\nFrom: Anonymous\n\n${text}`
         })
       } catch (emailErr) {
         console.error('Feedback email send error:', emailErr)

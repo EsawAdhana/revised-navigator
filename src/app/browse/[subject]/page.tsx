@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 import { notFound, permanentRedirect } from 'next/navigation'
 import { SiteHeader } from '@/components/site-header'
 import { getDepartmentCourses, type DeptCourse } from '@/lib/departments'
-import { decodeHtmlEntities } from '@/lib/utils'
+import { decodeHtmlEntities, parseUnitsOptions, unitsLabel } from '@/lib/utils'
 import { SITE_URL } from '@/lib/site'
 
 // Rebuild each department page at most once a day.
@@ -24,9 +24,18 @@ const resolveDepartment = cache(async (raw: string) => {
   return { subject, courses }
 })
 
+function formatUnits(units: string | null): string | null {
+  if (!units) return null
+  const opts = parseUnitsOptions(units)
+  if (opts.length === 0) return null
+  const displayVal = opts.length === 1 ? opts[0] : units
+  const label = unitsLabel(typeof displayVal === 'number' ? displayVal : units)
+  return `${displayVal} ${label}`
+}
+
 function courseMeta(course: DeptCourse): string {
   return [
-    course.units && `${course.units} units`,
+    formatUnits(course.units),
     course.quality != null && `${course.quality.toFixed(1)}/5 rating`,
     course.hours != null && `${course.hours.toFixed(0)} hrs/wk`,
   ]

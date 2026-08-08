@@ -9,7 +9,6 @@ import { DeferredShell } from '@/components/deferred-shell';
 import { NavProgress } from '@/components/nav-progress';
 import { ThemedToaster } from '@/components/themed-toaster';
 import { SITE_URL } from '@/lib/site';
-import { HumanBehaviorInit } from './HumanBehaviorInit';
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -60,7 +59,6 @@ export default function RootLayout({
               </AuthProvider>
             </Suspense>
             <AnalyticsProvider />
-            <HumanBehaviorInit />
             <ThemedToaster />
             <DeferredShell />
           </NuqsAdapter>
