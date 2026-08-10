@@ -1,4 +1,4 @@
-import { cache } from 'react';
+import { cache, Suspense } from 'react';
 import type { Metadata } from 'next';
 import type { Course, Section } from '@/types/course';
 import { getPublicClient, mergeCourseRows, FULL_COURSE_COLUMNS } from '@/lib/supabase-admin';
@@ -269,7 +269,12 @@ export default async function CoursePage({
             )}
             <CoursePageClient initialCourse={course} />
             {course && <CourseSummary course={course} />}
-            {course && <RelatedCourses course={course} />}
+            {/* SEO-only; must not block the interactive course view on a slow dept scan. */}
+            {course && (
+                <Suspense fallback={null}>
+                    <RelatedCourses course={course} />
+                </Suspense>
+            )}
         </>
     );
 }
