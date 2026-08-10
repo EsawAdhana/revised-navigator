@@ -1,17 +1,18 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Course } from '@/types/course'
-import { makeMeetingKey } from '@/lib/schedule-utils'
+import { makeMeetingKey, mergeSectionSelection } from '@/lib/schedule-utils'
 import { setCartHydrated } from '@/lib/cart-hydration'
 
 export type CartItem = Course & {
   selectedTerm?: string
-  selectedSectionId?: number
+  selectedSectionIds?: number[]
 }
 
 type CartStore = {
   items: CartItem[]
   addItem: (course: Course, term?: string, sectionId?: number, selectedUnits?: number) => void
+  removeSection: (courseId: string, sectionId: number) => void
   removeItem: (courseId: string) => void
   hasItem: (courseId: string) => boolean
   getItem: (courseId: string) => CartItem | undefined
@@ -26,9 +27,10 @@ export const useCartStore = create<CartStore>()(
       addItem: (course, term, sectionId, selectedUnits) => {
         const currentItems = get().items
         const existingIndex = currentItems.findIndex(c => c.id === course.id)
+        const existing = existingIndex >= 0 ? currentItems[existingIndex] : undefined
 
         // Preserve existing color if updating same course
-        const existingColor = existingIndex >= 0 ? currentItems[existingIndex].color : undefined
+        const existingColor = existing?.color
 
         // Resolve selectedUnits: explicit arg > course > existing item (never overwrite with undefined)
         const resolvedUnits =
@@ -36,24 +38,28 @@ export const useCartStore = create<CartStore>()(
             ? selectedUnits
             : course.selectedUnits !== undefined
               ? course.selectedUnits
-              : existingIndex >= 0
-                ? currentItems[existingIndex].selectedUnits
-                : undefined
+              : existing?.selectedUnits
 
-        // Resolve selectedSectionId the same way (never overwrite with undefined)
-        const resolvedSectionId =
+        const resolvedTerm = term || course.selectedTerm || course.terms?.[0]
+
+        // Picks belong to a term, so switching terms starts the selection over.
+        const priorIds = existing && existing.selectedTerm === resolvedTerm
+          ? (existing.selectedSectionIds ?? [])
+          : []
+
+        // Adding a section keeps the user's other components (LEC + DIS) and
+        // replaces only a same-component pick. Never overwrite with undefined.
+        const resolvedSectionIds =
           sectionId !== undefined
-            ? sectionId
-            : course.selectedSectionId !== undefined
-              ? course.selectedSectionId
-              : existingIndex >= 0
-                ? currentItems[existingIndex].selectedSectionId
-                : undefined
+            ? mergeSectionSelection(priorIds, sectionId, course.sections ?? existing?.sections ?? [])
+            : course.selectedSectionIds?.length
+              ? course.selectedSectionIds
+              : priorIds.length > 0 ? priorIds : undefined
 
         const courseWithTerm: CartItem = {
           ...course,
-          selectedTerm: term || course.selectedTerm || course.terms?.[0],
-          selectedSectionId: resolvedSectionId,
+          selectedTerm: resolvedTerm,
+          selectedSectionIds: resolvedSectionIds,
           selectedUnits: resolvedUnits,
           color: existingColor || course.color // Keep existing or use provided
         }
@@ -66,6 +72,24 @@ export const useCartStore = create<CartStore>()(
         }
 
         set(state => ({ items: [...state.items, courseWithTerm] }))
+      },
+      removeSection: (courseId, sectionId) => {
+        const currentItems = get().items
+        const index = currentItems.findIndex(c => c.id === courseId)
+        if (index < 0) return
+
+        const item = currentItems[index]
+        const remaining = (item.selectedSectionIds ?? []).filter(id => id !== sectionId)
+
+        // Dropping the last section means the course is off the schedule.
+        if (remaining.length === 0) {
+          set({ items: currentItems.filter(c => c.id !== courseId) })
+          return
+        }
+
+        const newItems = [...currentItems]
+        newItems[index] = { ...item, selectedSectionIds: remaining }
+        set({ items: newItems })
       },
       removeItem: (courseId) => {
         set(state => ({ items: state.items.filter(c => c.id !== courseId) }))
@@ -104,7 +128,20 @@ export const useCartStore = create<CartStore>()(
     }),
     {
       name: 'navigator-cart',
-      version: 1,
+      version: 2,
+      // v1 stored a single `selectedSectionId` per course.
+      migrate: (persisted, version) => {
+        if (version >= 2) return persisted as { items: CartItem[] }
+        const state = persisted as { items?: (CartItem & { selectedSectionId?: number })[] }
+        return {
+          ...state,
+          items: (state?.items ?? []).map(({ selectedSectionId, ...item }) =>
+            selectedSectionId !== undefined
+              ? { ...item, selectedSectionIds: [selectedSectionId] }
+              : item
+          ),
+        } as { items: CartItem[] }
+      },
       // Persist only schedule metadata — full Course data is re-attached from
       // the catalog on load (see hydrateLocalCart / reHydrateOnEnrichment in
       // schedule-sync). Avoids serializing full course payloads on every set.
@@ -112,7 +149,7 @@ export const useCartStore = create<CartStore>()(
         items: state.items.map(i => ({
           id: i.id,
           selectedTerm: i.selectedTerm,
-          selectedSectionId: i.selectedSectionId,
+          selectedSectionIds: i.selectedSectionIds,
           selectedUnits: i.selectedUnits,
           color: i.color,
           optionalMeetings: i.optionalMeetings,

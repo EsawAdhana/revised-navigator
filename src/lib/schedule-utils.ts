@@ -137,19 +137,62 @@ export function formatMinutes(minutes: number) {
   return `${h12}:${m.toString().padStart(2, '0')} ${mer}`
 }
 
-function pickSectionForTerm(course: Course, term?: string): Section | undefined {
+/**
+ * Sections the user attends for a term. Courses like ESF13 (SEM + DIS) or
+ * CS106A (LEC + DIS) meet as several sections at once, so this returns all of
+ * the user's picks rather than a single one.
+ */
+export function pickSectionsForTerm(course: Course, term?: string): Section[] {
   const sections = course.sections || []
-  if (sections.length === 0) return undefined
+  if (sections.length === 0) return []
 
   const sectionsForTerm = term ? sections.filter(s => s.term === term) : sections
-  if (sectionsForTerm.length === 0) return undefined
+  if (sectionsForTerm.length === 0) return []
 
-  if (course.selectedSectionId) {
-    const selected = sectionsForTerm.find(s => s.classId === course.selectedSectionId)
-    if (selected) return selected
+  const selectedIds = course.selectedSectionIds
+  if (selectedIds && selectedIds.length > 0) {
+    const selected = sectionsForTerm.filter(s => selectedIds.includes(s.classId))
+    if (selected.length > 0) return selected
   }
 
-  return sectionsForTerm[0]
+  // No pick yet (e.g. quick-add from the schedule search, which passes no
+  // section): stand in with one section, or CS106A would drop 60 discussions
+  // onto the calendar at once.
+  return [sectionsForTerm[0]]
+}
+
+/**
+ * Adds a section to a selection, dropping any existing pick that shares its
+ * component and term.
+ *
+ * Sections sharing a component are alternatives, never companions: a class that
+ * meets at several times lists those slots in one section's `meetings`, so two
+ * DIS rows always mean two competing options. Different components are additive.
+ * ExploreCourses publishes no required/optional flag, so this makes no claim
+ * about which components a student must attend.
+ */
+export function mergeSectionSelection(selectedIds: number[], sectionId: number, sections: Section[]): number[] {
+  const added = sections.find(s => s.classId === sectionId)
+  if (!added) {
+    return selectedIds.includes(sectionId) ? selectedIds : [...selectedIds, sectionId]
+  }
+
+  const kept = selectedIds.filter(id => {
+    if (id === sectionId) return false
+    const existing = sections.find(s => s.classId === id)
+    if (!existing) return true
+    return !(existing.component === added.component && existing.term === added.term)
+  })
+
+  return [...kept, sectionId]
+}
+
+/** Components offered in a term that the user has not picked a section from. */
+export function unpickedComponents(sections: Section[], selectedIds: number[]): string[] {
+  const components = Array.from(new Set(sections.map(s => s.component).filter(Boolean)))
+  return components.filter(component =>
+    !sections.some(s => s.component === component && selectedIds.includes(s.classId))
+  )
 }
 
 export function makeMeetingKey(day: string, startTime: string, endTime: string) {
@@ -203,23 +246,21 @@ export function getParsedSectionMeetings(
 }
 
 export function parseMeetingTimes(course: Course, term?: string): ParsedMeeting[] {
-  const section = pickSectionForTerm(course, term)
-  if (!section) return []
-
-  const meetings = section.meetings || []
   const parsed: ParsedMeeting[] = []
 
-  for (const m of meetings) {
-    const days = parseDays(m.days)
-    const range = parseTimeRange(m.time)
-    if (!range?.startTime) continue
+  for (const section of pickSectionsForTerm(course, term)) {
+    for (const m of section.meetings || []) {
+      const days = parseDays(m.days)
+      const range = parseTimeRange(m.time)
+      if (!range?.startTime) continue
 
-    parsed.push({
-      days,
-      startTime: range.startTime,
-      endTime: range.endTime,
-      location: m.location
-    })
+      parsed.push({
+        days,
+        startTime: range.startTime,
+        endTime: range.endTime,
+        location: m.location
+      })
+    }
   }
 
   return parsed

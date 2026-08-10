@@ -238,7 +238,7 @@ export function parseICS(icsContent: string): Course[] {
             terms: [term],
             sections: [section],
             selectedTerm: term,
-            selectedSectionId: section.classId
+            selectedSectionIds: [section.classId]
         })
     }
 

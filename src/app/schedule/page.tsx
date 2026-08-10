@@ -122,16 +122,18 @@ function ScheduleContent() {
         return
       }
 
-      if (c.selectedSectionId && c.sections) {
-        const section = c.sections.find(s => s.classId === c.selectedSectionId)
-        if (section) {
-          const opts = parseUnitsOptions(section.units)
-          const hasValid = opts.length > 0 && Math.max(0, ...opts) > 0
-          if (hasValid) {
-            totalUnitsMin += opts[0]
-            totalUnitsMax += opts[opts.length - 1]
-            return
-          }
+      // Units belong to the course, not to each picked section: ExploreCourses
+      // leaves DIS rows blank, so read them off the first picked section that
+      // has them rather than summing across LEC + DIS.
+      if (c.selectedSectionIds?.length && c.sections) {
+        const picked = c.sections.filter(s => c.selectedSectionIds!.includes(s.classId))
+        const withUnits = picked
+          .map(s => parseUnitsOptions(s.units))
+          .find(opts => opts.length > 0 && Math.max(0, ...opts) > 0)
+        if (withUnits) {
+          totalUnitsMin += withUnits[0]
+          totalUnitsMax += withUnits[withUnits.length - 1]
+          return
         }
       }
 
@@ -399,7 +401,7 @@ END:VEVENT
           const enriched = {
             ...realCourse,
             selectedTerm: imported.selectedTerm ?? imported.terms?.[0],
-            selectedSectionId: bestSectionId
+            selectedSectionIds: bestSectionId !== undefined ? [bestSectionId] : undefined
           }
           addItem(enriched)
           enrichedCount++

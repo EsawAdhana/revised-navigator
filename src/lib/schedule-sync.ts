@@ -8,17 +8,24 @@ import { track } from './analytics'
 export type ScheduleItem = {
   id: string
   selectedTerm?: string
+  selectedSectionIds?: number[]
+  /** Rows written before multi-section support stored a single section. */
   selectedSectionId?: number
   selectedUnits?: number
   color?: string
   optionalMeetings?: string[]
 }
 
+function readSectionIds(item: ScheduleItem): number[] | undefined {
+  if (item.selectedSectionIds?.length) return item.selectedSectionIds
+  return item.selectedSectionId !== undefined ? [item.selectedSectionId] : undefined
+}
+
 function toScheduleItems(): ScheduleItem[] {
   return useCartStore.getState().items.map(item => ({
     id: item.id,
     selectedTerm: item.selectedTerm,
-    selectedSectionId: item.selectedSectionId,
+    selectedSectionIds: item.selectedSectionIds,
     selectedUnits: item.selectedUnits,
     color: item.color,
     optionalMeetings: item.optionalMeetings,
@@ -58,7 +65,7 @@ function hydrateItems(scheduleItems: ScheduleItem[], logPrefix = '') {
     return [{
       ...course,
       selectedTerm: item.selectedTerm,
-      selectedSectionId: item.selectedSectionId,
+      selectedSectionIds: readSectionIds(item),
       selectedUnits: item.selectedUnits,
       color: item.color,
       optionalMeetings: item.optionalMeetings,
@@ -96,7 +103,7 @@ function reHydrateOnEnrichment(syncedIds: Set<string>) {
         if (!syncedIds.has(item.id)) return item
         const enriched = courseMap.get(item.id)
         if (!enriched) return item
-        return { ...enriched, selectedTerm: item.selectedTerm, selectedSectionId: item.selectedSectionId, selectedUnits: item.selectedUnits, color: item.color, optionalMeetings: item.optionalMeetings }
+        return { ...enriched, selectedTerm: item.selectedTerm, selectedSectionIds: item.selectedSectionIds, selectedUnits: item.selectedUnits, color: item.color, optionalMeetings: item.optionalMeetings }
       })
     }))
   })
@@ -125,7 +132,7 @@ export async function hydrateLocalCart(): Promise<void> {
       return {
         ...course,
         selectedTerm: item.selectedTerm,
-        selectedSectionId: item.selectedSectionId,
+        selectedSectionIds: item.selectedSectionIds,
         selectedUnits: item.selectedUnits,
         color: item.color,
         optionalMeetings: item.optionalMeetings,
@@ -201,7 +208,7 @@ export function suspendPush() {
  * so a mid-pull edit to an existing item — not just adds/removes — is detected. */
 function cartSignature(): string {
   return useCartStore.getState().items
-    .map(i => `${i.id}|${i.selectedTerm ?? ''}|${i.selectedSectionId ?? ''}|${i.selectedUnits ?? ''}|${i.color ?? ''}|${(i.optionalMeetings ?? []).join('~')}`)
+    .map(i => `${i.id}|${i.selectedTerm ?? ''}|${(i.selectedSectionIds ?? []).join('~')}|${i.selectedUnits ?? ''}|${i.color ?? ''}|${(i.optionalMeetings ?? []).join('~')}`)
     .sort()
     .join(';')
 }

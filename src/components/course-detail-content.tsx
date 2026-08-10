@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
-import { ExternalLink, MapPin, Clock, Check, FileText, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ExternalLink, MapPin, Clock, Check, FileText, Calendar, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { useAuthStore } from '@/lib/auth-store';
@@ -22,6 +22,7 @@ import { useEvaluationStore } from '@/lib/evaluation-store';
 import { useMemo } from 'react';
 import { useQueryState, parseAsArrayOf, parseAsString } from 'nuqs';
 import { CalendarPreviewModal } from './calendar-preview-modal';
+import { unpickedComponents } from '@/lib/schedule-utils';
 import { isWimCourse } from '@/lib/wim-courses';
 import { compareTerms, getDefaultTerm, isFutureTerm as isTermInFuture } from '@/lib/terms';
 
@@ -84,7 +85,7 @@ function InstructorSummary({ instructorName, evals }: { instructorName: string; 
 
 export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const addItem = useCartStore(s => s.addItem);
-    const removeItem = useCartStore(s => s.removeItem);
+    const removeSection = useCartStore(s => s.removeSection);
     const courses = useCourseStore(s => s.courses);
     const fetchBulkEvaluations = useEvaluationStore(s => s.fetchBulkEvaluations);
     const getMergedEvaluations = useEvaluationStore(s => s.getMergedEvaluations);
@@ -102,6 +103,10 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
     // Subscribe to only this course's cart entry so unrelated cart changes don't re-render the page
     const cartItem = useCartStore(s => s.items.find(i => i.id === course.id));
+
+    /** Sections the user picked, but only for the term being shown. */
+    const selectedIdsForTerm = (term: string) =>
+        cartItem?.selectedTerm === term ? (cartItem.selectedSectionIds ?? []) : [];
 
     // Group sections by term (dedup by classId), sort sections + terms — memoized so this
     // doesn't re-run on every render (e.g. tab switches, hover state).
@@ -177,10 +182,15 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     // for blanks too (plain ?? would keep the empty string and show "—").
     const unitsSource = (() => {
         const secs = sectionsByTerm[activeTerm]
-        const section = secs?.find(s => s.classId === (cartItem?.selectedSectionId ?? secs?.[0]?.classId)) ?? secs?.[0]
-        const secUnits = section?.units
-        const hasSecUnits = secUnits !== undefined && secUnits !== null && String(secUnits).trim() !== ''
-        return hasSecUnits ? secUnits : course?.units
+        const hasUnits = (s?: Section) => {
+            const u = s?.units
+            return u !== undefined && u !== null && String(u).trim() !== ''
+        }
+        // Units sit on whichever component carries them (ExploreCourses leaves
+        // DIS rows blank), so prefer a picked section that actually has them.
+        const picked = secs?.filter(s => selectedIdsForTerm(activeTerm).includes(s.classId)) ?? []
+        const section = picked.find(hasUnits) ?? picked[0] ?? secs?.[0]
+        return hasUnits(section) ? section!.units : course?.units
     })()
     const unitOptions = course ? parseUnitsOptions(unitsSource ?? course.units) : []
     const hasVariable = unitOptions.length > 1
@@ -238,8 +248,8 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const [previewSection, setPreviewSection] = useState<Section | null>(null);
 
     const handleSelectSection = (sectionId: number, section?: Section, selectedUnitsOverride?: number) => {
-        if (cartItem?.selectedSectionId === sectionId && cartItem?.selectedTerm === activeTerm) {
-            removeItem(course.id);
+        if (selectedIdsForTerm(activeTerm).includes(sectionId)) {
+            removeSection(course.id, sectionId);
         } else {
             // Section may have single value (e.g. "4") while course has range ("3-4"); use course as fallback
             const sectionOpts = parseUnitsOptions(section?.units ?? '');
@@ -256,8 +266,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         const newValue = selectedUnits === u ? undefined : u;
         setSelectedUnits(newValue);
         if (cartItem?.selectedTerm === activeTerm) {
-            const sectionId = cartItem?.selectedSectionId ?? sectionsByTerm[activeTerm]?.[0]?.classId;
-            addItem(course, activeTerm, sectionId, newValue);
+            addItem(course, activeTerm, undefined, newValue);
         }
     };
 
@@ -475,11 +484,32 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                     <TabsContent key={term} value={term} className="space-y-3 focus-visible:outline-none focus-visible:ring-0">
                                         {(() => {
                                             const termSections = sectionsByTerm[term];
+                                            const selectedIds = selectedIdsForTerm(term);
+                                            const unpicked = selectedIds.length > 0
+                                                ? unpickedComponents(termSections, selectedIds)
+                                                : [];
+                                            if (unpicked.length === 0) return null;
+                                            return (
+                                                <div className="flex items-start gap-2 rounded-xl border border-border/50 bg-secondary/20 px-3 py-2.5">
+                                                    <Info size={15} strokeWidth={2.5} className="text-muted-foreground shrink-0 mt-0.5" />
+                                                    <p className="text-[14px] text-muted-foreground leading-snug">
+                                                        Not picked: {unpicked.map(component => {
+                                                            const count = termSections.filter(s => s.component === component).length;
+                                                            return `${formatComponent(component)} (${count})`;
+                                                        }).join(', ')}. Add one if you attend it.
+                                                    </p>
+                                                </div>
+                                            );
+                                        })()}
+                                        {(() => {
+                                            const termSections = sectionsByTerm[term];
+                                            const selectedIds = selectedIdsForTerm(term);
                                             const compCounters: Record<string, number> = {};
 
                                             const INDEPENDENT_COMPONENTS = new Set(['INS', 'PRA', 'T/D', 'CLN', 'RES', 'ITR', 'RSC', 'TUT', 'SIM', 'CAS']);
 
                                             return termSections.map((section) => {
+                                                const isSelected = selectedIds.includes(section.classId);
                                                 const enrollAgg = enrollmentBySectionId.get(section.classId) ?? aggregateCrossListedSectionEnrollment(section, crossListIds, courses);
                                                 const isIndependent = INDEPENDENT_COMPONENTS.has(section.component);
                                                 const tbdLabel = isIndependent ? 'Not Applicable' : 'TBD';
@@ -622,25 +652,25 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
                                                             <Button
                                                                 size="sm"
-                                                                variant={cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? "default" : "outline"}
+                                                                variant={isSelected ? "default" : "outline"}
                                                                 className={cn(
                                                                     "h-10 text-[16px] px-5 rounded-lg font-bold transition-all whitespace-nowrap",
-                                                                    cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm
+                                                                    isSelected
                                                                         ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm"
                                                                         : "hover:bg-primary/5 hover:text-primary hover:border-primary/30"
                                                                 )}
                                                                 onClick={() =>
-                                                                    cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm
+                                                                    isSelected
                                                                         ? handleSelectSection(section.classId)
                                                                         : setPreviewSection(section)
                                                                 }
                                                             >
-                                                                {cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? (
+                                                                {isSelected ? (
                                                                     <Check size={12} className="mr-1.5 stroke-[3px]" />
                                                                 ) : (
                                                                     <Calendar size={12} className="mr-1.5" />
                                                                 )}
-                                                                {cartItem?.selectedSectionId === section.classId && cartItem?.selectedTerm === activeTerm ? "Added" : "View on Calendar"}
+                                                                {isSelected ? "Added" : "View on Calendar"}
                                                             </Button>
                                                         </div>
                                                     </div>
