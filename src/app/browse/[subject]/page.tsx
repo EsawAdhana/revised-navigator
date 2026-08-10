@@ -3,8 +3,8 @@ import { cache, Suspense } from 'react'
 import type { Metadata } from 'next'
 import { notFound, permanentRedirect } from 'next/navigation'
 import { SiteHeader } from '@/components/site-header'
-import { getDepartmentCourses, type DeptCourse } from '@/lib/departments'
-import { decodeHtmlEntities, parseUnitsOptions, unitsLabel } from '@/lib/utils'
+import { getDepartmentFromDump, type DumpDeptCourse } from '@/lib/catalog-dump'
+import { compareCourseCodes, decodeHtmlEntities, parseUnitsOptions, unitsLabel } from '@/lib/utils'
 import { SITE_URL } from '@/lib/site'
 
 // Rebuild each department page at most once a day.
@@ -19,7 +19,9 @@ const resolveDepartment = cache(async (raw: string) => {
   if (subject !== subject.toUpperCase()) {
     permanentRedirect(`/browse/${encodeURIComponent(subject.toUpperCase())}`)
   }
-  const courses = await getDepartmentCourses(subject)
+  // Prebuilt dump — live Supabase dept scans timeout after the 26-27 refresh.
+  const courses = (await getDepartmentFromDump(subject))
+    .sort((a, b) => compareCourseCodes(a.code, b.code))
   if (courses.length === 0) notFound()
   return { subject, courses }
 })
@@ -33,7 +35,7 @@ function formatUnits(units: string | null): string | null {
   return `${displayVal} ${label}`
 }
 
-function courseMeta(course: DeptCourse): string {
+function courseMeta(course: DumpDeptCourse): string {
   return [
     formatUnits(course.units),
     course.quality != null && `${course.quality.toFixed(1)}/5 rating`,

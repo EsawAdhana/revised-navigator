@@ -51,21 +51,41 @@ export async function getCourseFromDump(courseId: string): Promise<Course | null
   }
 }
 
-/** Light dump rows for one department (SEO related links). */
-export async function getDepartmentFromDump(subject: string): Promise<
-  Array<{ id: string; subject: string; code: string; title: string }>
-> {
+export type DumpDeptCourse = {
+  id: string
+  subject: string
+  code: string
+  title: string
+  units: string | null
+  quality: number | null
+  hours: number | null
+}
+
+function isGradeable(grading: unknown): boolean {
+  const g = String(grading || '').trim()
+  return Boolean(g) && g !== 'TBD'
+}
+
+/** Light dump rows for one department (dept pages + SEO related links). */
+export async function getDepartmentFromDump(subject: string): Promise<DumpDeptCourse[]> {
   try {
     const rows = await loadLightRows()
-    return rows
-      .filter((r) => r.subject === subject)
-      .map((r) => ({
-        id: String(r.course_id || r.id || ''),
+    const byId = new Map<string, DumpDeptCourse>()
+    for (const r of rows) {
+      if (r.subject !== subject || !isGradeable(r.grading)) continue
+      const id = String(r.course_id || r.id || '')
+      if (!id || byId.has(id)) continue
+      byId.set(id, {
+        id,
         subject: String(r.subject || ''),
         code: String(r.code || ''),
         title: String(r.title || ''),
-      }))
-      .filter((r) => r.id)
+        units: r.units != null && String(r.units).trim() ? String(r.units) : null,
+        quality: r.quality != null && r.quality !== '' ? Number(r.quality) : null,
+        hours: r.hours != null && r.hours !== '' ? Number(r.hours) : null,
+      })
+    }
+    return Array.from(byId.values())
   } catch {
     return []
   }
