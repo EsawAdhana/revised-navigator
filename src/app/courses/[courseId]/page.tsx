@@ -1,9 +1,9 @@
 import { cache, Suspense } from 'react';
 import type { Metadata } from 'next';
 import type { Course, Section } from '@/types/course';
-import { getPublicClient, mergeCourseRows, FULL_COURSE_COLUMNS } from '@/lib/supabase-admin';
 import {
     abbreviateGer,
+    compareCourseCodes,
     decodeHtmlEntities,
     formatComponent,
     formatLevel,
@@ -11,32 +11,18 @@ import {
     parseUnitsOptions,
 } from '@/lib/utils';
 import { isWimCourse } from '@/lib/wim-courses';
-import { rowToCourse } from '@/lib/course-mapper';
 import { compareTerms } from '@/lib/terms';
 import { SITE_URL } from '@/lib/site';
-import { getDepartmentCourses } from '@/lib/departments';
+import { getCourseFromDump, getDepartmentFromDump } from '@/lib/catalog-dump';
 import Link from 'next/link';
 import { CoursePageClient } from './course-page-client';
 
 // Cache the server render (metadata + SSR summary + JSON-LD) for a day.
 export const revalidate = 86400;
 
-/** Fetch and merge all rows for a course_id into one Course (multi-term/cross-list aware).
- *  React-cached so generateMetadata and the page share one query per render. */
+/** Prefer prebuilt catalog dump — live Supabase section reads hang after the 26-27 refresh. */
 const fetchCourse = cache(async (courseId: string): Promise<Course | null> => {
-    try {
-        const supabase = getPublicClient();
-        const { data } = await supabase
-            .from('courses')
-            .select(FULL_COURSE_COLUMNS)
-            .eq('course_id', courseId);
-        if (!data || data.length === 0) return null;
-        // Shared mapper keeps this identical to the client store's Course shape
-        // (including WIM/Language GER injection).
-        return rowToCourse(mergeCourseRows(data)[0]);
-    } catch {
-        return null;
-    }
+    return getCourseFromDump(courseId);
 });
 
 function plainText(html: string): string {
@@ -199,12 +185,8 @@ function CourseSummary({ course }: { course: Course }) {
  *  (`sr-only`) so crawlers get internal links between course pages without cluttering
  *  the UI — department browse pages cover human navigation. */
 async function RelatedCourses({ course }: { course: Course }) {
-    let deptCourses: Awaited<ReturnType<typeof getDepartmentCourses>>;
-    try {
-        deptCourses = await getDepartmentCourses(course.subject);
-    } catch {
-        return null;
-    }
+    const deptCourses = (await getDepartmentFromDump(course.subject))
+        .sort((a, b) => compareCourseCodes(a.code, b.code));
     const others = deptCourses.filter((c) => c.id !== course.id);
     if (others.length === 0) return null;
 
