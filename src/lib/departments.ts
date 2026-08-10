@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { getPublicClient } from '@/lib/supabase-admin'
 import { compareCourseCodes } from '@/lib/utils'
 
-const PAGE_SIZE = 1000
+const PAGE_SIZE = 250
 
 /** Card-level fields needed to render a crawlable department course list. */
 export interface DeptCourse {
@@ -23,18 +23,22 @@ function isGradeable(grading: string | null | undefined): boolean {
   return Boolean(g) && g !== 'TBD'
 }
 
-async function fetchPaginated(applyFilters: (q: any) => any): Promise<any[]> {
+async function fetchPaginated(columns: string, applyFilters: (q: any) => any): Promise<any[]> {
   const supabase = getPublicClient()
   const rows: any[] = []
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await applyFilters(
-      supabase.from('courses').select(DEPT_COLUMNS)
+  let lastCourseId: string | null = null
+  while (true) {
+    let query = applyFilters(
+      supabase.from('courses').select(columns)
     )
       .order('course_id', { ascending: true })
-      .range(from, from + PAGE_SIZE - 1)
+      .limit(PAGE_SIZE)
+    if (lastCourseId) query = query.gt('course_id', lastCourseId)
+    const { data, error } = await query
     if (error) throw error
     rows.push(...(data || []))
     if (!data || data.length < PAGE_SIZE) break
+    lastCourseId = data[data.length - 1].course_id
   }
   return rows
 }
@@ -69,11 +73,11 @@ function dedupeRows(rows: any[]): DeptCourse[] {
  * React-cached per render; pages set `revalidate` for cross-request caching.
  */
 export const getDepartments = cache(async (): Promise<{ subject: string; count: number }[]> => {
-  const courses = dedupeRows(await fetchPaginated((q) => q))
+  const rows = await fetchPaginated('course_id, subject, grading', (q) => q)
   const counts = new Map<string, number>()
-  for (const c of courses) {
-    if (!c.subject) continue
-    counts.set(c.subject, (counts.get(c.subject) || 0) + 1)
+  for (const row of rows) {
+    if (!row.subject || !isGradeable(row.grading)) continue
+    counts.set(row.subject, (counts.get(row.subject) || 0) + 1)
   }
   return Array.from(counts.entries())
     .map(([subject, count]) => ({ subject, count }))
@@ -82,6 +86,6 @@ export const getDepartments = cache(async (): Promise<{ subject: string; count: 
 
 /** All gradeable courses in one department, sorted by course code. */
 export const getDepartmentCourses = cache(async (subject: string): Promise<DeptCourse[]> => {
-  const courses = dedupeRows(await fetchPaginated((q) => q.eq('subject', subject)))
+  const courses = dedupeRows(await fetchPaginated(DEPT_COLUMNS, (q) => q.eq('subject', subject)))
   return courses.sort((a, b) => compareCourseCodes(a.code, b.code))
 })

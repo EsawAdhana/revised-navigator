@@ -4,8 +4,8 @@ import type { Metadata } from 'next'
 import { SiteHeader } from '@/components/site-header'
 import { getDepartments } from '@/lib/departments'
 
-// Rebuild at most once a day — the department list changes rarely.
-export const revalidate = 86400
+// Do not make deployments depend on production database availability.
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Stanford Departments — Browse Courses by Department — Stanford Root',
