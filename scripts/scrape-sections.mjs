@@ -3,23 +3,22 @@
  *
  * Usage:
  *   node --env-file=.env.local scripts/scrape-sections.mjs                  # full run
- *   node --env-file=.env.local scripts/scrape-sections.mjs --resume         # resume from progress file
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --dry-run        # fetch and compare only
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --academic-year 20262027
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --resume         # only rows on a different year
  *   node --env-file=.env.local scripts/scrape-sections.mjs --course CS106B  # single course
- *   node --env-file=.env.local scripts/scrape-sections.mjs --limit 50       # first N courses
  */
 
 import { createClient } from '@supabase/supabase-js'
 import { XMLParser } from 'fast-xml-parser'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-const CONCURRENCY = 10      // parallel requests
-const DELAY_MS = 80         // ms between batches
-const PROGRESS_FILE = '.sections-scrape-progress.json'
+const CATALOG_CONCURRENCY = 6
 const BASE_URL = 'https://explorecourses.stanford.edu/search'
+const BROWSE_URL = 'https://explorecourses.stanford.edu/browse'
 
 // NQTR attribute value → human-readable term.
 // Derived from the active academic year so it self-rolls every year and never
@@ -56,24 +55,28 @@ function sortTerms(terms) {
 
 function parseArgs() {
     const args = process.argv.slice(2)
-    const opts = { resume: false, limit: null, course: null }
+    const opts = {
+        course: null,
+        dryRun: false,
+        resume: false,
+        academicYear: defaultAcademicYear(),
+    }
     for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--dry-run') opts.dryRun = true
         if (args[i] === '--resume') opts.resume = true
-        if (args[i] === '--limit' && args[i + 1]) opts.limit = parseInt(args[i + 1], 10)
         if (args[i] === '--course' && args[i + 1]) opts.course = args[i + 1].trim().toUpperCase()
+        if (args[i] === '--academic-year' && /^\d{8}$/.test(args[i + 1] || '')) {
+            opts.academicYear = args[i + 1]
+        }
     }
     return opts
 }
 
-// ── Progress ─────────────────────────────────────────────────────────────────
-
-function loadProgress() {
-    if (!existsSync(PROGRESS_FILE)) return new Set()
-    try { return new Set(JSON.parse(readFileSync(PROGRESS_FILE, 'utf-8'))) } catch { return new Set() }
-}
-
-function saveProgress(done) {
-    writeFileSync(PROGRESS_FILE, JSON.stringify(Array.from(done)))
+function defaultAcademicYear(now = new Date()) {
+    // Stanford publishes the next catalog during summer. Trying it early is safe:
+    // full-catalog validation aborts before writes if the API has not published data.
+    const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1
+    return `${start}${start + 1}`
 }
 
 // ── XML Parsing ───────────────────────────────────────────────────────────────
@@ -81,7 +84,7 @@ function saveProgress(done) {
 const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '_',
-    isArray: (name) => ['course', 'section', 'schedule', 'instructor', 'attribute', 'day'].includes(name),
+    isArray: (name) => ['school', 'department', 'course', 'section', 'schedule', 'instructor', 'attribute', 'day'].includes(name),
     textNodeName: '_text',
 })
 
@@ -191,11 +194,7 @@ function parseSection(sectionNode, courseNode) {
 
 // ── XML Fetch & Parse ─────────────────────────────────────────────────────────
 
-async function fetchSections(subject, code) {
-    const query = `${subject}${code}`.replace(/\s+/g, '')
-    const url = `${BASE_URL}?q=${encodeURIComponent(query)}&view=xml-20200810&filter-coursestatus-Active=on`
-
-    let xml
+async function fetchXml(url) {
     let lastErr
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -204,21 +203,135 @@ async function fetchSections(subject, code) {
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
                     'Cookie': 'jsenabled=1',
                 },
-                signal: AbortSignal.timeout(10000),
+                signal: AbortSignal.timeout(30000),
             })
-            // Throw (don't return null) on transient HTTP failures so the caller retries next run
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            xml = await res.text()
-            break
+            return await res.text()
         } catch (e) {
             lastErr = e
             if (attempt === 2) throw e instanceof Error ? e : new Error(String(e))
             await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
         }
     }
+    throw lastErr instanceof Error ? lastErr : new Error('No XML response')
+}
 
-    if (!xml) throw lastErr instanceof Error ? lastErr : new Error('No XML response')
+function parseCourseNode(courseNode) {
+    const subject = textVal(courseNode?.subject).replace(/\s+/g, '')
+    const code = textVal(courseNode?.code).replace(/\s+/g, '')
+    if (!subject || !code) return null
 
+    const sections = ensureArray(courseNode?.sections?.section).map(section => parseSection(section, courseNode))
+    const uniqueSections = []
+    const seen = new Set()
+    for (const section of sections) {
+        const key = section.classId || `${section.term}:${section.sectionNumber}:${section.component}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        uniqueSections.push(section)
+    }
+
+    const instructors = Array.from(new Set(
+        uniqueSections.flatMap(section => section.meetings.flatMap(meeting => meeting.instructors))
+    ))
+
+    return {
+        course_id: `${subject}${code}`.toUpperCase(),
+        subject,
+        code,
+        title: textVal(courseNode?.title),
+        description: textVal(courseNode?.description)
+            .replace(/&#[A-Z]+\s+039;/g, "'")
+            .replace(/&#039;/g, "'")
+            .replace(/&#[A-Z]+\s+034;/g, '"')
+            .replace(/&amp;/g, '&'),
+        units: [textVal(courseNode?.unitsMin), textVal(courseNode?.unitsMax)]
+            .filter(value => value && value !== '0')
+            .join('-') || textVal(courseNode?.unitsMin),
+        grading: textVal(courseNode?.grading),
+        instructors,
+        sections: uniqueSections,
+        terms: sortTerms(Array.from(new Set(uniqueSections.map(section => section.term).filter(Boolean)))),
+    }
+}
+
+function mergeCatalogCourse(existing, incoming) {
+    if (!existing) return incoming
+    const sections = [...existing.sections, ...incoming.sections]
+    const seen = new Set()
+    const uniqueSections = sections.filter(section => {
+        const key = section.classId || `${section.term}:${section.sectionNumber}:${section.component}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+    })
+    return {
+        ...existing,
+        title: existing.title || incoming.title,
+        description: existing.description || incoming.description,
+        units: existing.units || incoming.units,
+        grading: existing.grading || incoming.grading,
+        instructors: Array.from(new Set([...existing.instructors, ...incoming.instructors])),
+        sections: uniqueSections,
+        terms: sortTerms(Array.from(new Set(uniqueSections.map(section => section.term).filter(Boolean)))),
+    }
+}
+
+async function fetchCatalog(academicYear) {
+    const browseUrl = `${BROWSE_URL}?view=xml-20200810&academicYear=${academicYear}`
+    const browse = parser.parse(await fetchXml(browseUrl))
+    const schools = ensureArray(browse?.schools?.school)
+    const departments = Array.from(new Set(
+        schools.flatMap(school => ensureArray(school?.department))
+            .map(department => textVal(department?._name || department?.name))
+            .filter(Boolean)
+    ))
+
+    if (departments.length < 100) {
+        throw new Error(`Catalog validation failed: found only ${departments.length} departments`)
+    }
+
+    const catalog = new Map()
+    for (let i = 0; i < departments.length; i += CATALOG_CONCURRENCY) {
+        const batch = departments.slice(i, i + CATALOG_CONCURRENCY)
+        const results = await Promise.all(batch.map(async department => {
+            const params = new URLSearchParams({
+                view: 'xml-20200810',
+                academicYear,
+                q: department,
+                [`filter-departmentcode-${department}`]: 'on',
+                'filter-coursestatus-Active': 'on',
+            })
+            const parsed = parser.parse(await fetchXml(`${BASE_URL}?${params}`))
+            return ensureArray((parsed?.xml ?? parsed)?.courses?.course)
+        }))
+
+        for (const nodes of results) {
+            for (const node of nodes) {
+                const course = parseCourseNode(node)
+                if (course) catalog.set(course.course_id, mergeCatalogCourse(catalog.get(course.course_id), course))
+            }
+        }
+        process.stdout.write(`\rFetched ${Math.min(i + CATALOG_CONCURRENCY, departments.length)}/${departments.length} departments`)
+    }
+    process.stdout.write('\n')
+
+    const scheduledCourses = Array.from(catalog.values()).filter(course => course.sections.length > 0)
+    if (scheduledCourses.length < 5000) {
+        throw new Error(`Catalog validation failed: found only ${scheduledCourses.length} scheduled courses; no database writes made`)
+    }
+    return { departments, courses: scheduledCourses }
+}
+
+async function fetchSections(subject, code, academicYear) {
+    const query = `${subject}${code}`.replace(/\s+/g, '')
+    const params = new URLSearchParams({
+        q: query,
+        view: 'xml-20200810',
+        academicYear,
+        'filter-coursestatus-Active': 'on',
+    })
+    const xml = await fetchXml(`${BASE_URL}?${params}`)
     try {
         const parsed = parser.parse(xml)
         // Root tag is <xml>, not <courses>
@@ -237,37 +350,10 @@ async function fetchSections(subject, code) {
 
         if (matchedCourses.length === 0) return null
 
-        const baseMatch = matchedCourses[0]
-        const allSections = []
-        for (const c of matchedCourses) {
-            const secs = ensureArray(c?.sections?.section)
-            allSections.push(...secs.map(sec => parseSection(sec, c)))
-        }
-
-        // Deduplicate sections by classId
-        const uniqueSections = []
-        const seenIds = new Set()
-        for (const s of allSections) {
-            if (!seenIds.has(s.classId)) {
-                uniqueSections.push(s)
-                seenIds.add(s.classId)
-            }
-        }
-
-        const terms = sortTerms(Array.from(new Set(uniqueSections.map(s => s.term).filter(Boolean))))
-
-        return {
-            sections: uniqueSections,
-            terms,
-            description: (baseMatch.description || '')
-                .replace(/&#[A-Z]+\s+039;/g, "'")
-                .replace(/&#039;/g, "'")
-                .replace(/&#[A-Z]+\s+034;/g, '"')
-                .replace(/&amp;/g, '&'),
-            title: baseMatch.title || '',
-            units: [baseMatch.unitsMin, baseMatch.unitsMax].filter(u => u && u !== '0').join('-') || baseMatch.unitsMin || '',
-            grading: baseMatch.grading || '',
-        }
+        return matchedCourses
+            .map(parseCourseNode)
+            .filter(Boolean)
+            .reduce(mergeCatalogCourse, null)
     } catch (e) {
         // Corrupt/partial XML is transient — throw so the course is retried next run, not marked done
         throw new Error(`XML parse error for ${subject}${code}: ${e.message}`)
@@ -279,7 +365,7 @@ async function fetchSections(subject, code) {
 function isStatementTimeout(err) {
     const code = err?.code ?? err?.details
     const msg = (err?.message || '').toLowerCase()
-    return code === '57014' || msg.includes('statement timeout') || msg.includes('canceling statement')
+    return code === '57014' || msg.includes('timeout') || msg.includes('canceling statement')
 }
 
 async function sleep(ms) {
@@ -315,7 +401,7 @@ async function loadCourses(supabase) {
         const { data, error } = await withRetries(() => {
             let q = supabase
                 .from('courses')
-                .select('course_id, subject, code')
+                .select('course_id, subject, code, terms')
                 .order('course_id', { ascending: true })
                 .limit(PAGE)
             if (cursor != null) q = q.gt('course_id', cursor)
@@ -334,6 +420,49 @@ async function loadCourses(supabase) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+async function upsertCatalog(supabase, rows) {
+    const batchSize = 20
+    for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize)
+        const { error } = await withRetries(
+            () => supabase.from('courses').upsert(batch, { onConflict: 'course_id' }),
+            { label: `upsert batch ${Math.floor(i / batchSize) + 1}` }
+        )
+        if (error) throw error
+        process.stdout.write(`\rUpserted ${Math.min(i + batchSize, rows.length)}/${rows.length} courses`)
+    }
+    process.stdout.write('\n')
+}
+
+async function updateCatalog(supabase, rows) {
+    const concurrency = 10
+    for (let i = 0; i < rows.length; i += concurrency) {
+        const batch = rows.slice(i, i + concurrency)
+        const results = await Promise.all(batch.map(({ course_id, ...fields }) =>
+            withRetries(
+                () => supabase.from('courses').update(fields).eq('course_id', course_id),
+                { label: `update ${course_id}` }
+            )
+        ))
+        const error = results.find(result => result.error)?.error
+        if (error) throw error
+        process.stdout.write(`\rUpdated ${Math.min(i + concurrency, rows.length)}/${rows.length} courses`)
+    }
+    process.stdout.write('\n')
+}
+
+async function clearStaleCourses(supabase, courseIds) {
+    const batchSize = 200
+    for (let i = 0; i < courseIds.length; i += batchSize) {
+        const batch = courseIds.slice(i, i + batchSize)
+        const { error } = await withRetries(
+            () => supabase.from('courses').update({ sections: [], terms: [] }).in('course_id', batch),
+            { label: `clear stale batch ${Math.floor(i / batchSize) + 1}` }
+        )
+        if (error) throw error
+    }
+}
+
 async function main() {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
         console.error('Missing env vars. Run with: node --env-file=.env.local scripts/scrape-sections.mjs')
@@ -349,111 +478,53 @@ async function main() {
     const opts = parseArgs()
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
 
-    console.log('📚 Loading courses from Supabase...')
-    let courses = await loadCourses(supabase)
-
-    // Single-course mode
     if (opts.course) {
-        const [subj, ...codeParts] = opts.course.split(/\s+/)
-        const code = codeParts.join('') || opts.course.replace(/[A-Z]+/, '')
-        const normTarget = opts.course.replace(/\s+/g, '')
-        courses = courses.filter(c => `${c.subject}${c.code}`.replace(/\s+/g, '') === normTarget)
-        if (courses.length === 0) {
-            console.error(`❌ Course ${opts.course} not found in Supabase`)
-            process.exit(1)
+        const normalized = opts.course.replace(/\s+/g, '')
+        const subject = normalized.match(/^[A-Z&]+/)?.[0] || ''
+        const code = normalized.slice(subject.length)
+        const course = await fetchSections(subject, code, opts.academicYear)
+        if (!course) throw new Error(`Course ${opts.course} not found for ${opts.academicYear}`)
+        console.log(JSON.stringify(course, null, opts.dryRun ? 2 : 0))
+        if (!opts.dryRun) {
+            await upsertCatalog(supabase, [course])
         }
+        return
     }
 
-    const done = opts.resume ? loadProgress() : new Set()
-    const remaining = courses.filter(c => !done.has(c.course_id))
-    const limit = opts.limit ? Math.min(opts.limit, remaining.length) : remaining.length
-    const toProcess = remaining.slice(0, limit)
+    console.log(`Fetching Stanford catalog for ${opts.academicYear}...`)
+    const { departments, courses } = await fetchCatalog(opts.academicYear)
+    console.log('Loading current Supabase course IDs...')
+    const existingRows = await loadCourses(supabase)
+    const existingById = new Map(existingRows.map(row => [row.course_id, row]))
+    const existingIds = new Set(existingById.keys())
+    const incomingIds = new Set(courses.map(course => course.course_id))
+    const newCourses = courses.filter(course => !existingIds.has(course.course_id))
+    const staleIds = existingRows.filter(row => !incomingIds.has(row.course_id)).map(row => row.course_id)
+    const scheduled = courses.filter(course => course.sections.length > 0).length
+    const terms = sortTerms(Array.from(new Set(courses.flatMap(course => course.terms))))
 
-    console.log(`📦 ${courses.length} total courses | ${done.size} already done | processing ${toProcess.length}`)
-    console.log(`⚡ Concurrency: ${CONCURRENCY} | Delay: ${DELAY_MS}ms between batches`)
-    console.log(`\n🚀 Starting scrape...\n`)
+    console.log(JSON.stringify({
+        academicYear: opts.academicYear,
+        departments: departments.length,
+        courses: courses.length,
+        scheduled,
+        newCourses: newCourses.length,
+        staleCourses: staleIds.length,
+        terms,
+        sampleNewCourseIds: newCourses.slice(0, 20).map(course => course.course_id),
+        dryRun: opts.dryRun,
+    }, null, 2))
 
-    let processed = 0
-    let withSections = 0
-    let noSections = 0
-    let errors = 0
+    if (opts.dryRun) return
 
-    for (let i = 0; i < toProcess.length; i += CONCURRENCY) {
-        const batch = toProcess.slice(i, i + CONCURRENCY)
-
-        await Promise.all(batch.map(async (course) => {
-            try {
-                const result = await fetchSections(course.subject, course.code)
-
-                if (!result) {
-                    // Course no longer matches an active ExploreCourses entry.
-                    // Clear stale sections/terms so last year's data doesn't linger.
-                    const { error } = await withRetries(
-                        () => supabase
-                            .from('courses')
-                            .update({ sections: [], terms: [] })
-                            .eq('course_id', course.course_id),
-                        { label: `clear ${course.course_id}` }
-                    )
-                    if (error) {
-                        errors++
-                        console.error(`  ❌ ${course.course_id} (clear): ${error.message}`)
-                    } else {
-                        noSections++
-                        done.add(course.course_id)
-                    }
-                    processed++
-                    return
-                }
-
-                const { sections, terms, ...metadata } = result
-
-                const { error } = await withRetries(
-                    () => supabase
-                        .from('courses')
-                        .update({
-                            sections,
-                            terms,
-                            description: metadata.description,
-                            title: metadata.title,
-                            units: metadata.units,
-                            grading: metadata.grading
-                        })
-                        .eq('course_id', course.course_id),
-                    { label: `update ${course.course_id}` }
-                )
-
-                if (error) {
-                    errors++
-                    console.error(`  ❌ ${course.course_id}: ${error.message}`)
-                } else {
-                    if (sections.length > 0) withSections++
-                    else noSections++
-                    done.add(course.course_id)
-                }
-            } catch (e) {
-                errors++
-                console.error(`  ❌ ${course.course_id}: ${e.message}`)
-            }
-            processed++
-        }))
-
-        saveProgress(done)
-
-        const pct = ((processed / toProcess.length) * 100).toFixed(1)
-        const eta = Math.round(((toProcess.length - processed) / CONCURRENCY) * (DELAY_MS / 1000))
-        process.stdout.write(`\r[${processed}/${toProcess.length}] ${pct}% | ✅ ${withSections} with sections | ⬜ ${noSections} empty | ETA ~${eta}s   `)
-
-        if (i + CONCURRENCY < toProcess.length) {
-            await new Promise(r => setTimeout(r, DELAY_MS))
-        }
-    }
-
-    console.log(`\n\n🎉 Done!`)
-    console.log(`  Processed: ${processed}`)
-    console.log(`  With sections: ${withSections}`)
-    console.log(`  No sections found (inactive/no schedule): ${noSections}`)
-    console.log(`  Errors: ${errors}`)
+    const rowsToUpsert = opts.resume
+        ? courses.filter(course => JSON.stringify(course.terms) !== JSON.stringify(existingById.get(course.course_id)?.terms || []))
+        : courses
+    if (opts.resume) console.log(`Resume mode: ${rowsToUpsert.length}/${courses.length} course rows still need the new year.`)
+    if (opts.resume) await updateCatalog(supabase, rowsToUpsert)
+    else await upsertCatalog(supabase, rowsToUpsert)
+    await clearStaleCourses(supabase, staleIds)
+    console.log(`Done. Refreshed ${courses.length} courses; cleared ${staleIds.length} stale schedules.`)
 }
 
 main().catch(err => {

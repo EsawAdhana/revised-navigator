@@ -3,14 +3,12 @@
 import React, { Suspense } from 'react';
 import { CourseList } from '@/components/course-list';
 import { SiteHeader } from '@/components/site-header';
-import { AnnouncementBanner } from '@/components/announcement-banner';
 import { FilterSidebar } from '@/components/filter-sidebar';
 import { BrowsePageShell } from '@/components/browse-page-shell';
 
 function BrowseContent() {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">
-      <AnnouncementBanner />
       <SiteHeader />
 
       <div className="flex flex-1 overflow-hidden">
