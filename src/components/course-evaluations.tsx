@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import Link from 'next/link'
 import { useEvaluationStore } from '@/lib/evaluation-store'
 import { useAuthStore } from '@/lib/auth-store'
 import { track } from '@/lib/analytics'
@@ -10,6 +11,7 @@ import {
   ExternalLink, Clock, Search, X, Lock
 } from 'lucide-react'
 import { cn, decodeHtmlEntities } from '@/lib/utils'
+import { formatInstructorName, instructorSlug } from '@/lib/instructors'
 import { isDevEvalsUnlocked } from '@/lib/dev-flags'
 import { compareTerms } from '@/lib/terms'
 import type { CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
@@ -44,7 +46,7 @@ export function barFill(score: number): string {
 
 export type QuestionCategory = 'quality' | 'learning' | 'organization' | 'goals' | 'hours' | 'attendance_in_person' | 'attendance_online' | 'unknown'
 
-function categorizeQuestion(text: string): QuestionCategory {
+export function categorizeQuestion(text: string): QuestionCategory {
   const t = (text || '').toLowerCase()
   if (t.includes('quality') || t.includes('overall')) return 'quality'
   if (t.includes('how much did you learn')) return 'learning'
@@ -67,6 +69,9 @@ export const CATEGORY_LABELS: Record<QuestionCategory, string> = {
   attendance_online: 'Online Attendance',
   unknown: 'Other'
 }
+
+/** The categories surfaced in summaries, in display order. */
+export const RATING_CATEGORIES: QuestionCategory[] = ['quality', 'learning', 'organization', 'hours']
 
 const CATEGORY_SHORT: Record<QuestionCategory, string> = {
   quality: 'Quality',
@@ -246,19 +251,29 @@ function InstructorRow({ instructor, ratingCats, isExpanded, onToggle, evals }: 
 
   return (
     <div className="border-b border-border/30 last:border-0">
-      <button
-        type="button"
+      {/* Not a <button>: the name inside is a link, and anchors can't nest in buttons. */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
         onClick={onToggle}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() }
+        }}
         className={cn(
-          'w-full grid gap-2 px-4 py-2.5 items-center hover:bg-secondary/20 transition-colors',
+          'w-full grid gap-2 px-4 py-2.5 items-center hover:bg-secondary/20 transition-colors cursor-pointer',
           isExpanded && 'bg-secondary/10'
         )}
         style={{ gridTemplateColumns: '1fr repeat(4, minmax(40px, 52px))' }}
       >
         <div className="min-w-0 text-left">
-          <div className="text-sm font-medium text-foreground truncate">
-            {decodeHtmlEntities(instructor.name).split(', ').reverse().join(' ')}
-          </div>
+          <Link
+            href={`/instructors/${instructorSlug(instructor.name)}`}
+            onClick={e => e.stopPropagation()}
+            className="text-sm font-medium text-foreground truncate block hover:underline underline-offset-2"
+          >
+            {formatInstructorName(instructor.name)}
+          </Link>
           <div className="text-[10px] text-muted-foreground">
             {instructor.evalCount} {instructor.evalCount === 1 ? 'eval' : 'evals'} &middot; {instructor.terms.slice(-2).join(', ')}
           </div>
@@ -282,7 +297,7 @@ function InstructorRow({ instructor, ratingCats, isExpanded, onToggle, evals }: 
             )}
           </div>
         ))}
-      </button>
+      </div>
 
       {isExpanded && (
         <div className="px-4 pb-3 pt-1 space-y-2 bg-secondary/5">
@@ -360,7 +375,13 @@ function InlineEval({ evaluation, disableComments }: { evaluation: CourseEvaluat
 
 // --- Comments panel ---
 
-function CommentsPanel({ comments }: { comments: string[] }) {
+export interface CommentEntry {
+  text: string
+  /** Where the comment came from, e.g. "CS 106A". Shown when one list mixes courses. */
+  label?: string
+}
+
+export function CommentsPanel({ comments }: { comments: CommentEntry[] }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [visibleCount, setVisibleCount] = useState(10)
 
@@ -368,7 +389,9 @@ function CommentsPanel({ comments }: { comments: string[] }) {
     if (!searchQuery.trim()) return comments
 
     const q = searchQuery.toLowerCase()
-    return comments.filter(c => decodeHtmlEntities(c).toLowerCase().includes(q))
+    return comments.filter(c =>
+      decodeHtmlEntities(c.text).toLowerCase().includes(q) ||
+      c.label?.toLowerCase().includes(q))
   }, [comments, searchQuery])
 
   if (comments.length === 0) {
@@ -418,7 +441,10 @@ function CommentsPanel({ comments }: { comments: string[] }) {
               key={i}
               className="text-sm text-muted-foreground bg-secondary/15 rounded-lg px-4 py-3 border border-border/20 leading-relaxed hover:bg-secondary/25 transition-colors"
             >
-              &ldquo;{decodeHtmlEntities(comment)}&rdquo;
+              {comment.label && (
+                <div className="text-[11px] font-bold text-destructive mb-1">{comment.label}</div>
+              )}
+              &ldquo;{decodeHtmlEntities(comment.text)}&rdquo;
             </div>
           ))
         })()}
@@ -492,6 +518,102 @@ function AggregatedRatingBreakdown({ questions, aggregateScore }: { questions: E
   )
 }
 
+/** Median score per category with an expandable response breakdown for each. */
+export function EvaluationOverview({ evaluations }: { evaluations: CourseEvaluation[] }) {
+  const metrics = useMemo(() => aggregateMetrics(evaluations), [evaluations])
+
+  const questionsByCategory = useMemo(() => {
+    const map: Record<QuestionCategory, EvalQuestion[]> = {
+      quality: [], learning: [], organization: [], goals: [],
+      hours: [], attendance_in_person: [], attendance_online: [], unknown: []
+    }
+    for (const ev of evaluations) {
+      for (const q of ev.questions) {
+        map[categorizeQuestion(q.text)].push(q)
+      }
+    }
+    return map
+  }, [evaluations])
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {RATING_CATEGORIES.map(cat => {
+        if (metrics[cat] === undefined) return null
+        const questions = questionsByCategory[cat]
+
+        if (cat === 'hours') {
+          return (
+            <div key={cat}>
+              <div className="w-full flex items-center gap-3 px-4 py-3 bg-secondary/5 rounded-t-lg border-b border-border/30">
+                <Clock size={16} className="text-muted-foreground shrink-0" />
+                <span className="text-sm text-foreground font-medium flex-1 text-left">
+                  Hours / Week
+                </span>
+                <span className="text-sm font-bold text-foreground tabular-nums">
+                  {metrics.hours!.toFixed(1)} hrs/wk
+                </span>
+              </div>
+
+              <div className="px-5 pb-4 pt-4 bg-secondary/5 border border-border/20 rounded-b-lg">
+                <HoursHistogram options={questions.flatMap(q => q.options)} />
+                {questions[0] && (
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-2 pt-1 border-t border-border/30">
+                    <span>{questions[0].responseRate}</span>
+                    <span className="tabular-nums">med {metrics.hours!.toFixed(1)} hrs/wk</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        }
+
+        return (
+          <div key={cat}>
+            <div className="w-full flex items-center gap-3 px-4 py-3 bg-secondary/5 rounded-t-lg border-b border-border/30">
+              <span className="text-sm text-foreground font-medium flex-1 text-left">
+                {CATEGORY_LABELS[cat]}
+              </span>
+              <div className="w-20 h-1.5 bg-secondary/60 rounded-full overflow-hidden">
+                <div
+                  className={cn('h-full rounded-full', barFill(metrics[cat]!))}
+                  style={{ width: `${(metrics[cat]! / 5) * 100}%` }}
+                />
+              </div>
+              <ScoreBadge score={metrics[cat]!} size="sm" />
+            </div>
+
+            <div className="px-5 pb-4 pt-4 bg-secondary/5 border border-border/20 rounded-b-lg space-y-4">
+              <AggregatedRatingBreakdown questions={questions} aggregateScore={metrics[cat]!} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Shared sign-in prompt for the Stanford-only evaluation data. */
+export function EvalLoginGate({ title = 'Course reviews are Stanford-only' }: { title?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-10 px-6 gap-3 border border-border/50 rounded-xl bg-secondary/10">
+      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+        <Lock size={18} className="text-primary" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="text-xs text-muted-foreground max-w-[260px]">
+          Log in with your Stanford account to view student evaluations, ratings, and comments.
+        </p>
+      </div>
+      <StanfordLoginButton
+        source="eval_gate"
+        signingInLabel="Redirecting to Stanford…"
+        className="mt-1 inline-flex items-center justify-center rounded-full bg-foreground text-background px-5 py-2 text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] gap-2 h-auto"
+      />
+    </div>
+  )
+}
+
 // --- Main Component ---
 
 type EvalTab = 'overview' | 'instructors' | 'comments'
@@ -549,39 +671,24 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
     return evaluations.filter(e => e.term === activeTermFilter)
   }, [evaluations, activeTermFilter])
 
-  const metrics = useMemo(() => aggregateMetrics(filteredEvals), [filteredEvals])
   const instructors = useMemo(() => computeInstructorStats(filteredEvals), [filteredEvals])
   const allComments = useMemo(() => {
     // De-dupe identical comments that can appear across multiple evaluation records
     // (e.g. cross-listed or co-taught offerings sharing the same comment pool).
     const seen = new Set<string>()
-    const out: string[] = []
+    const out: CommentEntry[] = []
     for (const e of filteredEvals) {
       for (const c of e.comments) {
         const key = decodeHtmlEntities(c).trim().toLowerCase()
         if (key && !seen.has(key)) {
           seen.add(key)
-          out.push(c)
+          out.push({ text: c })
         }
       }
     }
     return out
   }, [filteredEvals])
   const hasMultipleInstructors = instructors.length > 1
-
-  // All rating questions across filtered evals (for breakdown)
-  const allQuestionsByCategory = useMemo(() => {
-    const map: Record<QuestionCategory, EvalQuestion[]> = {
-      quality: [], learning: [], organization: [], goals: [],
-      hours: [], attendance_in_person: [], attendance_online: [], unknown: []
-    }
-    for (const ev of filteredEvals) {
-      for (const q of ev.questions) {
-        map[categorizeQuestion(q.text)].push(q)
-      }
-    }
-    return map
-  }, [filteredEvals])
 
   const handleTermFilterChange = useCallback((term: string) => {
     setActiveTermFilter(term)
@@ -603,24 +710,7 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
         </div>
       )
     }
-    return (
-      <div className="flex flex-col items-center justify-center text-center py-10 px-6 gap-3 border border-border/50 rounded-xl bg-secondary/10">
-        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-          <Lock size={18} className="text-primary" />
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-foreground">Course reviews are Stanford-only</p>
-          <p className="text-xs text-muted-foreground max-w-[260px]">
-            Log in with your Stanford account to view student evaluations, ratings, and comments.
-          </p>
-        </div>
-        <StanfordLoginButton
-          source="eval_gate"
-          signingInLabel="Redirecting to Stanford…"
-          className="mt-1 inline-flex items-center justify-center rounded-full bg-foreground text-background px-5 py-2 text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] gap-2 h-auto"
-        />
-      </div>
-    )
+    return <EvalLoginGate />
   }
 
   // Loading
@@ -660,7 +750,7 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
     )
   }
 
-  const ratingCats: QuestionCategory[] = ['quality', 'learning', 'organization', 'hours']
+  const ratingCats = RATING_CATEGORIES
   const tabItems: { key: EvalTab, label: string, count?: number }[] = [
     { key: 'overview', label: 'Overview' },
     ...(hasMultipleInstructors ? [{ key: 'instructors' as EvalTab, label: 'Instructors', count: instructors.length }] : []),
@@ -736,76 +826,7 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
       <div className="min-h-[200px]">
 
         {/* === Overview tab === */}
-        {activeTab === 'overview' && (
-          <div className="space-y-6">
-            {/* Clickable metric rows - Grid layout for wider screens */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {ratingCats.map(cat => {
-                if (metrics[cat] === undefined) return null
-                const questions = allQuestionsByCategory[cat]
-
-                if (cat === 'hours') {
-                  const hoursOptions = questions.length > 0
-                    ? questions.flatMap(q => q.options)
-                    : []
-
-                  return (
-                    <div key={cat}>
-                      <div
-                        className="w-full flex items-center gap-3 px-4 py-3 bg-secondary/5 rounded-t-lg border-b border-border/30"
-                      >
-                        <Clock size={16} className="text-muted-foreground shrink-0" />
-                        <span className="text-sm text-foreground font-medium flex-1 text-left">
-                          Hours / Week
-                        </span>
-                        <span className="text-sm font-bold text-foreground tabular-nums">
-                          {metrics.hours!.toFixed(1)} hrs/wk
-                        </span>
-                      </div>
-
-                      <div className="px-5 pb-4 pt-4 bg-secondary/5 border border-border/20 rounded-b-lg">
-                        <HoursHistogram options={hoursOptions} />
-                        {questions[0] && (
-                          <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-2 pt-1 border-t border-border/30">
-                            <span>{questions[0].responseRate}</span>
-                            <span className="tabular-nums">med {metrics.hours!.toFixed(1)} hrs/wk</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                }
-
-                return (
-                  <div key={cat}>
-                    <div
-                      className="w-full flex items-center gap-3 px-4 py-3 bg-secondary/5 rounded-t-lg border-b border-border/30"
-                    >
-                      <span className="text-sm text-foreground font-medium flex-1 text-left">
-                        {CATEGORY_LABELS[cat]}
-                      </span>
-                      <div className="w-20 h-1.5 bg-secondary/60 rounded-full overflow-hidden">
-                        <div
-                          className={cn('h-full rounded-full', barFill(metrics[cat]!))}
-                          style={{ width: `${(metrics[cat]! / 5) * 100}%` }}
-                        />
-                      </div>
-                      <ScoreBadge score={metrics[cat]!} size="sm" />
-                    </div>
-
-                    <div className="px-5 pb-4 pt-4 bg-secondary/5 border border-border/20 rounded-b-lg space-y-4">
-                      <AggregatedRatingBreakdown questions={questions} aggregateScore={metrics[cat]!} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-
-
-
-          </div>
-        )}
+        {activeTab === 'overview' && <EvaluationOverview evaluations={filteredEvals} />}
 
         {/* === Instructors tab (only with 2+ instructors) === */}
         {activeTab === 'instructors' && hasMultipleInstructors && (

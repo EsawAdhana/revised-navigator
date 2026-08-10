@@ -1,40 +1,13 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { getPublicClient } from '@/lib/supabase-admin'
 import { rateLimit } from '@/lib/rate-limit'
 import { isDevEvalsUnlocked } from '@/lib/dev-flags'
+import { getStanfordUser } from '@/lib/stanford-auth'
+import { EVALUATION_COLUMNS, toCourseEvaluation, type EvaluationRow } from '@/lib/evaluation-row'
+import type { CourseEvaluation } from '@/types/course'
 
 const MAX_COURSE_IDS = 50
 const MAX_COURSE_ID_LENGTH = 64
-
-/** Verifies the request carries a valid Stanford session. Evaluation data is
- *  Stanford-community-only, so anonymous requests are rejected. */
-async function getStanfordUser() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  if (!url || !key) return null
-  const cookieStore = await cookies()
-  const supabase = createServerClient(url, key, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll(cookiesToSet) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
-        } catch {
-          // Ignored when called from a Route Handler
-        }
-      }
-    }
-  })
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user || !user.email?.endsWith('@stanford.edu')) return null
-  return user
-}
 
 /** POST /api/evaluations — bulk fetch by course IDs. Body: { courseIds: string[] } */
 export async function POST(request: Request) {
@@ -75,43 +48,20 @@ export async function POST(request: Request) {
     // Single query — Supabase supports .in() with many values (up to 1000+)
     const { data, error } = await supabase
       .from('evaluations')
-      .select('course_id, term, instructor, course_code, respondents, questions, comments')
+      .select(EVALUATION_COLUMNS)
       .in('course_id', ids)
 
     if (error) throw error
 
-    const byCourse: Record<string, Array<{
-      term: string; instructor: string; courseCode: string; respondents: string;
-      questions: unknown; comments: unknown;
-      onlineAttendancePct?: number; inPersonAttendancePct?: number;
-    }>> = {}
+    const byCourse: Record<string, CourseEvaluation[]> = {}
     for (const id of ids) {
       byCourse[id] = []
     }
-    for (const row of data || []) {
+    for (const row of (data || []) as EvaluationRow[]) {
       const courseId = row.course_id
       if (!courseId) continue
       if (!byCourse[courseId]) byCourse[courseId] = []
-
-      const questions = (row.questions || []) as { text?: string; median?: number }[]
-      let onlineAttendancePct: number | undefined
-      let inPersonAttendancePct: number | undefined
-      for (const q of questions) {
-        const t = (q.text || '').toLowerCase()
-        if (t.includes('percent') && t.includes('online') && (q.median ?? 0) > 0) onlineAttendancePct = q.median
-        if (t.includes('percent') && t.includes('in person') && (q.median ?? 0) > 0) inPersonAttendancePct = q.median
-      }
-
-      byCourse[courseId].push({
-        term: (row.term || '').replace(/(\d{4})\D.*$/, '$1'),
-        instructor: row.instructor,
-        courseCode: row.course_code,
-        respondents: row.respondents,
-        questions: row.questions,
-        comments: row.comments,
-        ...(onlineAttendancePct != null && { onlineAttendancePct }),
-        ...(inPersonAttendancePct != null && { inPersonAttendancePct }),
-      })
+      byCourse[courseId].push(toCourseEvaluation(row))
     }
 
     return NextResponse.json(byCourse, {

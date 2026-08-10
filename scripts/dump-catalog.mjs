@@ -4,9 +4,10 @@
  * Usage:
  *   node --env-file=.env.local scripts/dump-catalog.mjs
  *
- * Writes public/catalog/{light,full}.json, which /api/courses and the SSR
- * course/department pages read instead of scanning the DB. The files are
- * committed, so refresh-courses.yml re-runs this and commits the result.
+ * Writes public/catalog/{light,full,instructors}.json, which /api/courses and
+ * the SSR course/department/instructor pages read instead of scanning the DB.
+ * The files are committed, so refresh-courses.yml re-runs this and commits the
+ * result.
  *
  * One sequential keyset pass fetches every row with sections (~22s for the
  * whole catalog) and light rows are derived from it. Concurrency is
@@ -86,6 +87,33 @@ async function fetchAll(supabase) {
   return rows
 }
 
+/**
+ * Every raw instructor spelling we know of. Catalog rows only cover upcoming
+ * terms and abbreviate first names, so evaluations supply both the history and
+ * the full names; the app slugs and groups them at runtime.
+ */
+async function fetchInstructorNames(supabase, courseRows) {
+  const names = new Set()
+  for (const row of courseRows) {
+    for (const name of row.instructors || []) if (name) names.add(name)
+  }
+
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('evaluations')
+      .select('instructor')
+      .order('course_id', { ascending: true })
+      .range(from, from + 999)
+    if (error) throw new Error(`instructors page at ${from} failed: ${error.message}`)
+    for (const row of data) if (row.instructor) names.add(row.instructor)
+    if (data.length < 1000) break
+    from += 1000
+  }
+
+  return Array.from(names).sort()
+}
+
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -107,6 +135,10 @@ async function main() {
   const light = all.map((row) => Object.fromEntries(LIGHT_KEYS.map((k) => [k, row[k]])))
   const lightJson = JSON.stringify(light)
   writeFileSync(join(OUT_DIR, 'light.json'), lightJson)
+
+  const instructors = await fetchInstructorNames(supabase, all)
+  writeFileSync(join(OUT_DIR, 'instructors.json'), JSON.stringify(instructors))
+  console.log(`  ${instructors.length} instructor names`)
 
   const scheduled = all.filter((c) => (c.terms || []).length > 0)
   const withSections = scheduled.filter((c) => (c.sections || []).length > 0)

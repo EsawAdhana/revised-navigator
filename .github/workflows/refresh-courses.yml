@@ -36,7 +36,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add public/catalog/light.json public/catalog/full.json
+          git add public/catalog/light.json public/catalog/full.json public/catalog/instructors.json
           if git diff --cached --quiet; then
             echo "Catalog unchanged; nothing to deploy."
           else

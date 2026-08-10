@@ -2,11 +2,13 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VList, VListHandle } from 'virtua';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
+import { useInstructorSearch } from '@/hooks/use-instructor-search';
 import { useCourseStore } from '@/lib/store';
 import { CourseCard } from './course-card';
-import { SearchX, ArrowUp, AlertCircle } from 'lucide-react';
+import { SearchX, ArrowUp, AlertCircle, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ActiveFilterChips } from './active-filter-chips';
 import { useResetFilters } from '@/hooks/use-reset-filters';
@@ -57,8 +59,11 @@ export function CourseList() {
   const queryString = searchParams.toString();
   const resetFilters = useResetFilters();
 
-  const hasSearchQuery = (searchParams.get('q') ?? '').trim().length > 0;
-  const FILTER_PARAM_KEYS = ['q', 'depts', 'terms', 'formats', 'levels', 'gers', 'schools', 'exclude', 'unitMin', 'unitMax', 'timeMin', 'timeMax', 'hideConflicts', 'hideUnavailable'];
+  const searchQuery = searchParams.get('q') ?? '';
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const hideProfessors = searchParams.get('hideProfessors') === 'true';
+  const instructorMatches = useInstructorSearch(hideProfessors ? '' : searchQuery);
+  const FILTER_PARAM_KEYS = ['q', 'depts', 'terms', 'formats', 'levels', 'gers', 'schools', 'exclude', 'unitMin', 'unitMax', 'timeMin', 'timeMax', 'hideConflicts', 'hideUnavailable', 'hideProfessors'];
   const hasAnyFilter = FILTER_PARAM_KEYS.some(k => searchParams.has(k));
 
   const prefetchCourseDetail = useCallback((courseId: string) => {
@@ -192,6 +197,26 @@ export function CourseList() {
             </div>
           </div>
         </div>
+
+      {instructorMatches.length > 0 && (
+        <div className="shrink-0 border-b border-border/30 bg-background px-2 sm:px-4 py-2">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 pl-1">
+            Instructors
+          </div>
+          <div className="flex flex-col gap-1">
+            {instructorMatches.map((instructor) => (
+              <Link
+                key={instructor.slug}
+                href={`/instructors/${instructor.slug}`}
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[15px] font-semibold text-foreground hover:bg-secondary/40 transition-colors"
+              >
+                <User size={14} className="text-muted-foreground shrink-0" />
+                <span className="truncate">{instructor.name}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
         {courses.length === 0 ? (

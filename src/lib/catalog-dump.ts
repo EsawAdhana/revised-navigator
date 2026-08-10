@@ -3,6 +3,11 @@ import { join } from 'path'
 import type { Course } from '@/types/course'
 import { rowToCourse } from '@/lib/course-mapper'
 import { mergeCourseRows } from '@/lib/supabase-admin'
+import {
+  buildInstructorDirectory,
+  instructorInitialSlug,
+  type InstructorDirectory,
+} from '@/lib/instructors'
 
 type DumpRow = Record<string, unknown> & { course_id?: string; id?: string; subject?: string }
 
@@ -10,6 +15,9 @@ let fullById: Map<string, Course> | null = null
 let fullLoad: Promise<Map<string, Course>> | null = null
 let lightRows: DumpRow[] | null = null
 let lightLoad: Promise<DumpRow[]> | null = null
+let directory: InstructorDirectory | null = null
+let directoryLoad: Promise<InstructorDirectory> | null = null
+let coursesByInitialSlug: Map<string, DumpInstructorCourse[]> | null = null
 
 async function loadFullById(): Promise<Map<string, Course>> {
   if (fullById) return fullById
@@ -64,6 +72,80 @@ export type DumpDeptCourse = {
 function isGradeable(grading: unknown): boolean {
   const g = String(grading || '').trim()
   return Boolean(g) && g !== 'TBD'
+}
+
+/** The full instructor name directory (catalog + evaluation spellings). */
+export async function getInstructorDirectory(): Promise<InstructorDirectory> {
+  if (directory) return directory
+  if (!directoryLoad) {
+    directoryLoad = (async () => {
+      let names: string[] = []
+      try {
+        const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'instructors.json'), 'utf8')
+        names = JSON.parse(raw) as string[]
+      } catch {
+        // Missing dump — fall back to catalog-only names below.
+      }
+      const rows = await loadLightRows().catch(() => [] as DumpRow[])
+      for (const row of rows) {
+        for (const name of (row.instructors as string[] | undefined) || []) names.push(name)
+      }
+      directory = buildInstructorDirectory(names)
+      return directory
+    })().finally(() => { directoryLoad = null })
+  }
+  return directoryLoad
+}
+
+export type DumpInstructorCourse = {
+  id: string
+  subject: string
+  code: string
+  title: string
+  terms: string[]
+  quality: number | null
+  hours: number | null
+}
+
+/**
+ * Upcoming catalog listings for a person, keyed by initial slug because the
+ * catalog only ever abbreviates first names.
+ */
+export async function getInstructorCoursesFromDump(initialSlug: string): Promise<DumpInstructorCourse[]> {
+  try {
+    if (!coursesByInitialSlug) {
+      const rows = await loadLightRows()
+      const map = new Map<string, DumpInstructorCourse[]>()
+      for (const row of rows) {
+        const instructors = (row.instructors as string[] | undefined) || []
+        if (instructors.length === 0 || !isGradeable(row.grading)) continue
+        const id = String(row.course_id || row.id || '')
+        if (!id) continue
+        const course: DumpInstructorCourse = {
+          id,
+          subject: String(row.subject || ''),
+          code: String(row.code || ''),
+          title: String(row.title || ''),
+          terms: ((row.terms as string[] | undefined) || []).slice(),
+          quality: row.quality != null && row.quality !== '' ? Number(row.quality) : null,
+          hours: row.hours != null && row.hours !== '' ? Number(row.hours) : null,
+        }
+        for (const slug of new Set(instructors.map(instructorInitialSlug))) {
+          if (!slug) continue
+          const list = map.get(slug)
+          if (list) {
+            if (!list.some(c => c.id === id)) list.push(course)
+          } else {
+            map.set(slug, [course])
+          }
+        }
+      }
+      coursesByInitialSlug = map
+    }
+    return coursesByInitialSlug.get(initialSlug) ?? []
+  } catch {
+    return []
+  }
 }
 
 /** Light dump rows for one department (dept pages + SEO related links). */

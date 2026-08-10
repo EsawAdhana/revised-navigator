@@ -13,10 +13,10 @@ import { cn, getSyllabusUrl, parseUnitsOptions, formatLevel, abbreviateGer, unit
 import { isDevEvalsUnlocked } from '@/lib/dev-flags';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CourseEvaluations, ScoreBadge, barFill, CATEGORY_LABELS, QuestionCategory, aggregateMetrics } from './course-evaluations';
+import { CourseEvaluations } from './course-evaluations';
 import { SyllabusVoting } from './syllabus-voting';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Course, CourseEvaluation } from '@/types/course';
+import { Course } from '@/types/course';
 import { CourseDescription } from './course-description';
 import { useEvaluationStore } from '@/lib/evaluation-store';
 import { useMemo } from 'react';
@@ -30,76 +30,21 @@ interface CourseDetailContentProps {
     course: Course;
 }
 
-function InstructorSummary({ instructorName, evals }: { instructorName: string; evals: CourseEvaluation[] }) {
-    const instructorEvals = useMemo(() => evals.filter(e => e.instructor === instructorName), [evals, instructorName]);
-    const metrics = useMemo(() => aggregateMetrics(instructorEvals), [instructorEvals]);
-
-    if (instructorEvals.length === 0) return null;
-
-    const ratingCats: QuestionCategory[] = ['quality', 'learning', 'organization', 'hours'];
-
-    return (
-        <div className="bg-secondary/10 rounded-2xl p-4 border border-border/40 space-y-3">
-            <div className="flex items-center justify-between border-b border-border/20 pb-2">
-                <h3 className="text-sm font-bold text-foreground truncate max-w-[200px]">
-                    {decodeHtmlEntities(instructorName).split(', ').reverse().join(' ')}
-                </h3>
-                <div className="text-xs text-muted-foreground font-medium">
-                    {instructorEvals.length} {instructorEvals.length === 1 ? 'Eval' : 'Evals'}
-                </div>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                {ratingCats.map(cat => {
-                    const score = metrics[cat];
-                    if (score === undefined) return null;
-
-                    return (
-                        <div key={cat} className="space-y-1">
-                            <div className="text-xs text-muted-foreground uppercase font-bold tracking-tight truncate">
-                                {CATEGORY_LABELS[cat].replace('Instruction ', '')}
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                {cat === 'hours' ? (
-                                    <span className="text-sm font-bold tabular-nums">{score.toFixed(1)}h</span>
-                                ) : (
-                                    <>
-                                        <div className="w-8 h-1 bg-secondary/60 rounded-full overflow-hidden shrink-0">
-                                            <div
-                                                className={cn('h-full rounded-full', barFill(score))}
-                                                style={{ width: `${(score / 5) * 100}%` }}
-                                            />
-                                        </div>
-                                        <ScoreBadge score={score} size="sm" />
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
-
-
-
 export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const addItem = useCartStore(s => s.addItem);
     const removeSection = useCartStore(s => s.removeSection);
     const courses = useCourseStore(s => s.courses);
     const fetchBulkEvaluations = useEvaluationStore(s => s.fetchBulkEvaluations);
-    const getMergedEvaluations = useEvaluationStore(s => s.getMergedEvaluations);
-    const evaluationsById = useEvaluationStore(state => state.evaluations);
     const user = useAuthStore(s => s.user);
     const canViewEvals = Boolean(user) || isDevEvalsUnlocked();
 
     const crossListIds = useMemo(() => getCrossListGroupIds(course.id, courses), [course.id, courses]);
 
+    // Warms the eval cache while the user reads the overview, so opening the
+    // Charts or Comments tab (which mounts CourseEvaluations) is instant.
     useEffect(() => {
         if (canViewEvals && crossListIds.length > 0) fetchBulkEvaluations(crossListIds);
     }, [crossListIds, fetchBulkEvaluations, canViewEvals]);
-
-    const evaluations = useMemo(() => getMergedEvaluations(crossListIds), [getMergedEvaluations, crossListIds, evaluationsById]);
 
     // Subscribe to only this course's cart entry so unrelated cart changes don't re-render the page
     const cartItem = useCartStore(s => s.items.find(i => i.id === course.id));
@@ -423,14 +368,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
                 {/* Right Column: Persistent Sidebar (Sections) */}
                 <aside className="space-y-4 lg:sticky lg:top-24 lg:h-fit lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto pr-2 scrollbar-hide">
-                    {/* Instructor Summary */}
-                    {(() => {
-                        const activeSections = sectionsByTerm[activeTerm] || [];
-                        const primaryInstructor = activeSections[0]?.meetings?.[0]?.instructors?.[0];
-                        if (!primaryInstructor) return null;
-                        return <InstructorSummary instructorName={primaryInstructor} evals={evaluations} />;
-                    })()}
-
                     <div className="space-y-4">
                         <div className="flex items-center justify-between border-b border-border/40 pb-2 pl-5">
                             <h3 className="text-[20px] font-bold text-foreground">
@@ -588,7 +525,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                                     </div>
                                                                     {m.instructors && m.instructors.length > 0 && (
                                                                         <div className="flex gap-2.5 min-w-0">
-                                                                            <InstructorList instructors={m.instructors} showIcon={true} label="INSTRUCTOR:" />
+                                                                            <InstructorList instructors={m.instructors} showIcon={true} label="INSTRUCTOR:" linkToProfile />
                                                                         </div>
                                                                     )}
                                                                 </div>

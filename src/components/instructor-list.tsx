@@ -1,6 +1,8 @@
 import React from 'react';
+import Link from 'next/link';
 import { User } from 'lucide-react';
 import { decodeHtmlEntities } from '@/lib/utils';
+import { instructorSlug } from '@/lib/instructors';
 
 interface InstructorListProps {
   instructors: string[];
@@ -9,9 +11,14 @@ interface InstructorListProps {
   label?: string;
   /** Use 'sm' for compact contexts (e.g. course cards). */
   size?: 'default' | 'sm';
+  /**
+   * Link each name to its instructor page. Off by default because course cards
+   * are themselves links, and anchors can't nest.
+   */
+  linkToProfile?: boolean;
 }
 
-export function InstructorList({ instructors, limit = 5, showIcon = true, label, size = 'default' }: InstructorListProps) {
+export function InstructorList({ instructors, limit = 5, showIcon = true, label, size = 'default', linkToProfile = false }: InstructorListProps) {
   const textSize = size === 'sm' ? 'text-[13px]' : 'text-[17px]';
 
   if (!instructors || instructors.length === 0) {
@@ -35,7 +42,21 @@ export function InstructorList({ instructors, limit = 5, showIcon = true, label,
       <div className="flex items-baseline gap-2 min-w-0 flex-1">
         {label && <span className="text-[13px] font-bold text-muted-foreground uppercase tracking-tight leading-none shrink-0">{label}</span>}
         <div className={`${textSize} font-medium text-muted-foreground leading-tight min-w-0 ${size === 'sm' ? 'truncate' : 'break-words'}`}>
-          {displayed.map((name) => decodeHtmlEntities(name)).join(', ')}
+          {displayed.map((name, i) => (
+            <React.Fragment key={`${name}-${i}`}>
+              {i > 0 && ', '}
+              {linkToProfile ? (
+                <Link
+                  href={`/instructors/${instructorSlug(name)}`}
+                  className="hover:text-foreground hover:underline underline-offset-2 transition-colors"
+                >
+                  {decodeHtmlEntities(name)}
+                </Link>
+              ) : (
+                decodeHtmlEntities(name)
+              )}
+            </React.Fragment>
+          ))}
           {remaining > 0 && <span className="opacity-60 ml-1">+{remaining} more</span>}
         </div>
       </div>
