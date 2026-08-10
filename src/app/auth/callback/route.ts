@@ -18,7 +18,7 @@ function getRedirectOrigin(request: Request): string {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/'
+  const next = searchParams.get('next') ?? '/browse'
   const origin = getRedirectOrigin(request)
 
   if (!code) {
@@ -33,6 +33,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/?auth_error=session_failed`)
   }
 
-  const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/'
+  // Avoid `/` → middleware → `/browse` bounce after a successful login.
+  let safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/browse'
+  if (safeNext === '/') safeNext = '/browse'
   return NextResponse.redirect(`${origin}${safeNext}`)
 }

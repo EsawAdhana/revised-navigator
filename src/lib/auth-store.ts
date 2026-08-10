@@ -78,16 +78,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     })
 
-    // If the page is restored from the back/forward cache (e.g. the browser
-    // bounces back from Google's OAuth screen, or the user hits "back"), the
-    // pre-redirect "signing in" state is frozen in place. Clear it so the
-    // loading toast and disabled login buttons don't get stuck.
-    const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        dismissAuthLoading()
-        set({ isSigningIn: false })
-      }
+    // Back from Google/Stanford (bfcache or full reload): clear stuck "Redirecting…"
+    // UI so login buttons aren't disabled forever.
+    const clearSigningInUi = () => {
+      dismissAuthLoading()
+      if (get().isSigningIn) set({ isSigningIn: false })
     }
+    const handlePageShow = () => clearSigningInUi()
     window.addEventListener('pageshow', handlePageShow)
 
     return () => {
@@ -106,16 +103,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     set({ isSigningIn: true })
-    showAuthLoading()
+    // Delay toast slightly so a fast navigate doesn't flash "Redirecting…".
+    const toastTimer = window.setTimeout(() => showAuthLoading(), 150)
 
-    const next = returnPath ?? `${window.location.pathname}${window.location.search}`
+    // Landing `/` would bounce `/` → middleware → `/browse` after login; go straight there.
+    let next = returnPath ?? `${window.location.pathname}${window.location.search}`
+    if (!next || next === '/') next = '/browse'
     const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
 
     try {
+      // skipBrowserRedirect: we navigate ourselves with replace() (no double
+      // redirect from supabase-js, and Back won't return to a stuck button).
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo,
+          skipBrowserRedirect: true,
           queryParams: {
             hd: 'stanford.edu',
           },
@@ -124,6 +127,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (error) {
         console.error('OAuth sign-in failed:', error)
+        window.clearTimeout(toastTimer)
         dismissAuthLoading()
         set({ isSigningIn: false })
         const isLocalhost = window.location.hostname === 'localhost'
@@ -135,14 +139,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (data?.url) {
-        window.location.assign(data.url)
-      } else {
-        dismissAuthLoading()
-        set({ isSigningIn: false })
-        showAuthError('oauth_failed', 'No redirect URL returned from Supabase.')
+        window.location.replace(data.url)
+        return
       }
+
+      window.clearTimeout(toastTimer)
+      dismissAuthLoading()
+      set({ isSigningIn: false })
+      showAuthError('oauth_failed', 'No redirect URL returned from Supabase.')
     } catch (err) {
       console.error('OAuth sign-in failed:', err)
+      window.clearTimeout(toastTimer)
       dismissAuthLoading()
       set({ isSigningIn: false })
       showAuthError('oauth_failed')

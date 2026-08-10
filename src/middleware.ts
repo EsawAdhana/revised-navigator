@@ -20,6 +20,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(callbackUrl)
   }
 
+  // OAuth callback exchanges the code itself — skip getUser() here so we don't
+  // add an extra Supabase round trip before session cookies exist.
+  if (url.pathname.startsWith('/auth/callback')) {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

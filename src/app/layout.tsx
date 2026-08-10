@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Inter, Instrument_Serif } from "next/font/google";
-import { HumanBehaviorInit } from "./HumanBehaviorInit";
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthProvider } from '@/components/auth-provider';
@@ -10,6 +9,7 @@ import { DeferredShell } from '@/components/deferred-shell';
 import { NavProgress } from '@/components/nav-progress';
 import { ThemedToaster } from '@/components/themed-toaster';
 import { SITE_URL } from '@/lib/site';
+import { HumanBehaviorInit } from "./HumanBehaviorInit";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -46,8 +46,18 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const supabaseOrigin = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Warm OAuth hop: click → supabase authorize → Google → Stanford SSO */}
+        {supabaseOrigin ? <link rel="preconnect" href={supabaseOrigin} crossOrigin="anonymous" /> : null}
+        <link rel="preconnect" href="https://accounts.google.com" />
+        <link rel="preconnect" href="https://login.stanford.edu" />
+        <link rel="dns-prefetch" href="https://accounts.google.com" />
+        <link rel="dns-prefetch" href="https://login.stanford.edu" />
+      </head>
       <body className={`${inter.className} ${instrumentSerif.variable}`}>
         <HumanBehaviorInit />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
