@@ -1,40 +1,29 @@
 import type { MetadataRoute } from 'next'
-import { getPublicClient } from '@/lib/supabase-admin'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
 import { SITE_URL } from '@/lib/site'
 
 // Rebuild the sitemap at most once a day rather than per request.
 export const revalidate = 86400
 
-const PAGE_SIZE = 1000
-
-/** Distinct, valid (gradeable) course ids and their subjects, paginated to cover the full table. */
+/** Prefer the prebuilt light dump so builds don't hang on a sick Supabase. */
 async function getCatalog(): Promise<{ ids: string[]; subjects: string[] }> {
   try {
-    const supabase = getPublicClient()
-    const { count, error: countError } = await supabase
-      .from('courses')
-      .select('*', { count: 'exact', head: true })
-    if (countError) throw countError
-    if (!count) return { ids: [], subjects: [] }
-
+    const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'light.json'), 'utf8')
+    const rows = JSON.parse(raw) as Array<{
+      course_id?: string
+      id?: string
+      subject?: string
+      grading?: string
+    }>
     const ids = new Set<string>()
     const subjects = new Set<string>()
-    const pages = Math.ceil(count / PAGE_SIZE)
-    for (let p = 0; p < pages; p++) {
-      const from = p * PAGE_SIZE
-      const { data, error } = await supabase
-        .from('courses')
-        .select('course_id, subject, grading')
-        .order('course_id', { ascending: true })
-        .range(from, from + PAGE_SIZE - 1)
-      if (error) throw error
-      for (const row of data || []) {
-        const grading = (row.grading || '').trim()
-        if (grading && grading !== 'TBD') {
-          ids.add(row.course_id)
-          if (row.subject) subjects.add(row.subject)
-        }
-      }
+    for (const row of rows) {
+      const grading = (row.grading || '').trim()
+      if (!grading || grading === 'TBD') continue
+      const id = row.course_id || row.id
+      if (id) ids.add(id)
+      if (row.subject) subjects.add(row.subject)
     }
     return { ids: Array.from(ids), subjects: Array.from(subjects).sort() }
   } catch {
