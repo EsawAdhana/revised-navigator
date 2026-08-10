@@ -29,7 +29,7 @@ export default async function DepartmentsPage() {
           course list with student evaluation ratings.
         </p>
         <ul className="mt-8 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 md:grid-cols-4">
-          {departments.map(({ subject, count }) => (
+          {departments.map(({ subject }) => (
             <li key={subject}>
               <Link
                 href={`/browse/${encodeURIComponent(subject)}`}
@@ -37,7 +37,6 @@ export default async function DepartmentsPage() {
                 className="text-sm hover:text-primary transition-colors"
               >
                 {subject}
-                <span className="text-muted-foreground"> ({count})</span>
               </Link>
             </li>
           ))}

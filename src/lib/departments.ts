@@ -1,4 +1,5 @@
 import { cache } from 'react'
+import { XMLParser } from 'fast-xml-parser'
 import { getPublicClient } from '@/lib/supabase-admin'
 import { compareCourseCodes } from '@/lib/utils'
 
@@ -68,20 +69,28 @@ function dedupeRows(rows: any[]): DeptCourse[] {
   return Array.from(byId.values())
 }
 
-/**
- * Distinct departments (subject codes) with gradeable-course counts, sorted A-Z.
- * React-cached per render; pages set `revalidate` for cross-request caching.
- */
-export const getDepartments = cache(async (): Promise<{ subject: string; count: number }[]> => {
-  const rows = await fetchPaginated('course_id, subject, grading', (q) => q)
-  const counts = new Map<string, number>()
-  for (const row of rows) {
-    if (!row.subject || !isGradeable(row.grading)) continue
-    counts.set(row.subject, (counts.get(row.subject) || 0) + 1)
-  }
-  return Array.from(counts.entries())
-    .map(([subject, count]) => ({ subject, count }))
-    .sort((a, b) => a.subject.localeCompare(b.subject))
+/** Current ExploreCourses department codes, sorted A-Z. */
+export const getDepartments = cache(async (): Promise<{ subject: string }[]> => {
+  const now = new Date()
+  const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1
+  const response = await fetch(
+    `https://explorecourses.stanford.edu/browse?view=xml-20200810&academicYear=${start}${start + 1}`,
+    { next: { revalidate: 86400 } },
+  )
+  if (!response.ok) throw new Error(`ExploreCourses returned ${response.status}`)
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '',
+    isArray: (name) => name === 'school' || name === 'department',
+  })
+  const parsed = parser.parse(await response.text())
+  const subjects = new Set<string>(
+    (parsed.schools?.school || [])
+      .flatMap((school: { department?: { name?: string }[] }) => school.department || [])
+      .map((department: { name?: string }) => department.name)
+      .filter(Boolean),
+  )
+  return Array.from(subjects).sort().map(subject => ({ subject }))
 })
 
 /** All gradeable courses in one department, sorted by course code. */
