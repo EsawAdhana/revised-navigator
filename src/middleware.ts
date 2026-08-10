@@ -20,9 +20,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(callbackUrl)
   }
 
-  // OAuth callback exchanges the code itself — skip getUser() here so we don't
-  // add an extra Supabase round trip before session cookies exist.
-  if (url.pathname.startsWith('/auth/callback')) {
+  // Only the landing page needs to know who the user is. getUser() is a network
+  // round trip to Supabase, and running it on every matched path billed one per
+  // navigation *and* per Next.js link prefetch (~1.5k/hour at near-zero
+  // traffic). Route handlers that need auth verify it themselves, and the
+  // browser client refreshes its own tokens.
+  if (url.pathname !== '/') {
     return NextResponse.next({ request })
   }
 
@@ -53,9 +56,7 @@ export async function middleware(request: NextRequest) {
 
   // Signed-in users skip the marketing landing page and go straight to the app.
   if (
-    url.pathname === '/' &&
     user?.email?.endsWith('@stanford.edu') &&
-    !url.searchParams.has('code') &&
     !url.searchParams.has('auth_error')
   ) {
     // Preserve any refreshed-session cookies getUser() set on supabaseResponse,
@@ -71,10 +72,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Excludes /api/*: the middleware only exists for the `/` -> /browse redirect
-  // and page-navigation session refresh, while getUser() is a network round
-  // trip to Supabase that would otherwise tax every API call and analytics
-  // beacon (API routes that need auth verify it themselves).
+  // Stays broad so a `?code=` landing on any path still reaches the callback
+  // fallback above; everything other than `/` returns without touching Supabase.
   matcher: [
     '/((?!api/|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],

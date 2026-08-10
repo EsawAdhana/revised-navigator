@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCourseStore } from '@/lib/store';
-import { ExternalLink, MapPin, Clock, Check, FileText, AlertCircle, Loader2, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ExternalLink, MapPin, Clock, Check, FileText, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { useAuthStore } from '@/lib/auth-store';
@@ -13,7 +13,6 @@ import { cn, getSyllabusUrl, parseUnitsOptions, formatLevel, abbreviateGer, unit
 import { isDevEvalsUnlocked } from '@/lib/dev-flags';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useSyllabusValidity } from '@/hooks/use-syllabus-validity';
 import { CourseEvaluations, ScoreBadge, barFill, CATEGORY_LABELS, QuestionCategory, aggregateMetrics } from './course-evaluations';
 import { SyllabusVoting } from './syllabus-voting';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -203,11 +202,9 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const syllabusClassId = activeSection?.classId
     const syllabusSectionNumber = activeSection?.sectionNumber
 
-    // Get syllabus URL and validate it
     const syllabusUrl = course && activeTerm && syllabusSectionNumber
         ? getSyllabusUrl(course.subject, course.code, syllabusClassId, activeTerm, syllabusSectionNumber)
         : null
-    const { isValid: isSyllabusValid, isChecking: isCheckingSyllabus } = useSyllabusValidity(syllabusUrl)
 
     // Update active term if course changes or terms load
     useEffect(() => {
@@ -351,19 +348,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                             <>
                                                 <div className="text-sm text-muted-foreground flex items-center gap-2">
                                                     Syllabus for selected term:
-                                                    {!isFutureTerm && isCheckingSyllabus && (
-                                                        <Loader2 size={12} className="animate-spin opacity-60" />
-                                                    )}
-                                                    {!isFutureTerm && !isCheckingSyllabus && isSyllabusValid === false && (
-                                                        <div title="Syllabus URL may be invalid">
-                                                            <AlertCircle size={12} className="text-amber-500" />
-                                                        </div>
-                                                    )}
-                                                    {!isFutureTerm && !isCheckingSyllabus && isSyllabusValid === null && (
-                                                        <div title="Unable to verify syllabus availability">
-                                                            <AlertCircle size={12} className="text-muted-foreground opacity-50" />
-                                                        </div>
-                                                    )}
                                                 </div>
                                                 <Button
                                                     variant="outline"
@@ -372,8 +356,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                     disabled={!syllabusUrl}
                                                     className={cn(
                                                         "gap-2 w-full sm:w-auto",
-                                                        !syllabusUrl && "opacity-50 cursor-not-allowed",
-                                                        !isFutureTerm && isSyllabusValid === false && "border-amber-500/50 text-amber-600 dark:text-amber-400"
+                                                        !syllabusUrl && "opacity-50 cursor-not-allowed"
                                                     )}
                                                 >
                                                     <a
@@ -390,17 +373,9 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                     >
                                                         <FileText size={16} />
                                                         View {activeTerm} Syllabus
-                                                        {!isFutureTerm && isSyllabusValid === false && (
-                                                            <span className="text-xs ml-1">(may not be available)</span>
-                                                        )}
                                                         <ExternalLink size={14} className="opacity-60" />
                                                     </a>
                                                 </Button>
-                                                {!isFutureTerm && isSyllabusValid === false && (
-                                                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                                                        This syllabus link may not be available. Try searching on syllabus.stanford.edu directly.
-                                                    </p>
-                                                )}
                                                 {!isFutureTerm && (
                                                     <SyllabusVoting courseId={course.id} term={activeTerm} />
                                                 )}
