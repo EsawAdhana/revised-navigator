@@ -70,7 +70,7 @@ export function SearchBar() {
       </div>
       <Input
         ref={inputRef}
-        placeholder="Search..."
+        placeholder="Search courses or professors..."
         className="pl-10 pr-4 h-10 rounded-xl border-border/50 bg-secondary/40 hover:bg-secondary/60 focus:bg-background focus:ring-2 focus:ring-primary/15 focus:border-primary/30 text-base md:text-sm shadow-none transition-all duration-200 placeholder:text-muted-foreground/40 md:placeholder:text-muted-foreground/40 md:w-full"
         value={localValue}
         onChange={handleChange}
