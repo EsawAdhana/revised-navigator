@@ -47,7 +47,7 @@ export function parseInstructorName(raw: string): ParsedInstructorName {
 }
 
 /** True when the first name is a real name rather than "M." or "" . */
-function hasFullFirstName(first: string): boolean {
+export function hasFullFirstName(first: string): boolean {
   return fold(first).replace(/[^a-z0-9]/g, '').length > 1
 }
 
@@ -91,6 +91,46 @@ export interface InstructorDirectory {
   bySlug: Map<string, InstructorEntry>
   /** Full-name entries grouped by initial slug, so "clark-s" finds Susan and Steven. */
   namedByInitialSlug: Map<string, InstructorEntry[]>
+}
+
+/**
+ * Prebuilt dump shape. `courseLinks` maps a catalog course to the one full-name
+ * slug that matches an initial when evaluation history makes the tie unique
+ * ("Clark, S." on CS 229 → clark-susan). Older dumps were a bare string[].
+ */
+export interface InstructorDump {
+  names: string[]
+  /** courseId → initialSlug → named slug */
+  courseLinks: Record<string, Record<string, string>>
+}
+
+export function parseInstructorDump(raw: unknown): InstructorDump {
+  if (Array.isArray(raw)) {
+    return { names: raw.filter((n): n is string => typeof n === 'string'), courseLinks: {} }
+  }
+  if (raw && typeof raw === 'object') {
+    const obj = raw as { names?: unknown; courseLinks?: unknown }
+    const names = Array.isArray(obj.names)
+      ? obj.names.filter((n): n is string => typeof n === 'string')
+      : []
+    const courseLinks =
+      obj.courseLinks && typeof obj.courseLinks === 'object' && !Array.isArray(obj.courseLinks)
+        ? (obj.courseLinks as Record<string, Record<string, string>>)
+        : {}
+    return { names, courseLinks }
+  }
+  return { names: [], courseLinks: {} }
+}
+
+/** Profile path for a raw catalog/eval name, preferring a course-scoped resolution. */
+export function instructorProfilePath(
+  rawName: string,
+  courseId?: string,
+  courseLinks?: Record<string, Record<string, string>>,
+): string {
+  const initial = instructorInitialSlug(rawName)
+  const resolved = courseId && initial ? courseLinks?.[courseId]?.[initial] : undefined
+  return `/instructors/${resolved || instructorSlug(rawName)}`
 }
 
 /**

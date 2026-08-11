@@ -525,7 +525,13 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                                     </div>
                                                                     {m.instructors && m.instructors.length > 0 && (
                                                                         <div className="flex gap-2.5 min-w-0">
-                                                                            <InstructorList instructors={m.instructors} showIcon={true} label="INSTRUCTOR:" linkToProfile />
+                                                                            <InstructorList
+                                                                                instructors={m.instructors}
+                                                                                showIcon={true}
+                                                                                label="INSTRUCTOR:"
+                                                                                linkToProfile
+                                                                                courseId={course.id}
+                                                                            />
                                                                         </div>
                                                                     )}
                                                                 </div>

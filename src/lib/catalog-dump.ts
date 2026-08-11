@@ -5,8 +5,13 @@ import { rowToCourse } from '@/lib/course-mapper'
 import { mergeCourseRows } from '@/lib/supabase-admin'
 import {
   buildInstructorDirectory,
+  hasFullFirstName,
   instructorInitialSlug,
+  instructorSlug,
+  parseInstructorDump,
+  parseInstructorName,
   type InstructorDirectory,
+  type InstructorDump,
 } from '@/lib/instructors'
 
 type DumpRow = Record<string, unknown> & { course_id?: string; id?: string; subject?: string }
@@ -17,7 +22,8 @@ let lightRows: DumpRow[] | null = null
 let lightLoad: Promise<DumpRow[]> | null = null
 let directory: InstructorDirectory | null = null
 let directoryLoad: Promise<InstructorDirectory> | null = null
-let coursesByInitialSlug: Map<string, DumpInstructorCourse[]> | null = null
+let instructorDump: InstructorDump | null = null
+let instructorDumpLoad: Promise<InstructorDump> | null = null
 
 async function loadFullById(): Promise<Map<string, Course>> {
   if (fullById) return fullById
@@ -74,18 +80,29 @@ function isGradeable(grading: unknown): boolean {
   return Boolean(g) && g !== 'TBD'
 }
 
+async function loadInstructorDump(): Promise<InstructorDump> {
+  if (instructorDump) return instructorDump
+  if (!instructorDumpLoad) {
+    instructorDumpLoad = (async () => {
+      try {
+        const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'instructors.json'), 'utf8')
+        instructorDump = parseInstructorDump(JSON.parse(raw))
+      } catch {
+        instructorDump = { names: [], courseLinks: {} }
+      }
+      return instructorDump
+    })().finally(() => { instructorDumpLoad = null })
+  }
+  return instructorDumpLoad
+}
+
 /** The full instructor name directory (catalog + evaluation spellings). */
 export async function getInstructorDirectory(): Promise<InstructorDirectory> {
   if (directory) return directory
   if (!directoryLoad) {
     directoryLoad = (async () => {
-      let names: string[] = []
-      try {
-        const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'instructors.json'), 'utf8')
-        names = JSON.parse(raw) as string[]
-      } catch {
-        // Missing dump — fall back to catalog-only names below.
-      }
+      const dump = await loadInstructorDump()
+      const names = dump.names.slice()
       const rows = await loadLightRows().catch(() => [] as DumpRow[])
       for (const row of rows) {
         for (const name of (row.instructors as string[] | undefined) || []) names.push(name)
@@ -95,6 +112,12 @@ export async function getInstructorDirectory(): Promise<InstructorDirectory> {
     })().finally(() => { directoryLoad = null })
   }
   return directoryLoad
+}
+
+/** initialSlug → named slug for one course, when evaluation history uniquely picks a person. */
+export async function getCourseInstructorLinks(courseId: string): Promise<Record<string, string>> {
+  const dump = await loadInstructorDump()
+  return dump.courseLinks[courseId] ?? {}
 }
 
 export type DumpInstructorCourse = {
@@ -108,41 +131,46 @@ export type DumpInstructorCourse = {
 }
 
 /**
- * Upcoming catalog listings for a person, keyed by initial slug because the
- * catalog only ever abbreviates first names.
+ * Upcoming catalog listings for one person. Prefer an exact full-name slug
+ * match; fall back to surname+initial only when the catalog row is still
+ * abbreviated and this person is the unique named match for that initial.
  */
-export async function getInstructorCoursesFromDump(initialSlug: string): Promise<DumpInstructorCourse[]> {
+export async function getInstructorCoursesFromDump(entry: {
+  slug: string
+  initialSlug: string
+}): Promise<DumpInstructorCourse[]> {
   try {
-    if (!coursesByInitialSlug) {
-      const rows = await loadLightRows()
-      const map = new Map<string, DumpInstructorCourse[]>()
-      for (const row of rows) {
-        const instructors = (row.instructors as string[] | undefined) || []
-        if (instructors.length === 0 || !isGradeable(row.grading)) continue
-        const id = String(row.course_id || row.id || '')
-        if (!id) continue
-        const course: DumpInstructorCourse = {
-          id,
-          subject: String(row.subject || ''),
-          code: String(row.code || ''),
-          title: String(row.title || ''),
-          terms: ((row.terms as string[] | undefined) || []).slice(),
-          quality: row.quality != null && row.quality !== '' ? Number(row.quality) : null,
-          hours: row.hours != null && row.hours !== '' ? Number(row.hours) : null,
+    const dir = await getInstructorDirectory()
+    const soleForInitial = (dir.namedByInitialSlug.get(entry.initialSlug)?.length ?? 0) === 1
+    const rows = await loadLightRows()
+    const out: DumpInstructorCourse[] = []
+    for (const row of rows) {
+      const instructors = (row.instructors as string[] | undefined) || []
+      if (instructors.length === 0 || !isGradeable(row.grading)) continue
+      const id = String(row.course_id || row.id || '')
+      if (!id) continue
+
+      const matches = instructors.some(raw => {
+        if (instructorSlug(raw) === entry.slug) return true
+        // Leftover "Last, F." rows: only attach when nobody else shares the initial.
+        if (!hasFullFirstName(parseInstructorName(raw).first)) {
+          return soleForInitial && instructorInitialSlug(raw) === entry.initialSlug
         }
-        for (const slug of new Set(instructors.map(instructorInitialSlug))) {
-          if (!slug) continue
-          const list = map.get(slug)
-          if (list) {
-            if (!list.some(c => c.id === id)) list.push(course)
-          } else {
-            map.set(slug, [course])
-          }
-        }
-      }
-      coursesByInitialSlug = map
+        return false
+      })
+      if (!matches) continue
+
+      out.push({
+        id,
+        subject: String(row.subject || ''),
+        code: String(row.code || ''),
+        title: String(row.title || ''),
+        terms: ((row.terms as string[] | undefined) || []).slice(),
+        quality: row.quality != null && row.quality !== '' ? Number(row.quality) : null,
+        hours: row.hours != null && row.hours !== '' ? Number(row.hours) : null,
+      })
     }
-    return coursesByInitialSlug.get(initialSlug) ?? []
+    return out
   } catch {
     return []
   }

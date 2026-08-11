@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, MessageSquare, Users } from 'lucide-react'
+import { Loader2, MessageSquare } from 'lucide-react'
 import { useAuthStore } from '@/lib/auth-store'
 import { useCourseStore } from '@/lib/store'
 import { isDevEvalsUnlocked } from '@/lib/dev-flags'
@@ -20,10 +20,8 @@ import type { DumpInstructorCourse } from '@/lib/catalog-dump'
 interface InstructorDetailContentProps {
   slug: string
   name: string
-  /** Upcoming catalog listings, matched on surname + first initial. */
+  /** Upcoming catalog listings for this person. */
   upcoming: DumpInstructorCourse[]
-  /** Other people sharing this surname and initial, if any. */
-  sharesInitialWith: { slug: string; name: string }[]
 }
 
 /** Matches the page-level tabs on the course detail page. */
@@ -64,7 +62,7 @@ function useInstructorEvaluations(slug: string, enabled: boolean) {
   return { evaluations, hasError }
 }
 
-export function InstructorDetailContent({ slug, name, upcoming, sharesInitialWith }: InstructorDetailContentProps) {
+export function InstructorDetailContent({ slug, name, upcoming }: InstructorDetailContentProps) {
   const user = useAuthStore(s => s.user)
   const authLoading = useAuthStore(s => s.isLoading)
   const canViewEvals = Boolean(user) || isDevEvalsUnlocked()
@@ -204,23 +202,6 @@ export function InstructorDetailContent({ slug, name, upcoming, sharesInitialWit
           </div>
         )}
 
-        {sharesInitialWith.length > 0 && (
-          <div className="ml-3 md:ml-4 flex items-start gap-2 rounded-lg border border-border/40 bg-secondary/10 px-3 py-2 text-xs text-muted-foreground max-w-2xl">
-            <Users size={14} className="mt-0.5 shrink-0" />
-            <p>
-              Course listings only publish first initials, so upcoming classes below may belong to{' '}
-              {sharesInitialWith.map((other, i) => (
-                <React.Fragment key={other.slug}>
-                  {i > 0 && (i === sharesInitialWith.length - 1 ? ' or ' : ', ')}
-                  <Link href={`/instructors/${other.slug}`} className="font-medium text-foreground hover:underline">
-                    {other.name}
-                  </Link>
-                </React.Fragment>
-              ))}
-              . Ratings and comments are matched on the full name and are not affected.
-            </p>
-          </div>
-        )}
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6 items-start">

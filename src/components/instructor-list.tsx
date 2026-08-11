@@ -1,8 +1,11 @@
+'use client';
+
 import React from 'react';
 import Link from 'next/link';
 import { User } from 'lucide-react';
 import { decodeHtmlEntities } from '@/lib/utils';
-import { instructorSlug } from '@/lib/instructors';
+import { instructorProfilePath } from '@/lib/instructors';
+import { useCourseInstructorLinks } from '@/hooks/use-instructor-search';
 
 interface InstructorListProps {
   instructors: string[];
@@ -16,10 +19,31 @@ interface InstructorListProps {
    * are themselves links, and anchors can't nest.
    */
   linkToProfile?: boolean;
+  /** When set, prefer course-scoped resolutions ("Clark, S." on CS 229 → Susan). */
+  courseId?: string;
+  /**
+   * Optional SSR map of initialSlug → named slug for this course. When omitted
+   * and courseId is set, the client loads it from the instructors dump.
+   */
+  profileLinks?: Record<string, string>;
 }
 
-export function InstructorList({ instructors, limit = 5, showIcon = true, label, size = 'default', linkToProfile = false }: InstructorListProps) {
+export function InstructorList({
+  instructors,
+  limit = 5,
+  showIcon = true,
+  label,
+  size = 'default',
+  linkToProfile = false,
+  courseId,
+  profileLinks,
+}: InstructorListProps) {
   const textSize = size === 'sm' ? 'text-[13px]' : 'text-[17px]';
+  const loadedLinks = useCourseInstructorLinks(
+    linkToProfile && courseId && !profileLinks ? courseId : undefined,
+  );
+  const links = profileLinks ?? loadedLinks;
+  const courseLinks = courseId ? { [courseId]: links } : undefined;
 
   if (!instructors || instructors.length === 0) {
     return (
@@ -47,7 +71,7 @@ export function InstructorList({ instructors, limit = 5, showIcon = true, label,
               {i > 0 && ', '}
               {linkToProfile ? (
                 <Link
-                  href={`/instructors/${instructorSlug(name)}`}
+                  href={instructorProfilePath(name, courseId, courseLinks)}
                   className="hover:text-foreground hover:underline underline-offset-2 transition-colors"
                 >
                   {decodeHtmlEntities(name)}

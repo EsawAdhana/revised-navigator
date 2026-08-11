@@ -11,6 +11,16 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { XMLParser } from 'fast-xml-parser'
+import { readFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+/** SUNet → full "Last, First" for people ExploreCourses only stores as an initial. */
+const INSTRUCTOR_OVERRIDES = JSON.parse(
+    readFileSync(join(__dirname, 'instructor-name-overrides.json'), 'utf8')
+)
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -158,6 +168,21 @@ function parseSectionTerm(sectionNode) {
     return ''
 }
 
+/**
+ * ExploreCourses puts the abbreviated form in <name> ("Zou, J.") and the real
+ * person in <firstName>/<lastName> (plus <sunet>). Prefer the full name so
+ * instructor pages don't collide on shared initials. A handful of people still
+ * only have an initial in <firstName>; override those by SUNet.
+ */
+function instructorFullName(node) {
+    const sunet = textVal(node?.sunet).toLowerCase()
+    if (sunet && INSTRUCTOR_OVERRIDES[sunet]) return INSTRUCTOR_OVERRIDES[sunet]
+    const first = textVal(node?.firstName)
+    const last = textVal(node?.lastName)
+    if (first && last) return `${last}, ${first}`
+    return textVal(node?.name)
+}
+
 function parseSection(sectionNode, courseNode) {
     const schedules = ensureArray(sectionNode?.schedules?.schedule)
 
@@ -165,7 +190,7 @@ function parseSection(sectionNode, courseNode) {
         days: parseDays(sched),
         time: [sched?.startTime, sched?.endTime].filter(Boolean).join(' – '),
         location: sched?.location || '',
-        instructors: ensureArray(sched?.instructors?.instructor).map(i => i?.name || '').filter(Boolean),
+        instructors: ensureArray(sched?.instructors?.instructor).map(instructorFullName).filter(Boolean),
     }))
 
     return {

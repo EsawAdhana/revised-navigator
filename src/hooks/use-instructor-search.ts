@@ -3,22 +3,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
     buildInstructorDirectory,
+    parseInstructorDump,
     searchInstructors,
     type InstructorDirectory,
+    type InstructorDump,
     type InstructorEntry,
 } from '@/lib/instructors';
 
-let directoryPromise: Promise<InstructorDirectory> | null = null;
+let dumpPromise: Promise<InstructorDump> | null = null;
 
 /** Loaded on first use rather than with the catalog — most sessions never search a name. */
-function loadDirectory(): Promise<InstructorDirectory> {
-    if (!directoryPromise) {
-        directoryPromise = fetch('/catalog/instructors.json')
+function loadDump(): Promise<InstructorDump> {
+    if (!dumpPromise) {
+        dumpPromise = fetch('/catalog/instructors.json')
             .then(res => res.json())
-            .then((names: string[]) => buildInstructorDirectory(names))
-            .catch(() => buildInstructorDirectory([]));
+            .then(parseInstructorDump)
+            .catch(() => ({ names: [], courseLinks: {} }));
     }
-    return directoryPromise;
+    return dumpPromise;
 }
 
 export function useInstructorSearch(query: string): InstructorEntry[] {
@@ -29,7 +31,9 @@ export function useInstructorSearch(query: string): InstructorEntry[] {
     useEffect(() => {
         if (!shouldLoad || directory) return;
         let cancelled = false;
-        loadDirectory().then(loaded => { if (!cancelled) setDirectory(loaded); });
+        loadDump()
+            .then(dump => buildInstructorDirectory(dump.names))
+            .then(loaded => { if (!cancelled) setDirectory(loaded); });
         return () => { cancelled = true; };
     }, [shouldLoad, directory]);
 
@@ -37,4 +41,23 @@ export function useInstructorSearch(query: string): InstructorEntry[] {
         () => (directory ? searchInstructors(directory, trimmed) : []),
         [directory, trimmed]
     );
+}
+
+/** Course-scoped initial→named slug map from the instructors dump. Empty until loaded. */
+export function useCourseInstructorLinks(courseId?: string): Record<string, string> {
+    const [links, setLinks] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        if (!courseId) {
+            setLinks({});
+            return;
+        }
+        let cancelled = false;
+        loadDump().then(dump => {
+            if (!cancelled) setLinks(dump.courseLinks[courseId] ?? {});
+        });
+        return () => { cancelled = true; };
+    }, [courseId]);
+
+    return links;
 }

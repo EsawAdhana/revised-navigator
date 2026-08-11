@@ -16,12 +16,17 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { mkdirSync, writeFileSync } from 'fs'
+import { mkdirSync, writeFileSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const OUT_DIR = join(__dirname, '..', 'public', 'catalog')
+
+/** SUNet → full name; also used to expand leftover "Last, F." rows already in the DB. */
+const INSTRUCTOR_OVERRIDES = JSON.parse(
+  readFileSync(join(__dirname, 'instructor-name-overrides.json'), 'utf8')
+)
 
 const FULL_COLUMNS =
   'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty'
@@ -87,31 +92,133 @@ async function fetchAll(supabase) {
   return rows
 }
 
+/** Keep dump slugs in lockstep with src/lib/instructors.ts. */
+function fold(text) {
+  return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+function slugPart(text) {
+  return fold(text).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+function parseInstructorName(raw) {
+  const name = String(raw || '').replace(/\s+/g, ' ').trim()
+  if (name.includes(',')) {
+    const [last, ...rest] = name.split(',')
+    return { last: last.trim(), first: rest.join(',').trim() }
+  }
+  const tokens = name.split(' ')
+  if (tokens.length > 1) return { last: tokens.slice(1).join(' '), first: tokens[0] }
+  return { last: name, first: '' }
+}
+function hasFullFirstName(first) {
+  return fold(first).replace(/[^a-z0-9]/g, '').length > 1
+}
+function instructorSlug(raw) {
+  const { last, first } = parseInstructorName(raw)
+  const lastSlug = slugPart(last)
+  if (!first) return lastSlug
+  return `${lastSlug}-${hasFullFirstName(first) ? slugPart(first) : fold(first)[0]}`
+}
+function instructorInitialSlug(raw) {
+  const { last, first } = parseInstructorName(raw)
+  const lastSlug = slugPart(last)
+  const initial = fold(first).replace(/[^a-z0-9]/g, '')[0]
+  return initial ? `${lastSlug}-${initial}` : lastSlug
+}
+
+/** "heller, h" → "Heller, H. Craig" for rows scraped before SUNet overrides. */
+const ABBR_TO_FULL = new Map()
+for (const full of Object.values(INSTRUCTOR_OVERRIDES)) {
+  const { last, first } = parseInstructorName(full)
+  const initial = fold(first).replace(/[^a-z]/g, '')[0]
+  if (!last || !initial) continue
+  ABBR_TO_FULL.set(`${fold(last)}, ${initial}`, full)
+}
+// ExploreCourses stores Ann Miura-Ko's firstName as "R." under sunet amiura.
+ABBR_TO_FULL.set('miura-ko, r', INSTRUCTOR_OVERRIDES.amiura)
+
+function expandInstructorName(raw) {
+  const name = String(raw || '').replace(/\s+/g, ' ').trim()
+  if (!name) return name
+  const { last, first } = parseInstructorName(name)
+  if (hasFullFirstName(first)) return name
+  const initial = fold(first).replace(/[^a-z]/g, '')[0]
+  if (!initial) return name
+  return ABBR_TO_FULL.get(`${fold(last)}, ${initial}`) || name
+}
+
+function expandCourseInstructors(row) {
+  const instructors = Array.from(
+    new Set((row.instructors || []).map(expandInstructorName).filter(Boolean))
+  )
+  const sections = (row.sections || []).map((section) => ({
+    ...section,
+    meetings: (section.meetings || []).map((meeting) => ({
+      ...meeting,
+      instructors: Array.from(
+        new Set((meeting.instructors || []).map(expandInstructorName).filter(Boolean))
+      ),
+    })),
+  }))
+  return { ...row, instructors, sections }
+}
+
 /**
- * Every raw instructor spelling we know of. Catalog rows only cover upcoming
- * terms and abbreviate first names, so evaluations supply both the history and
- * the full names; the app slugs and groups them at runtime.
+ * Every raw instructor spelling we know of, plus a course-scoped map that
+ * turns catalog initials into a full-name slug when evaluation history for
+ * that course_id points at exactly one person ("Clark, S." on CS 229 →
+ * clark-susan). Catalog rows only cover upcoming terms and abbreviate first
+ * names; evaluations supply both the history and the full names.
  */
-async function fetchInstructorNames(supabase, courseRows) {
+async function fetchInstructorDump(supabase, courseRows) {
   const names = new Set()
   for (const row of courseRows) {
     for (const name of row.instructors || []) if (name) names.add(name)
   }
 
+  // courseId → initialSlug → Set of named slugs seen in evaluations
+  const byCourse = new Map()
+
   let from = 0
   while (true) {
     const { data, error } = await supabase
       .from('evaluations')
-      .select('instructor')
+      .select('course_id, instructor')
       .order('course_id', { ascending: true })
       .range(from, from + 999)
     if (error) throw new Error(`instructors page at ${from} failed: ${error.message}`)
-    for (const row of data) if (row.instructor) names.add(row.instructor)
+    for (const row of data) {
+      if (!row.instructor) continue
+      names.add(row.instructor)
+      if (!row.course_id || !hasFullFirstName(parseInstructorName(row.instructor).first)) continue
+      const initial = instructorInitialSlug(row.instructor)
+      const slug = instructorSlug(row.instructor)
+      if (!initial || !slug) continue
+      let byInitial = byCourse.get(row.course_id)
+      if (!byInitial) {
+        byInitial = new Map()
+        byCourse.set(row.course_id, byInitial)
+      }
+      let set = byInitial.get(initial)
+      if (!set) {
+        set = new Set()
+        byInitial.set(initial, set)
+      }
+      set.add(slug)
+    }
     if (data.length < 1000) break
     from += 1000
   }
 
-  return Array.from(names).sort()
+  const courseLinks = {}
+  for (const [courseId, byInitial] of byCourse) {
+    const links = {}
+    for (const [initial, slugs] of byInitial) {
+      if (slugs.size === 1) links[initial] = [...slugs][0]
+    }
+    if (Object.keys(links).length > 0) courseLinks[courseId] = links
+  }
+
+  return { names: Array.from(names).sort(), courseLinks }
 }
 
 async function main() {
@@ -127,7 +234,7 @@ async function main() {
 
   console.log('Dumping catalog…')
   const t0 = Date.now()
-  const all = (await fetchAll(supabase)).filter(isGradeable)
+  const all = (await fetchAll(supabase)).filter(isGradeable).map(expandCourseInstructors)
 
   const fullJson = JSON.stringify(all)
   writeFileSync(join(OUT_DIR, 'full.json'), fullJson)
@@ -136,9 +243,10 @@ async function main() {
   const lightJson = JSON.stringify(light)
   writeFileSync(join(OUT_DIR, 'light.json'), lightJson)
 
-  const instructors = await fetchInstructorNames(supabase, all)
+  const instructors = await fetchInstructorDump(supabase, all)
   writeFileSync(join(OUT_DIR, 'instructors.json'), JSON.stringify(instructors))
-  console.log(`  ${instructors.length} instructor names`)
+  const linkCount = Object.values(instructors.courseLinks).reduce((n, m) => n + Object.keys(m).length, 0)
+  console.log(`  ${instructors.names.length} instructor names, ${linkCount} course-scoped links`)
 
   const scheduled = all.filter((c) => (c.terms || []).length > 0)
   const withSections = scheduled.filter((c) => (c.sections || []).length > 0)
