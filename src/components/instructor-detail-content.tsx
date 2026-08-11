@@ -84,6 +84,22 @@ export function InstructorDetailContent({ slug, name, upcoming }: InstructorDeta
 
   const metrics = useMemo(() => aggregateMetrics(filtered), [filtered])
 
+  /** This instructor's own quality score per course — not the catalog course average. */
+  const qualityByCourse = useMemo(() => {
+    const byCourse = new Map<string, InstructorEvaluation[]>()
+    for (const ev of evaluations ?? []) {
+      const list = byCourse.get(ev.courseId)
+      if (list) list.push(ev)
+      else byCourse.set(ev.courseId, [ev])
+    }
+    const out = new Map<string, number>()
+    for (const [courseId, evals] of byCourse) {
+      const quality = aggregateMetrics(evals).quality
+      if (quality !== undefined) out.set(courseId, quality)
+    }
+    return out
+  }, [evaluations])
+
   const courseStats = useMemo<CourseStat[]>(() => {
     const titleById = new Map(courses.map(c => [c.id, c]))
     const byCourse = new Map<string, InstructorEvaluation[]>()
@@ -334,7 +350,9 @@ export function InstructorDetailContent({ slug, name, upcoming }: InstructorDeta
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-sm font-bold text-destructive">{course.subject} {course.code}</span>
-                    {course.quality != null && <ScoreBadge score={course.quality} size="sm" />}
+                    {qualityByCourse.get(course.id) != null && (
+                      <ScoreBadge score={qualityByCourse.get(course.id)!} size="sm" />
+                    )}
                   </div>
                   <div className="text-sm text-foreground font-medium leading-snug mt-0.5">
                     {decodeHtmlEntities(course.title)}
