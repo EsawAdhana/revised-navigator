@@ -431,6 +431,7 @@ END:VEVENT
 
   return (
     <div className="flex flex-col h-screen bg-background">
+      <ScheduleTimesNotice />
       {/* Header */}
       <header className="flex-none h-16 md:h-16 h-auto md:py-0 py-2 border-b bg-card">
         <div className="h-full w-full max-w-[100rem] mx-auto px-4 md:px-6 flex items-center justify-between">
@@ -557,7 +558,6 @@ END:VEVENT
           />
         </div>
       </main>
-      <ScheduleTimesNotice />
     </div>
   );
 }
