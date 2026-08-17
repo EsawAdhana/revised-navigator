@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { useCourseStore, getCoursesById } from '@/lib/store';
-import { parseMeetingTimes, parseTimeRange, timeToMinutes, isMeetingOptional } from '@/lib/schedule-utils';
+import { parseMeetingTimes, parseTimeRange, timeToMinutes, isMeetingOptional, stripSeconds } from '@/lib/schedule-utils';
 import { cn, decodeHtmlEntities, parseUnitsOptions } from '@/lib/utils';
 import { AlertTriangle, CalendarPlus, Calendar, Clock, MapPin } from 'lucide-react';
 import type { Course, Section } from '@/types/course';
@@ -257,7 +257,7 @@ export function CalendarPreviewModal({
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <Clock size={14} strokeWidth={2.5} className="text-foreground shrink-0" />
-                                    <span>{section.meetings[0].time?.replace(/:00/g, '').replace(/\s+-\s+/g, '-')}</span>
+                                    <span>{stripSeconds(section.meetings[0].time)}</span>
                                 </div>
                                 {section.meetings[0].location && section.meetings[0].location !== 'TBA' && (
                                     <div className="flex items-center gap-1.5">

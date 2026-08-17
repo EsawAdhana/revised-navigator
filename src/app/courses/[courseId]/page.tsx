@@ -10,6 +10,7 @@ import {
     isAllowedGer,
     parseUnitsOptions,
 } from '@/lib/utils';
+import { stripSeconds } from '@/lib/schedule-utils';
 import { isWimCourse } from '@/lib/wim-courses';
 import { compareTerms } from '@/lib/terms';
 import { SITE_URL } from '@/lib/site';
@@ -27,10 +28,6 @@ const fetchCourse = cache(async (courseId: string): Promise<Course | null> => {
 
 function plainText(html: string): string {
     return decodeHtmlEntities((html || '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
-}
-
-function stripSeconds(t: string): string {
-    return (t || '').replace(/(\d{1,2}:\d{2}):\d{2}/g, '$1');
 }
 
 /** GER abbreviations for the course (from sections + WIM injection). */

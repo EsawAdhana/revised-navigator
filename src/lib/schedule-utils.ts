@@ -138,6 +138,70 @@ export function formatMinutes(minutes: number) {
 }
 
 /**
+ * Drops the seconds ExploreCourses puts on every time ("2:30:00 PM" →
+ * "2:30 PM"). Only the seconds group is matched, so on-the-hour times keep
+ * their minutes — stripping every ":00" turned "3:00:00 PM" into "3 PM".
+ */
+export function stripSeconds(time: string) {
+  return (time || '').replace(/(\d{1,2}:\d{2}):\d{2}/g, '$1')
+}
+
+/**
+ * How "primary" a component is — lower sorts first. Secondary components
+ * (discussion, lab, clinic) hang off a primary one, so they are never the right
+ * stand-in for a course the user has not picked a section from yet.
+ * ExploreCourses publishes no primary/secondary flag, so this table is it.
+ */
+const COMPONENT_RANK: Record<string, number> = {
+  LEC: 0, SEM: 1,
+  LNG: 2, COL: 2, CAS: 2, ISF: 2, ISS: 2,
+  WKS: 3, PRA: 3,
+  ACT: 4,
+  LAB: 5, LBS: 5,
+  DIS: 6, TUT: 6, ITR: 6,
+  RES: 7,
+  CLK: 8, CLN: 8,
+  'T/D': 9, INS: 9,
+}
+const UNKNOWN_COMPONENT_RANK = 4
+
+/** True when a section has a meeting the calendar can actually place. */
+function isRenderable(section: Section) {
+  return getParsedSectionMeetings(section).some(m => m.days.length > 0)
+}
+
+function sectionNumberValue(section: Section) {
+  const n = parseInt(String(section.sectionNumber ?? '').replace(/\D/g, ''), 10)
+  return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n
+}
+
+/**
+ * The one section to stand in for a course with no pick yet. Sections arrive in
+ * whatever order ExploreCourses returns them, which for CS106A is 60
+ * discussions ahead of the single lecture — picking index 0 put a random
+ * discussion on the calendar and left the lecture off entirely.
+ *
+ * Ties break on section number rather than source order: MATH 51 has five
+ * lectures and the dump's ordering shifts between refreshes, so source order
+ * would quietly change the time shown from one night to the next.
+ */
+function standInSection(sectionsForTerm: Section[]): Section {
+  return sectionsForTerm.reduce((best, candidate) => {
+    const bestRank = COMPONENT_RANK[best.component] ?? UNKNOWN_COMPONENT_RANK
+    const rank = COMPONENT_RANK[candidate.component] ?? UNKNOWN_COMPONENT_RANK
+    if (rank !== bestRank) return rank < bestRank ? candidate : best
+
+    // Same component: something that will actually draw beats a section
+    // carrying no time at all.
+    const bestDraws = isRenderable(best)
+    const candidateDraws = isRenderable(candidate)
+    if (bestDraws !== candidateDraws) return candidateDraws ? candidate : best
+
+    return sectionNumberValue(candidate) < sectionNumberValue(best) ? candidate : best
+  })
+}
+
+/**
  * Sections the user attends for a term. Courses like ESF13 (SEM + DIS) or
  * CS106A (LEC + DIS) meet as several sections at once, so this returns all of
  * the user's picks rather than a single one.
@@ -156,9 +220,26 @@ export function pickSectionsForTerm(course: Course, term?: string): Section[] {
   }
 
   // No pick yet (e.g. quick-add from the schedule search, which passes no
-  // section): stand in with one section, or CS106A would drop 60 discussions
-  // onto the calendar at once.
-  return [sectionsForTerm[0]]
+  // section): stand in with the primary component, or CS106A would drop 60
+  // discussions onto the calendar at once.
+  return [standInSection(sectionsForTerm)]
+}
+
+/**
+ * True when the stand-in section for an unpicked course differs from the one
+ * the old index-0 fallback showed — i.e. this course's time visibly moved on
+ * saved calendars when the primary-component fix shipped. Drives the one-off
+ * notice on the schedule page, so only people whose calendar actually changed
+ * are told about it.
+ */
+export function standInSectionChanged(course: Course, term?: string): boolean {
+  if (course.selectedSectionIds?.length) return false
+
+  const sections = course.sections || []
+  const sectionsForTerm = term ? sections.filter(s => s.term === term) : sections
+  if (sectionsForTerm.length < 2) return false
+
+  return standInSection(sectionsForTerm).classId !== sectionsForTerm[0].classId
 }
 
 /**

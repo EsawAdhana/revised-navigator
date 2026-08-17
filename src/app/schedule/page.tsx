@@ -20,6 +20,7 @@ import { aggregateMetrics } from '@/components/course-evaluations';
 import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { SchedulePageShell } from '@/components/schedule-page-shell';
+import { ScheduleTimesNotice } from '@/components/schedule-times-notice';
 import { parseMeetingTimes, timeToMinutes, parseDays } from '@/lib/schedule-utils';
 import { getDefaultTerm, getApproxTermStart } from '@/lib/terms';
 import { useAvailableTerms } from '@/hooks/use-selected-terms';
@@ -556,6 +557,7 @@ END:VEVENT
           />
         </div>
       </main>
+      <ScheduleTimesNotice />
     </div>
   );
 }

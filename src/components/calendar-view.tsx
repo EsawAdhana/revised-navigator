@@ -6,7 +6,7 @@ import { useCartStore } from '@/lib/cart-store';
 import { useAuthStore } from '@/lib/auth-store';
 import { promptLoginToSyncOnce } from '@/lib/login-nudge';
 import { track } from '@/lib/analytics';
-import { isMeetingOptional, parseMeetingTimes, timeToMinutes } from '@/lib/schedule-utils';
+import { isMeetingOptional, parseMeetingTimes, timeToMinutes, stripSeconds } from '@/lib/schedule-utils';
 import { cn, unitsLabel, decodeHtmlEntities } from '@/lib/utils';
 import { ChevronLeft, ChevronRight, Trash2, EyeOff, Eye, Calendar, Search, AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -129,8 +129,6 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
 
   const formatMeetingLine = (meeting: { days: string[], startTime: string, endTime: string, location?: string }) => {
     const days = (meeting.days || []).join('/')
-    // Section times can include seconds ("2:30:00 PM"); drop them for display.
-    const stripSeconds = (t: string) => t.replace(/(\d{1,2}:\d{2}):\d{2}/, '$1')
     const start = stripSeconds(meeting.startTime)
     const end = stripSeconds(meeting.endTime)
     const time = end ? `${start} - ${end}` : start

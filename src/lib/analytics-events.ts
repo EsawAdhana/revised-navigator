@@ -11,6 +11,7 @@ export const ANALYTICS_EVENTS = [
   'schedule_synced',
   'ics_exported',
   'ics_imported',
+  'schedule_times_notice_shown',
 ] as const
 
 export type AnalyticsEvent = typeof ANALYTICS_EVENTS[number]

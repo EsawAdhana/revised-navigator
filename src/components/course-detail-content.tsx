@@ -22,7 +22,7 @@ import { useEvaluationStore } from '@/lib/evaluation-store';
 import { useMemo } from 'react';
 import { useQueryState, parseAsArrayOf, parseAsString } from 'nuqs';
 import { CalendarPreviewModal } from './calendar-preview-modal';
-import { unpickedComponents } from '@/lib/schedule-utils';
+import { unpickedComponents, stripSeconds } from '@/lib/schedule-utils';
 import { isWimCourse } from '@/lib/wim-courses';
 import { compareTerms, getDefaultTerm, isFutureTerm as isTermInFuture } from '@/lib/terms';
 
@@ -513,7 +513,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                                         <Clock size={15} strokeWidth={2.5} className="text-foreground shrink-0 mt-0.5" />
                                                                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0 flex-1">
                                                                             <span className="text-[13px] font-bold text-muted-foreground uppercase tracking-tight leading-none shrink-0">TIME:</span>
-                                                                            <span className="font-medium text-foreground leading-tight break-words">{m.time ? m.time.replace(/:00/g, '').replace(/\s+-\s+/g, '-') : tbdLabel}</span>
+                                                                            <span className="font-medium text-foreground leading-tight break-words">{m.time ? stripSeconds(m.time) : tbdLabel}</span>
                                                                         </div>
                                                                     </div>
                                                                     <div className="flex gap-2.5 min-w-0">
