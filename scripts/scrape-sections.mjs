@@ -2,16 +2,18 @@
  * Scrape section data from Stanford's ExploreCourses XML API and update Supabase.
  *
  * Usage:
- *   node --env-file=.env.local scripts/scrape-sections.mjs                  # full run
+ *   node --env-file=.env.local scripts/scrape-sections.mjs                  # full run (+ Navigator gap-fill)
  *   node --env-file=.env.local scripts/scrape-sections.mjs --dry-run        # fetch and compare only
  *   node --env-file=.env.local scripts/scrape-sections.mjs --academic-year 20262027
  *   node --env-file=.env.local scripts/scrape-sections.mjs --resume         # only rows on a different year
  *   node --env-file=.env.local scripts/scrape-sections.mjs --course CS106B  # single course
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --nav-gaps       # only fill ExploreCourses holes from Navigator
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --prior-years    # record which courses the 3 previous catalogs offered
  */
 
 import { createClient } from '@supabase/supabase-js'
 import { XMLParser } from 'fast-xml-parser'
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -29,6 +31,11 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const CATALOG_CONCURRENCY = 6
 const BASE_URL = 'https://explorecourses.stanford.edu/search'
 const BROWSE_URL = 'https://explorecourses.stanford.edu/browse'
+
+// How many past catalogs `--prior-years` records, and where it stores them.
+// dump-catalog.mjs reads this file to flag courses as new.
+const PRIOR_YEAR_COUNT = 3
+const PRIOR_OFFERINGS_PATH = join(__dirname, 'prior-offerings.json')
 
 // NQTR attribute value → human-readable term.
 // Derived from the active academic year so it self-rolls every year and never
@@ -69,17 +76,45 @@ function parseArgs() {
         course: null,
         dryRun: false,
         resume: false,
+        navGaps: false,
+        priorYears: false,
         academicYear: defaultAcademicYear(),
     }
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--dry-run') opts.dryRun = true
         if (args[i] === '--resume') opts.resume = true
+        if (args[i] === '--nav-gaps') opts.navGaps = true
+        if (args[i] === '--prior-years') opts.priorYears = true
         if (args[i] === '--course' && args[i + 1]) opts.course = args[i + 1].trim().toUpperCase()
         if (args[i] === '--academic-year' && /^\d{8}$/.test(args[i + 1] || '')) {
             opts.academicYear = args[i + 1]
         }
     }
     return opts
+}
+
+function academicYearLabel(academicYear) {
+    // "20262027" → "2026-2027"
+    return `${academicYear.slice(0, 4)}-${academicYear.slice(4)}`
+}
+
+function termsForAcademicYear(academicYear) {
+    const start = parseInt(academicYear.slice(0, 4), 10)
+    return [
+        `Autumn ${start}`,
+        `Winter ${start + 1}`,
+        `Spring ${start + 1}`,
+        `Summer ${start + 1}`,
+    ]
+}
+
+/** "20262027" → ["20232024", "20242025", "20252026"] (oldest first). */
+function priorAcademicYears(academicYear, count = PRIOR_YEAR_COUNT) {
+    const start = parseInt(academicYear.slice(0, 4), 10)
+    return Array.from({ length: count }, (_, i) => {
+        const y = start - count + i
+        return `${y}${y + 1}`
+    })
 }
 
 function defaultAcademicYear(now = new Date()) {
@@ -302,6 +337,125 @@ function mergeCatalogCourse(existing, incoming) {
     }
 }
 
+/**
+ * Subjects that offer Active courses but are missing from ExploreCourses /browse
+ * (so the department walk never hits them). Keep short; cross-list follow-up
+ * below also pulls siblings referenced from titles.
+ */
+const ORPHAN_SUBJECTS = ['PHOTON', 'TRAM']
+
+/** "Foo (CS 238, EE 160A)" / "(MS&E 256)" → ["CS238", "EE160A"] / ["MS&E256"]. */
+function extractCrossListedIds(title) {
+    const ids = []
+    for (const match of String(title || '').matchAll(/\(([^)]+)\)/g)) {
+        const inner = match[1]
+        if (!/[A-Z]{2,}(?:&[A-Z]+)?\s+\d/i.test(inner)) continue
+        for (const code of inner.matchAll(/([A-Z]{2,}(?:&[A-Z]+)?)\s+(\d+[A-Z]*)/gi)) {
+            ids.push(`${code[1]}${code[2]}`.toUpperCase().replace(/\s+/g, ''))
+        }
+    }
+    return ids
+}
+
+function splitCourseId(courseId) {
+    const id = String(courseId || '').toUpperCase().replace(/\s+/g, '')
+    const match = id.match(/^([A-Z&]+)(\d.*)$/)
+    if (!match) return null
+    return { subject: match[1], code: match[2] }
+}
+
+async function fetchDepartmentCourses(department, academicYear) {
+    const params = new URLSearchParams({
+        view: 'xml-20200810',
+        academicYear,
+        q: department,
+        [`filter-departmentcode-${department}`]: 'on',
+        'filter-coursestatus-Active': 'on',
+    })
+    const parsed = parser.parse(await fetchXml(`${BASE_URL}?${params}`))
+    return ensureArray((parsed?.xml ?? parsed)?.courses?.course)
+}
+
+/** Subject search without a browse department code (PHOTON / TRAM orphans). */
+async function fetchSubjectCourses(subject, academicYear) {
+    const params = new URLSearchParams({
+        view: 'xml-20200810',
+        academicYear,
+        q: subject,
+        'filter-coursestatus-Active': 'on',
+    })
+    const parsed = parser.parse(await fetchXml(`${BASE_URL}?${params}`))
+    const target = subject.toUpperCase().replace(/\s+/g, '')
+    return ensureArray((parsed?.xml ?? parsed)?.courses?.course).filter(node => {
+        const s = textVal(node?.subject).replace(/\s+/g, '').toUpperCase()
+        return s === target
+    })
+}
+
+function ingestCourseNodes(catalog, nodes) {
+    let added = 0
+    for (const node of nodes) {
+        const course = parseCourseNode(node)
+        if (!course) continue
+        const before = catalog.has(course.course_id)
+        catalog.set(course.course_id, mergeCatalogCourse(catalog.get(course.course_id), course))
+        if (!before) added++
+    }
+    return added
+}
+
+/**
+ * Pull courses ExploreCourses lists only as cross-list siblings, or under
+ * subjects absent from /browse, so the catalog is not limited to browse depts.
+ */
+async function fetchOrphanAndCrossListed(catalog, academicYear, browseDepartments) {
+    const browseSet = new Set(browseDepartments.map(d => d.toUpperCase()))
+
+    // 1) Known orphan subjects (not in /browse at all).
+    const orphanSubjects = ORPHAN_SUBJECTS.filter(s => !browseSet.has(s))
+    for (let i = 0; i < orphanSubjects.length; i += CATALOG_CONCURRENCY) {
+        const batch = orphanSubjects.slice(i, i + CATALOG_CONCURRENCY)
+        const results = await Promise.all(batch.map(subject => fetchSubjectCourses(subject, academicYear)))
+        for (const nodes of results) ingestCourseNodes(catalog, nodes)
+    }
+    if (orphanSubjects.length) {
+        console.log(`Fetched ${orphanSubjects.length} orphan subjects: ${orphanSubjects.join(', ')}`)
+    }
+
+    // 2) Cross-list IDs named in titles but missing / unscheduled in the catalog.
+    const missingIds = new Set()
+    for (const course of catalog.values()) {
+        for (const id of extractCrossListedIds(course.title)) {
+            const existing = catalog.get(id)
+            if (!existing || existing.sections.length === 0) missingIds.add(id)
+        }
+    }
+
+    const missing = [...missingIds]
+    let fetched = 0
+    for (let i = 0; i < missing.length; i += CATALOG_CONCURRENCY) {
+        const batch = missing.slice(i, i + CATALOG_CONCURRENCY)
+        const results = await Promise.all(batch.map(async id => {
+            const parts = splitCourseId(id)
+            if (!parts) return null
+            try {
+                return await fetchSections(parts.subject, parts.code, academicYear)
+            } catch (err) {
+                console.warn(`  ⚠ cross-list fetch failed for ${id}: ${err.message}`)
+                return null
+            }
+        }))
+        for (const course of results) {
+            if (!course) continue
+            catalog.set(course.course_id, mergeCatalogCourse(catalog.get(course.course_id), course))
+            fetched++
+        }
+        process.stdout.write(`\rFetched cross-list ${Math.min(i + CATALOG_CONCURRENCY, missing.length)}/${missing.length}`)
+    }
+    if (missing.length) process.stdout.write('\n')
+    console.log(`Cross-list follow-up: ${missing.length} candidates, ${fetched} scheduled courses merged`)
+}
+
 async function fetchCatalog(academicYear) {
     const browseUrl = `${BROWSE_URL}?view=xml-20200810&academicYear=${academicYear}`
     const browse = parser.parse(await fetchXml(browseUrl))
@@ -319,33 +473,61 @@ async function fetchCatalog(academicYear) {
     const catalog = new Map()
     for (let i = 0; i < departments.length; i += CATALOG_CONCURRENCY) {
         const batch = departments.slice(i, i + CATALOG_CONCURRENCY)
-        const results = await Promise.all(batch.map(async department => {
-            const params = new URLSearchParams({
-                view: 'xml-20200810',
-                academicYear,
-                q: department,
-                [`filter-departmentcode-${department}`]: 'on',
-                'filter-coursestatus-Active': 'on',
-            })
-            const parsed = parser.parse(await fetchXml(`${BASE_URL}?${params}`))
-            return ensureArray((parsed?.xml ?? parsed)?.courses?.course)
-        }))
+        const results = await Promise.all(batch.map(department => fetchDepartmentCourses(department, academicYear)))
 
-        for (const nodes of results) {
-            for (const node of nodes) {
-                const course = parseCourseNode(node)
-                if (course) catalog.set(course.course_id, mergeCatalogCourse(catalog.get(course.course_id), course))
-            }
-        }
+        for (const nodes of results) ingestCourseNodes(catalog, nodes)
         process.stdout.write(`\rFetched ${Math.min(i + CATALOG_CONCURRENCY, departments.length)}/${departments.length} departments`)
     }
     process.stdout.write('\n')
+
+    await fetchOrphanAndCrossListed(catalog, academicYear, departments)
 
     const scheduledCourses = Array.from(catalog.values()).filter(course => course.sections.length > 0)
     if (scheduledCourses.length < 5000) {
         throw new Error(`Catalog validation failed: found only ${scheduledCourses.length} scheduled courses; no database writes made`)
     }
     return { departments, courses: scheduledCourses }
+}
+
+/**
+ * Record which course IDs each of the previous PRIOR_YEAR_COUNT catalogs
+ * actually scheduled, so dump-catalog.mjs can tell a genuinely new course from
+ * one that simply never collects evaluations. Past catalogs never change, so
+ * years already on disk are reused instead of refetched.
+ */
+async function recordPriorOfferings(opts) {
+    const years = priorAcademicYears(opts.academicYear)
+    const cached = existsSync(PRIOR_OFFERINGS_PATH)
+        ? JSON.parse(readFileSync(PRIOR_OFFERINGS_PATH, 'utf8'))
+        : {}
+
+    const offerings = {}
+    for (const year of years) {
+        if (cached[year]?.length) {
+            offerings[year] = cached[year]
+            console.log(`${academicYearLabel(year)}: ${cached[year].length} scheduled courses (cached)`)
+            continue
+        }
+        console.log(`Fetching ${academicYearLabel(year)} catalog...`)
+        const { courses } = await fetchCatalog(year)
+        // Cross-list siblings count as offered: which sibling carries the
+        // sections moves between years (CS 224U was scheduled as SYMSYS 195U),
+        // and a course taught under any of its codes was taught.
+        const ids = new Set()
+        for (const course of courses) {
+            ids.add(course.course_id)
+            for (const sibling of extractCrossListedIds(course.title)) ids.add(sibling)
+        }
+        offerings[year] = [...ids].sort()
+        console.log(`${academicYearLabel(year)}: ${offerings[year].length} scheduled courses`)
+    }
+
+    if (opts.dryRun) {
+        console.log('Dry run - not writing prior-offerings.json')
+        return
+    }
+    writeFileSync(PRIOR_OFFERINGS_PATH, `${JSON.stringify(offerings)}\n`)
+    console.log(`Wrote ${PRIOR_OFFERINGS_PATH}`)
 }
 
 async function fetchSections(subject, code, academicYear) {
@@ -390,23 +572,37 @@ async function fetchSections(subject, code, academicYear) {
 function isStatementTimeout(err) {
     const code = err?.code ?? err?.details
     const msg = (err?.message || '').toLowerCase()
+    const details = String(err?.details || '').toLowerCase()
     return code === '57014' || msg.includes('timeout') || msg.includes('canceling statement')
+}
+
+function isTransientDbError(err) {
+    if (isStatementTimeout(err)) return true
+    const msg = `${err?.message || ''} ${err?.details || ''}`.toLowerCase()
+    return (
+        msg.includes('fetch failed') ||
+        msg.includes('socket') ||
+        msg.includes('econnreset') ||
+        msg.includes('und_err') ||
+        msg.includes('upstream request timeout') ||
+        msg.includes('connection')
+    )
 }
 
 async function sleep(ms) {
     return new Promise(r => setTimeout(r, ms))
 }
 
-/** Retry transient DB timeouts (common on large `courses` table). */
-async function withRetries(fn, { label = 'query', maxAttempts = 4 } = {}) {
+/** Retry transient DB timeouts / dropped sockets (common on large `courses` writes). */
+async function withRetries(fn, { label = 'query', maxAttempts = 6 } = {}) {
     let lastErr
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const { data, error } = await fn()
         if (!error) return { data, error: null }
         lastErr = error
-        if (!isStatementTimeout(error) || attempt === maxAttempts) return { data, error }
-        const wait = 800 * attempt
-        console.warn(`  ⚠ ${label} timed out (attempt ${attempt}/${maxAttempts}), retrying in ${wait}ms…`)
+        if (!isTransientDbError(error) || attempt === maxAttempts) return { data, error }
+        const wait = Math.min(8000, 800 * attempt)
+        console.warn(`  ⚠ ${label} failed (attempt ${attempt}/${maxAttempts}): ${error.message || error.code}; retrying in ${wait}ms…`)
         await sleep(wait)
     }
     return { data: null, error: lastErr }
@@ -488,6 +684,250 @@ async function clearStaleCourses(supabase, courseIds) {
     }
 }
 
+// ── Navigator gap-fill (PeopleSoft via Algolia) ─────────────────────────────
+
+const NAV_ALGOLIA_APP = 'RXGHAPCKOF'
+const NAV_ATTRS = [
+    'subject', 'catalogNbr', 'courseCode', 'courseTitle', 'courseDescr', 'termOffered',
+    'classNbr', 'classSection', 'componentPrimary', 'format', 'units', 'gradingBasisDescr',
+    'enrlCap', 'enrlTot', 'waitCap', 'waitTot', 'enrlStatDescr', 'classStatDescr',
+    'instructionModeDescr', 'meetings', 'geRequirements', 'primaryComponentFlag', 'sortPrefix',
+].join(',')
+
+async function getNavigatorAlgoliaKey() {
+    const res = await fetch('https://navigator.stanford.edu/api/generate-key', {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            origin: 'https://navigator.stanford.edu',
+            referer: 'https://navigator.stanford.edu/classes',
+        },
+        body: '{}',
+    })
+    if (!res.ok) throw new Error(`Navigator generate-key failed: HTTP ${res.status}`)
+    const data = await res.json()
+    if (!data.securedApiKey) throw new Error('Navigator generate-key returned no securedApiKey')
+    return data.securedApiKey
+}
+
+async function algoliaMulti(key, requests) {
+    for (let attempt = 1; attempt <= 6; attempt++) {
+        const res = await fetch(`https://${NAV_ALGOLIA_APP}-dsn.algolia.net/1/indexes/*/queries`, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'x-algolia-application-id': NAV_ALGOLIA_APP,
+                'x-algolia-api-key': key,
+            },
+            body: JSON.stringify({ requests }),
+        })
+        if (res.ok) return res.json()
+        const text = await res.text()
+        if (attempt === 6 || (res.status !== 429 && res.status < 500)) {
+            throw new Error(`Algolia ${res.status}: ${text.slice(0, 200)}`)
+        }
+        await sleep(400 * attempt)
+    }
+    throw new Error('Algolia multi-query failed')
+}
+
+function navInstructors(meeting) {
+    return (meeting?.instructors || []).map(i => {
+        if (i.lastName && i.firstName) return `${i.lastName}, ${i.firstName}`
+        return i.displayName || ''
+    }).filter(Boolean)
+}
+
+function navHitToSection(hit) {
+    const units = Array.isArray(hit.units) ? hit.units.filter(u => u != null && u !== '').join('-') : ''
+    return {
+        term: hit.termOffered || '',
+        classId: parseInt(hit.classNbr, 10) || 0,
+        sectionNumber: String(hit.classSection || ''),
+        component: hit.componentPrimary || '',
+        units,
+        grading: hit.gradingBasisDescr || '',
+        classLevel: '',
+        instructionalMode: hit.instructionModeDescr || '',
+        status: hit.enrlStatDescr || hit.classStatDescr || '',
+        enrolled: parseInt(hit.enrlTot, 10) || 0,
+        capacity: parseInt(hit.enrlCap, 10) || 0,
+        waitlist: parseInt(hit.waitTot, 10) || 0,
+        waitlistMax: parseInt(hit.waitCap, 10) || 0,
+        openSeats: Math.max(0, (parseInt(hit.enrlCap, 10) || 0) - (parseInt(hit.enrlTot, 10) || 0)),
+        startDate: '',
+        endDate: '',
+        meetings: (hit.meetings || []).map(m => ({
+            days: (m.daysOfWeekList || []).join(', ') || m.daysOfWeek || '',
+            time: [m.startTime, m.endTime].filter(Boolean).join(' – '),
+            location: [m.facilityDescr, m.room].filter(Boolean).join(' ') || '',
+            instructors: navInstructors(m),
+        })),
+        gers: Array.isArray(hit.geRequirements) ? hit.geRequirements : [],
+    }
+}
+
+function navHitsToCourse(hits) {
+    if (!hits.length) return null
+    const first = hits[0]
+    const subject = String(first.subject || '').replace(/\s+/g, '')
+    const code = String(first.catalogNbr || '').replace(/\s+/g, '')
+    if (!subject || !code) return null
+
+    const sections = []
+    const seen = new Set()
+    for (const hit of hits) {
+        const section = navHitToSection(hit)
+        const key = section.classId || `${section.term}:${section.sectionNumber}:${section.component}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        sections.push(section)
+    }
+    if (!sections.length) return null
+
+    const instructors = Array.from(new Set(
+        sections.flatMap(s => s.meetings.flatMap(m => m.instructors))
+    ))
+    const unitSet = [...new Set(sections.map(s => String(s.units || '')).filter(Boolean))]
+    const units = unitSet[0] || ''
+
+    return {
+        course_id: `${subject}${code}`.toUpperCase(),
+        subject,
+        code,
+        title: first.courseTitle || '',
+        description: first.courseDescr || '',
+        units,
+        grading: first.gradingBasisDescr || sections[0]?.grading || '',
+        instructors,
+        sections,
+        terms: sortTerms(Array.from(new Set(sections.map(s => s.term).filter(Boolean)))),
+    }
+}
+
+async function fetchSubjectTermHits(key, subject, term, yearLabel, numericFilters = null) {
+    const params = new URLSearchParams({
+        query: `"${subject} "`,
+        filters: `acadYearLabel:"${yearLabel}" AND termOffered:"${term}"`,
+        hitsPerPage: '1000',
+        attributesToRetrieve: NAV_ATTRS,
+    })
+    if (numericFilters) params.set('numericFilters', numericFilters)
+    const data = await algoliaMulti(key, [{ indexName: 'classes', params: params.toString() }])
+    const res = data.results[0]
+    const hits = (res.hits || []).filter(h => String(h.subject || '').toUpperCase() === subject.toUpperCase())
+    return { nbHits: res.nbHits || 0, hits }
+}
+
+async function fetchSubjectTermAllHits(key, subject, term, yearLabel) {
+    const first = await fetchSubjectTermHits(key, subject, term, yearLabel)
+    if (first.nbHits <= 1000) return first.hits
+
+    // Secured key caps at 1000 hits/query — split on sortPrefix when a subject overflows.
+    const thresholds = [100, 150, 200, 250, 300, 400, 500, 600, 800, 1000]
+    let splitAt = 200
+    for (const t of thresholds) {
+        const lo = await fetchSubjectTermHits(key, subject, term, yearLabel, `sortPrefix<${t}`)
+        const hi = await fetchSubjectTermHits(key, subject, term, yearLabel, `sortPrefix>=${t}`)
+        if (lo.nbHits <= 1000 && hi.nbHits <= 1000) {
+            splitAt = t
+            const seen = new Set()
+            const out = []
+            for (const h of [...lo.hits, ...hi.hits]) {
+                const k = `${h.termOffered}|${h.classNbr}`
+                if (seen.has(k)) continue
+                seen.add(k)
+                out.push(h)
+            }
+            return out
+        }
+    }
+    console.warn(`  ⚠ Navigator overflow for ${subject} ${term} (nbHits=${first.nbHits}); using first 1000 only`)
+    return first.hits
+}
+
+/**
+ * Pull Navigate Classes (Algolia) for the academic year and return Root-shaped
+ * courses. Used to fill holes ExploreCourses never publishes (esp. Med/Law/GSB).
+ */
+async function fetchNavigatorCourses(academicYear, subjects) {
+    const yearLabel = academicYearLabel(academicYear)
+    const terms = termsForAcademicYear(academicYear)
+    let key = await getNavigatorAlgoliaKey()
+    const keyRefreshEvery = 80
+    let queries = 0
+
+    const byCourse = new Map()
+    const jobs = []
+    for (const subject of subjects) {
+        for (const term of terms) jobs.push({ subject, term })
+    }
+
+    for (let i = 0; i < jobs.length; i++) {
+        if (queries > 0 && queries % keyRefreshEvery === 0) {
+            key = await getNavigatorAlgoliaKey()
+        }
+        const { subject, term } = jobs[i]
+        const hits = await fetchSubjectTermAllHits(key, subject, term, yearLabel)
+        queries++
+        for (const hit of hits) {
+            const id = `${String(hit.subject || '').replace(/\s+/g, '')}${String(hit.catalogNbr || '').replace(/\s+/g, '')}`.toUpperCase()
+            if (!id) continue
+            if (!byCourse.has(id)) byCourse.set(id, [])
+            byCourse.get(id).push(hit)
+        }
+        if ((i + 1) % 25 === 0 || i === jobs.length - 1) {
+            process.stdout.write(`\rNavigator pull ${i + 1}/${jobs.length} jobs, ${byCourse.size} courses`)
+        }
+    }
+    process.stdout.write('\n')
+
+    const courses = []
+    for (const hits of byCourse.values()) {
+        const course = navHitsToCourse(hits)
+        if (course) courses.push(course)
+    }
+    return courses
+}
+
+/**
+ * Keep Navigator rows that ExploreCourses missed entirely, or only as empty stubs.
+ * Does not overwrite a healthy EC course that already has sections.
+ */
+function pickNavigatorGaps(existingById, navCourses) {
+    const gaps = []
+    for (const course of navCourses) {
+        const existing = existingById.get(course.course_id)
+        if (!existing) {
+            gaps.push(course)
+            continue
+        }
+        const existingTerms = existing.terms || []
+        // Stale / cleared rows still sit in Supabase with empty terms.
+        if (existingTerms.length === 0 && course.sections.length > 0) {
+            gaps.push(course)
+        }
+    }
+    return gaps
+}
+
+async function loadCourseTermsMap(supabase) {
+    const rows = await loadCourses(supabase)
+    return new Map(rows.map(row => [row.course_id, row]))
+}
+
+async function listBrowseSubjects(academicYear) {
+    const browseUrl = `${BROWSE_URL}?view=xml-20200810&academicYear=${academicYear}`
+    const browse = parser.parse(await fetchXml(browseUrl))
+    const schools = ensureArray(browse?.schools?.school)
+    const departments = Array.from(new Set(
+        schools.flatMap(school => ensureArray(school?.department))
+            .map(department => textVal(department?._name || department?.name))
+            .filter(Boolean)
+    ))
+    return Array.from(new Set([...departments, ...ORPHAN_SUBJECTS])).sort()
+}
+
 async function main() {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
         console.error('Missing env vars. Run with: node --env-file=.env.local scripts/scrape-sections.mjs')
@@ -516,8 +956,53 @@ async function main() {
         return
     }
 
+    if (opts.priorYears) {
+        await recordPriorOfferings(opts)
+        return
+    }
+
+    if (opts.navGaps) {
+        console.log(`Navigator gap-fill for ${opts.academicYear}...`)
+        const subjects = await listBrowseSubjects(opts.academicYear)
+        console.log(`Subjects to query: ${subjects.length}`)
+        const navCourses = await fetchNavigatorCourses(opts.academicYear, subjects)
+        const existingById = await loadCourseTermsMap(supabase)
+        const gaps = pickNavigatorGaps(existingById, navCourses)
+        console.log(JSON.stringify({
+            academicYear: opts.academicYear,
+            navigatorCourses: navCourses.length,
+            gaps: gaps.length,
+            sampleGapIds: gaps.slice(0, 30).map(c => c.course_id),
+            dryRun: opts.dryRun,
+        }, null, 2))
+        if (opts.dryRun) return
+        if (gaps.length) await upsertCatalog(supabase, gaps)
+        console.log(`Done. Upserted ${gaps.length} Navigator gap courses.`)
+        return
+    }
+
     console.log(`Fetching Stanford catalog for ${opts.academicYear}...`)
-    const { departments, courses } = await fetchCatalog(opts.academicYear)
+    const { departments, courses: ecCourses } = await fetchCatalog(opts.academicYear)
+
+    console.log('Filling ExploreCourses holes from Navigator...')
+    const navSubjects = Array.from(new Set([...departments, ...ORPHAN_SUBJECTS])).sort()
+    let courses = ecCourses
+    try {
+        const navCourses = await fetchNavigatorCourses(opts.academicYear, navSubjects)
+        const ecById = new Map(ecCourses.map(c => [c.course_id, c]))
+        const gaps = pickNavigatorGaps(ecById, navCourses)
+        if (gaps.length) {
+            const merged = new Map(ecById)
+            for (const gap of gaps) merged.set(gap.course_id, gap)
+            courses = Array.from(merged.values())
+            console.log(`Merged ${gaps.length} Navigator-only courses into catalog`)
+        } else {
+            console.log('No Navigator gaps to merge')
+        }
+    } catch (err) {
+        console.warn(`  ⚠ Navigator gap-fill skipped: ${err.message}`)
+    }
+
     console.log('Loading current Supabase course IDs...')
     const existingRows = await loadCourses(supabase)
     const existingById = new Map(existingRows.map(row => [row.course_id, row]))
