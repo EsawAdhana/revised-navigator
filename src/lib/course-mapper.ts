@@ -45,5 +45,6 @@ export function rowToCourse(row: any): Course {
     hours: row.hours != null ? Number(row.hours) : undefined,
     quality: row.quality != null ? Number(row.quality) : undefined,
     difficulty: row.difficulty != null ? Number(row.difficulty) : undefined,
+    isNew: typeof row.isNew === 'boolean' ? row.isNew : undefined,
   }
 }

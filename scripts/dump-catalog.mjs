@@ -16,7 +16,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { mkdirSync, writeFileSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -32,8 +32,11 @@ const FULL_COLUMNS =
   'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty'
 const LIGHT_KEYS = [
   'course_id', 'subject', 'code', 'title', 'units',
-  'instructors', 'terms', 'grading', 'hours', 'quality', 'difficulty',
+  'instructors', 'terms', 'grading', 'hours', 'quality', 'difficulty', 'isNew',
 ]
+
+const PRIOR_OFFERINGS_PATH = join(__dirname, 'prior-offerings.json')
+const MIN_PRIOR_YEARS = 3
 
 const PAGE = 250
 const MAX_ATTEMPTS = 5
@@ -222,6 +225,102 @@ async function fetchInstructorDump(supabase, courseRows) {
   return { names: Array.from(names).sort(), courseLinks }
 }
 
+/**
+ * Course IDs the previous catalogs scheduled, written by
+ * `scrape-sections.mjs --prior-years`. Returns null when the file is missing or
+ * covers fewer than MIN_PRIOR_YEARS years, so a bad backfill leaves isNew unset
+ * instead of marking the whole catalog new.
+ */
+function readPriorOfferings() {
+  if (!existsSync(PRIOR_OFFERINGS_PATH)) return null
+  const byYear = JSON.parse(readFileSync(PRIOR_OFFERINGS_PATH, 'utf8'))
+  const years = Object.keys(byYear).sort()
+  if (years.length < MIN_PRIOR_YEARS) return null
+  const ids = new Set()
+  for (const year of years) for (const id of byYear[year] || []) ids.add(id)
+  return { ids, years, earliestYearStart: parseInt(years[0].slice(0, 4), 10) }
+}
+
+// Autumn belongs to the academic year it starts; Winter/Spring/Summer to the one before.
+const SEASON_YEAR_OFFSET = { Autumn: 0, Fall: 0, Winter: -1, Spring: -1, Summer: -1 }
+
+/** course_ids with an evaluation from academic year `minYearStart` or later. */
+async function fetchRecentlyTaught(supabase, minYearStart) {
+  const taught = new Set()
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('evaluations')
+      .select('course_id, term')
+      .order('course_id', { ascending: true })
+      .range(from, from + 999)
+    if (error) throw new Error(`evaluation terms page at ${from} failed: ${error.message}`)
+    for (const row of data) {
+      if (!row.course_id) continue
+      const match = /^(Autumn|Fall|Winter|Spring|Summer)\s+(\d{4})/.exec(row.term || '')
+      if (!match) continue
+      if (parseInt(match[2], 10) + SEASON_YEAR_OFFSET[match[1]] >= minYearStart) taught.add(row.course_id)
+    }
+    if (data.length < 1000) break
+    from += 1000
+  }
+  return taught
+}
+
+/**
+ * Cross-list siblings named in a title parenthetical: "Origami Engineering
+ * (ME 255)" -> ["ME255"]. Same extraction scrape-sections.mjs used to build
+ * prior-offerings.json, so the two sides compare like for like.
+ */
+function extractCrossListedIds(title) {
+  const ids = []
+  for (const match of String(title || '').matchAll(/\(([^)]+)\)/g)) {
+    const inner = match[1]
+    if (!/[A-Z]{2,}(?:&[A-Z]+)?\s+\d/i.test(inner)) continue
+    for (const code of inner.matchAll(/([A-Z]{2,}(?:&[A-Z]+)?)\s+(\d+[A-Z]*)/gi)) {
+      ids.push(`${code[1]}${code[2]}`.toUpperCase().replace(/\s+/g, ''))
+    }
+  }
+  return ids
+}
+
+/**
+ * Flag courses the last three catalogs never scheduled. Evaluation history is a
+ * second opinion: plenty of long-standing courses (independent study, seminars,
+ * low-enrollment sections) never collect evaluations, but anything that DID
+ * collect one in the window was clearly taught and is not new.
+ */
+async function markNewCourses(supabase, rows) {
+  const prior = readPriorOfferings()
+  if (!prior) {
+    console.warn(`  ⚠ ${PRIOR_OFFERINGS_PATH} missing or short of ${MIN_PRIOR_YEARS} years — no isNew flags. Run: scrape-sections.mjs --prior-years`)
+    return
+  }
+  const taught = await fetchRecentlyTaught(supabase, prior.earliestYearStart)
+  let isNew = 0
+  let existing = 0
+  for (const row of rows) {
+    // A course with no sections is a dormant listing, not an offering: leave
+    // isNew unset rather than answering. The filter needs that third state —
+    // false means "we checked, it ran before" and blocks its whole cross-list
+    // group; undefined must not, or a section-less sibling would hide a
+    // genuinely new course.
+    if (!(row.sections || []).length) continue
+    // Judge the whole cross-list group, not just this row's code: a course keeps
+    // running while gaining a new code (CS 140M on the long-running EE 186), and
+    // which sibling carries the sections moves between years.
+    const codes = [row.course_id, ...extractCrossListedIds(row.title)]
+    if (codes.some((id) => prior.ids.has(id) || taught.has(id))) {
+      row.isNew = false
+      existing++
+      continue
+    }
+    row.isNew = true
+    isNew++
+  }
+  console.log(`  ${isNew} new courses, ${existing} known-existing (unscheduled in ${prior.years.join(', ')} and no evaluations since ${prior.earliestYearStart})`)
+}
+
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -241,6 +340,8 @@ async function main() {
   const dropped = allRaw.filter((c) => !(c.sections || []).length).length
   const all = allRaw.filter((c) => (c.sections || []).length > 0)
   if (dropped) console.log(`  dropped ${dropped} zero-section rows from dump`)
+
+  await markNewCourses(supabase, all)
 
   const fullJson = JSON.stringify(all)
   writeFileSync(join(OUT_DIR, 'full.json'), fullJson)

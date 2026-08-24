@@ -18,6 +18,7 @@ export type CourseFilterCriteria = {
   hideConflicts: boolean
   hideUnavailable: boolean
   hideStudyAbroad: boolean
+  newOnly: boolean
 }
 
 /** When computing facet counts, the facet whose own filter should be omitted. */
@@ -59,6 +60,7 @@ type FilterChecks = {
   conflicts: CourseCheck | null
   unavailable: CourseCheck | null
   studyAbroad: CourseCheck | null
+  newOnly: CourseCheck | null
 }
 
 /**
@@ -67,11 +69,11 @@ type FilterChecks = {
  * facet counts (filterCoursesForFacets) are composed from these, so the two
  * can never disagree on semantics.
  */
-function buildChecks(criteria: CourseFilterCriteria, cartItems: CartItem[]): FilterChecks {
+function buildChecks(criteria: CourseFilterCriteria, cartItems: CartItem[], newCanonicals: Set<string>): FilterChecks {
   const {
     excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels,
     selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax,
-    hideConflicts, hideUnavailable, hideStudyAbroad,
+    hideConflicts, hideUnavailable, hideStudyAbroad, newOnly: showNewOnly,
   } = criteria
 
   const deptsSet = new Set(selectedDepts ?? [])
@@ -227,7 +229,47 @@ function buildChecks(criteria: CourseFilterCriteria, cartItems: CartItem[]): Fil
     ? (c) => !(c.subject || '').toUpperCase().startsWith('OSP')
     : null
 
-  return { exclude, depts, terms, formats, levels, gers, schools, units, times, conflicts, unavailable, studyAbroad }
+  // `isNew` is set by the catalog dump: absent from all three prior catalogs and
+  // with no evaluations from those years. Only canonical primaries reach these
+  // checks, so the group's flag is looked up by canonical id.
+  const newOnly: CourseCheck | null = showNewOnly
+    ? (c) => newCanonicals.has(normalizeCourseId(c.id))
+    : null
+
+  return { exclude, depts, terms, formats, levels, gers, schools, units, times, conflicts, unavailable, studyAbroad, newOnly }
+}
+
+/**
+ * Canonical ids of cross-list groups that are new as a whole. The dump flags
+ * whichever sibling ExploreCourses scheduled, which is not always the sibling
+ * browse keeps, so the flag has to survive the cross-list collapse — but one
+ * sibling the dump judged as already-offered (isNew === false) rules the whole
+ * group out. Adding a fresh code to a course that already ran (a new grad-level
+ * cross-listing of AFRICAAM 140, or CS 140M alongside the long-running EE 186)
+ * is an existing course, not a new one; taking the group as new whenever any
+ * sibling was flagged surfaced 41 already-offered courses out of 812.
+ *
+ * Siblings the dump could not judge (no sections, so isNew unset) abstain —
+ * they must not veto, or a dormant listing would hide a genuinely new course.
+ */
+const newCanonicalCache = new WeakMap<Course[], Set<string>>()
+function getNewCanonicals(courses: Course[], primaryMap: Map<string, string>): Set<string> {
+  let result = newCanonicalCache.get(courses)
+  if (!result) {
+    const withNew = new Set<string>()
+    const withExisting = new Set<string>()
+    for (const c of courses) {
+      if (c.isNew === undefined) continue
+      const canonical = resolveToCanonicalPrimary(normalizeCourseId(c.id), primaryMap)
+      ;(c.isNew ? withNew : withExisting).add(canonical)
+    }
+    result = new Set<string>()
+    for (const canonical of withNew) {
+      if (!withExisting.has(canonical)) result.add(canonical)
+    }
+    newCanonicalCache.set(courses, result)
+  }
+  return result
 }
 
 // Valid (gradeable) + canonical cross-list primary courses, memoized by
@@ -263,7 +305,7 @@ export function filterCourses(
   cartItems: CartItem[],
   exclude?: FacetKey,
 ): Course[] {
-  const k = buildChecks(criteria, cartItems)
+  const k = buildChecks(criteria, cartItems, getNewCanonicals(courses, primaryMap))
   return getValidCanonical(courses, primaryMap).filter(c =>
     (exclude === 'exclude' || !k.exclude || k.exclude(c)) &&
     (exclude === 'depts' || !k.depts || k.depts(c)) &&
@@ -276,6 +318,7 @@ export function filterCourses(
     (!k.conflicts || k.conflicts(c)) &&
     (!k.unavailable || k.unavailable(c)) &&
     (!k.studyAbroad || k.studyAbroad(c)) &&
+    (!k.newOnly || k.newOnly(c)) &&
     (exclude === 'schools' || !k.schools || k.schools(c))
   )
 }
@@ -298,8 +341,8 @@ export function filterCoursesForFacets(
   primaryMap: Map<string, string>,
   cartItems: CartItem[],
 ): Record<CountedFacetKey, Course[]> {
-  const k = buildChecks(criteria, cartItems)
-  const restChecks = [k.exclude, k.units, k.times, k.conflicts, k.unavailable, k.studyAbroad]
+  const k = buildChecks(criteria, cartItems, getNewCanonicals(courses, primaryMap))
+  const restChecks = [k.exclude, k.units, k.times, k.conflicts, k.unavailable, k.studyAbroad, k.newOnly]
     .filter((f): f is CourseCheck => f !== null)
   const dims: [CountedFacetKey, CourseCheck | null][] = [
     ['depts', k.depts],

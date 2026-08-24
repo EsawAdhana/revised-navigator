@@ -50,6 +50,8 @@ export interface Course {
   quality?: number;
   /** Precomputed: hours / units */
   difficulty?: number;
+  /** Precomputed: not scheduled in any of the three prior catalogs, and no evaluations from those years */
+  isNew?: boolean;
 }
 
 // --- Course Evaluation Types ---

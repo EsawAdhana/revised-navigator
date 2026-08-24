@@ -16,7 +16,11 @@ type CourseStore = {
   fetchCourseDetails: (courseIds: string[]) => Promise<void>
 }
 
-const CACHE_VERSION = 12
+// Bump on ANY change to the cached Course shape. The cache is the whole catalog
+// and survives 24h, so a new field (isNew, added for the "new courses only"
+// filter) reaches nobody with a warm cache until this number changes — that
+// shipped once as a filter that matched zero courses for every returning visitor.
+export const CACHE_VERSION = 13
 const CACHE_TTL = 1000 * 60 * 30 // 30 minutes
 const STALE_MAX_AGE = 1000 * 60 * 60 * 24 // 24 hours
 const IDB_DB = 'root-cache'
@@ -35,6 +39,18 @@ function openIDB(): Promise<IDBDatabase> {
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
   })
+}
+
+/**
+ * `isNew` is computed by dump-catalog.mjs; it is not a column on `courses`, so
+ * an enrichment fetch that falls through to Supabase (the batch route always
+ * does) comes back without it. Carry it over from the entry being replaced, or
+ * putting a new course in the cart would drop it out of the "new courses" filter
+ * for the rest of the session.
+ */
+function withDumpOnlyFields(enriched: Course, previous: Course | undefined): Course {
+  if (previous?.isNew === undefined || enriched.isNew !== undefined) return enriched
+  return { ...enriched, isNew: previous.isNew }
 }
 
 type CacheEntry = { data: Course[]; ts: number }
@@ -224,7 +240,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
 
       set(state => {
         const courseMap = new Map(state.courses.map(c => [c.id, c]))
-        for (const c of enriched) courseMap.set(c.id, c)
+        for (const c of enriched) courseMap.set(c.id, withDumpOnlyFields(c, courseMap.get(c.id)))
         return {
           courses: Array.from(courseMap.values()),
           enrichedCourseIds: new Set([...state.enrichedCourseIds, ...enriched.map(c => c.id)]),
@@ -257,7 +273,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
         const failedDetailIds = new Set(state.failedDetailIds)
         failedDetailIds.delete(courseId)
         return {
-          courses: state.courses.map(c => c.id === courseId ? enriched : c),
+          courses: state.courses.map(c => c.id === courseId ? withDumpOnlyFields(enriched, c) : c),
           enrichedCourseIds: new Set([...state.enrichedCourseIds, courseId]),
           failedDetailIds,
         }

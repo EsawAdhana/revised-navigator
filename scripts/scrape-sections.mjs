@@ -8,11 +8,12 @@
  *   node --env-file=.env.local scripts/scrape-sections.mjs --resume         # only rows on a different year
  *   node --env-file=.env.local scripts/scrape-sections.mjs --course CS106B  # single course
  *   node --env-file=.env.local scripts/scrape-sections.mjs --nav-gaps       # only fill ExploreCourses holes from Navigator
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --prior-years    # record which courses the 3 previous catalogs offered
  */
 
 import { createClient } from '@supabase/supabase-js'
 import { XMLParser } from 'fast-xml-parser'
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -31,6 +32,10 @@ const CATALOG_CONCURRENCY = 6
 const BASE_URL = 'https://explorecourses.stanford.edu/search'
 const BROWSE_URL = 'https://explorecourses.stanford.edu/browse'
 
+// How many past catalogs `--prior-years` records, and where it stores them.
+// dump-catalog.mjs reads this file to flag courses as new.
+const PRIOR_YEAR_COUNT = 3
+const PRIOR_OFFERINGS_PATH = join(__dirname, 'prior-offerings.json')
 
 // NQTR attribute value → human-readable term.
 // Derived from the active academic year so it self-rolls every year and never
@@ -72,12 +77,14 @@ function parseArgs() {
         dryRun: false,
         resume: false,
         navGaps: false,
+        priorYears: false,
         academicYear: defaultAcademicYear(),
     }
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--dry-run') opts.dryRun = true
         if (args[i] === '--resume') opts.resume = true
         if (args[i] === '--nav-gaps') opts.navGaps = true
+        if (args[i] === '--prior-years') opts.priorYears = true
         if (args[i] === '--course' && args[i + 1]) opts.course = args[i + 1].trim().toUpperCase()
         if (args[i] === '--academic-year' && /^\d{8}$/.test(args[i + 1] || '')) {
             opts.academicYear = args[i + 1]
@@ -99,6 +106,15 @@ function termsForAcademicYear(academicYear) {
         `Spring ${start + 1}`,
         `Summer ${start + 1}`,
     ]
+}
+
+/** "20262027" → ["20232024", "20242025", "20252026"] (oldest first). */
+function priorAcademicYears(academicYear, count = PRIOR_YEAR_COUNT) {
+    const start = parseInt(academicYear.slice(0, 4), 10)
+    return Array.from({ length: count }, (_, i) => {
+        const y = start - count + i
+        return `${y}${y + 1}`
+    })
 }
 
 function defaultAcademicYear(now = new Date()) {
@@ -471,6 +487,47 @@ async function fetchCatalog(academicYear) {
         throw new Error(`Catalog validation failed: found only ${scheduledCourses.length} scheduled courses; no database writes made`)
     }
     return { departments, courses: scheduledCourses }
+}
+
+/**
+ * Record which course IDs each of the previous PRIOR_YEAR_COUNT catalogs
+ * actually scheduled, so dump-catalog.mjs can tell a genuinely new course from
+ * one that simply never collects evaluations. Past catalogs never change, so
+ * years already on disk are reused instead of refetched.
+ */
+async function recordPriorOfferings(opts) {
+    const years = priorAcademicYears(opts.academicYear)
+    const cached = existsSync(PRIOR_OFFERINGS_PATH)
+        ? JSON.parse(readFileSync(PRIOR_OFFERINGS_PATH, 'utf8'))
+        : {}
+
+    const offerings = {}
+    for (const year of years) {
+        if (cached[year]?.length) {
+            offerings[year] = cached[year]
+            console.log(`${academicYearLabel(year)}: ${cached[year].length} scheduled courses (cached)`)
+            continue
+        }
+        console.log(`Fetching ${academicYearLabel(year)} catalog...`)
+        const { courses } = await fetchCatalog(year)
+        // Cross-list siblings count as offered: which sibling carries the
+        // sections moves between years (CS 224U was scheduled as SYMSYS 195U),
+        // and a course taught under any of its codes was taught.
+        const ids = new Set()
+        for (const course of courses) {
+            ids.add(course.course_id)
+            for (const sibling of extractCrossListedIds(course.title)) ids.add(sibling)
+        }
+        offerings[year] = [...ids].sort()
+        console.log(`${academicYearLabel(year)}: ${offerings[year].length} scheduled courses`)
+    }
+
+    if (opts.dryRun) {
+        console.log('Dry run - not writing prior-offerings.json')
+        return
+    }
+    writeFileSync(PRIOR_OFFERINGS_PATH, `${JSON.stringify(offerings)}\n`)
+    console.log(`Wrote ${PRIOR_OFFERINGS_PATH}`)
 }
 
 async function fetchSections(subject, code, academicYear) {
@@ -896,6 +953,11 @@ async function main() {
         if (!opts.dryRun) {
             await upsertCatalog(supabase, [course])
         }
+        return
+    }
+
+    if (opts.priorYears) {
+        await recordPriorOfferings(opts)
         return
     }
 
