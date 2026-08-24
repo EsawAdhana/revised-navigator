@@ -34,6 +34,8 @@ import { parseICS } from '@/lib/ics-parser';
 import { track } from '@/lib/analytics';
 import { toast } from 'sonner';
 
+const IGNORED_OVERLOADS_KEY = 'stanford-root:ignored-overloads'
+
 function ScheduleContent() {
   const items = useCartStore(s => s.items)
   const courses = useCourseStore(s => s.courses)
@@ -41,7 +43,18 @@ function ScheduleContent() {
   const user = useAuthStore(s => s.user)
   const isLoading = useAuthStore(s => s.isLoading)
   const signOut = useAuthStore(s => s.signOut)
-  const [ignoredOverloads, setIgnoredOverloads] = useState<Record<string, boolean>>({})
+  // term -> unit total at the moment the warning was dismissed. Persisted so one X
+  // sticks across reloads; a different unit total means the schedule changed, so warn again.
+  const [ignoredOverloads, setIgnoredOverloads] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(IGNORED_OVERLOADS_KEY)
+      if (raw) setIgnoredOverloads(JSON.parse(raw))
+    } catch {
+      // corrupt or unavailable storage: fall back to showing the warning
+    }
+  }, [])
 
   // Eagerly fetch sections for cart items instead of waiting for the full Phase 2 catalog fetch
   useEffect(() => {
@@ -151,7 +164,7 @@ function ScheduleContent() {
   }, [currentTermCourses])
 
   const isOverload = totalUnitsMax > 20
-  const isIgnored = ignoredOverloads[currentTerm]
+  const isIgnored = ignoredOverloads[currentTerm] === totalUnitsMax
 
   const fetchBulkEvaluations = useEvaluationStore(s => s.fetchBulkEvaluations)
   const getEvaluations = useEvaluationStore(s => s.getEvaluations)
@@ -552,7 +565,15 @@ END:VEVENT
             totalUnitsMax={totalUnitsMax}
             isOverload={isOverload}
             isIgnored={Boolean(isIgnored)}
-            onIgnoreOverload={() => setIgnoredOverloads(prev => ({ ...prev, [currentTerm]: true }))}
+            onIgnoreOverload={() => setIgnoredOverloads(prev => {
+              const next = { ...prev, [currentTerm]: totalUnitsMax }
+              try {
+                localStorage.setItem(IGNORED_OVERLOADS_KEY, JSON.stringify(next))
+              } catch {
+                // storage unavailable: dismissal still holds for this session
+              }
+              return next
+            })}
             expectedHoursPerWeek={expectedHoursPerWeek}
             expectedHoursLoading={expectedHoursLoading}
           />
