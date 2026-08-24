@@ -92,7 +92,6 @@ export function FilterSidebar() {
     // Purely a results-list toggle: instructor matches aren't courses, so this
     // never feeds the course filter pipeline or the facet counts.
     const [hideProfessors, setHideProfessors] = useQueryState('hideProfessors', parseAsBoolean.withDefault(false));
-    const [newOnly, setNewOnly] = useQueryState('newOnly', parseAsBoolean.withDefault(false));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
 
     // New Filters
@@ -153,8 +152,7 @@ export function FilterSidebar() {
         hideConflicts,
         hideUnavailable,
         hideStudyAbroad,
-        newOnly,
-    }), [excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, hideStudyAbroad, newOnly]);
+    }), [excludedWords, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, hideStudyAbroad]);
 
     // Per-facet course lists (each facet's own selection omitted), computed in
     // ONE pass over the catalog instead of one full filter pass per facet.
@@ -407,27 +405,6 @@ export function FilterSidebar() {
                                 </TooltipTrigger>
                                 <TooltipContent side="top" align="start" className="max-w-[240px]">
                                     Leave matching instructors out of search results and show only classes.
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    </div>
-                    <div className="flex items-center gap-2 min-h-8">
-                        <input
-                            type="checkbox"
-                            id="newOnly"
-                            checked={newOnly}
-                            onChange={(e) => setNewOnly(e.target.checked)}
-                            className="h-4 w-4 shrink-0 rounded border-input text-primary accent-primary outline-none"
-                        />
-                        <TooltipProvider delayDuration={300}>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <label htmlFor="newOnly" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
-                                        New courses only
-                                    </label>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" align="start" className="max-w-[240px]">
-                                    Show only courses that have not been offered in the last three years.
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>

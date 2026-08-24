@@ -25,7 +25,6 @@ export function useResetFilters() {
     hideUnavailable: parseAsBoolean.withDefault(true),
     hideStudyAbroad: parseAsBoolean.withDefault(true),
     hideProfessors: parseAsBoolean.withDefault(false),
-    newOnly: parseAsBoolean.withDefault(false),
   })
 
   return useCallback(() => {
@@ -46,7 +45,6 @@ export function useResetFilters() {
       hideUnavailable: null,
       hideStudyAbroad: null,
       hideProfessors: null,
-      newOnly: null,
     })
   }, [setFilters])
 }
