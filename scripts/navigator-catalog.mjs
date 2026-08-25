@@ -313,8 +313,11 @@ function unitsLabel(...unitLists) {
 function instructorName(last, first, overrides, sunetId) {
     const sunet = String(sunetId || '').toLowerCase()
     if (sunet && overrides[sunet]) return overrides[sunet]
-    const l = String(last || '').trim()
-    const f = String(first || '').trim()
+    // Names are HTML-escaped upstream too, and an apostrophe is common enough in
+    // a surname that one leaked through as "O&#039;Carroll, Liam" on STATS 229.
+    // This is the choke point for both primary and related-class meetings.
+    const l = decodeEntities(last).trim()
+    const f = decodeEntities(first).trim()
     if (isPlaceholderInstructor(l, f)) return ''
     if (l && f) return `${l}, ${f}`
     return l || ''

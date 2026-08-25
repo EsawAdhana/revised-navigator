@@ -412,3 +412,51 @@ describe('decodeEntities', () => {
     expect(decodeEntities('')).toBe('')
   })
 })
+
+describe('instructor names are decoded', () => {
+  it('decodes an escaped apostrophe in a surname', () => {
+    // STATS 229 shipped with 'O&#039;Carroll, Liam' on a meeting: instructor
+    // names were the one text field decodeEntities was not applied to.
+    const [course] = buildCourses([hit({
+      meetings: [{
+        facilityDescr: 'Sequoia 200',
+        startTime: '9:00 AM',
+        endTime: '10:20 AM',
+        daysOfWeekList: ['Monday'],
+        instructors: [{ firstName: 'Liam', lastName: 'O&#039;Carroll' }],
+      }],
+    })] as never)
+
+    expect(course.sections[0].meetings[0].instructors).toEqual(["O'Carroll, Liam"])
+    expect(course.instructors).toEqual(["O'Carroll, Liam"])
+  })
+
+  it('decodes an escaped ampersand and leaves a plain name alone', () => {
+    const [course] = buildCourses([hit({
+      meetings: [{
+        startTime: '9:00 AM',
+        endTime: '10:20 AM',
+        daysOfWeekList: ['Monday'],
+        instructors: [
+          { firstName: 'Ann', lastName: 'Smith &amp; Jones' },
+          { firstName: 'Percy', lastName: 'Liang' },
+        ],
+      }],
+    })] as never)
+
+    expect(course.sections[0].meetings[0].instructors).toEqual(['Smith & Jones, Ann', 'Liang, Percy'])
+  })
+
+  it('still drops a placeholder instructor after decoding', () => {
+    const [course] = buildCourses([hit({
+      meetings: [{
+        startTime: '9:00 AM',
+        endTime: '10:20 AM',
+        daysOfWeekList: ['Monday'],
+        instructors: [{ firstName: '', lastName: '' }],
+      }],
+    })] as never)
+
+    expect(course.sections[0].meetings[0].instructors).toEqual([])
+  })
+})

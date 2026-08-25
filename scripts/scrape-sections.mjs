@@ -244,10 +244,11 @@ function parseSectionTerm(sectionNode) {
 function instructorFullName(node) {
     const sunet = textVal(node?.sunet).toLowerCase()
     if (sunet && INSTRUCTOR_OVERRIDES[sunet]) return INSTRUCTOR_OVERRIDES[sunet]
-    const first = textVal(node?.firstName)
-    const last = textVal(node?.lastName)
+    // Escaped the same way Navigator escapes them — see instructorName there.
+    const first = decodeEntities(textVal(node?.firstName))
+    const last = decodeEntities(textVal(node?.lastName))
     if (first && last) return `${last}, ${first}`
-    return textVal(node?.name)
+    return decodeEntities(textVal(node?.name))
 }
 
 /** Strips ExploreCourses' seconds from a list of times, and refuses a range
