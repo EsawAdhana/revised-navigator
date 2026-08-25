@@ -30,6 +30,7 @@ import {
     mergeCrossListTitle,
     createNavigatorClient,
     crossListsByCrseId,
+    decodeEntities,
     fetchAllRelatedClasses,
     fetchYearClasses,
 } from './navigator-catalog.mjs'
@@ -178,8 +179,13 @@ function parseDays(schedule) {
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     const found = dayNames.filter(d => days[d] !== undefined)
     if (found.length > 0) return found.join(', ')
-    // Fallback — sometimes returned as a plain string
-    if (typeof days === 'string') return days.trim()
+    // Fallback — sometimes returned as a plain string, and then it arrives with
+    // the newlines and tabs ExploreCourses indents its markup with:
+    // "Monday\n\t\t\t...\n\t\t\tWednesday". Collapse that to the same
+    // comma-joined shape Navigator sends, so one day format reaches the client.
+    if (typeof days === 'string') {
+        return days.split(/\s*[\n\r]+\s*|\s*,\s*/).map(d => d.trim()).filter(Boolean).join(', ')
+    }
     return ''
 }
 
@@ -244,12 +250,25 @@ function instructorFullName(node) {
     return textVal(node?.name)
 }
 
+/** Strips ExploreCourses' seconds from a list of times, and refuses a range
+ *  that is missing one end — "12:00 PM" with no start renders as a phantom
+ *  meeting on the calendar. */
+function dropSeconds(times) {
+    if (times.length < 2) return []
+    return times.map(t => String(t).replace(/(\d{1,2}:\d{2}):\d{2}/g, '$1'))
+}
+
 function parseSection(sectionNode, courseNode) {
     const schedules = ensureArray(sectionNode?.schedules?.schedule)
 
     const meetings = schedules.map(sched => ({
         days: parseDays(sched),
-        time: [sched?.startTime, sched?.endTime].filter(Boolean).join(' – '),
+        // ExploreCourses prints seconds on every time ("10:30:00 AM"), Navigator
+        // does not. Drop them here so the dump has one time format. Only the
+        // seconds group is matched — stripping every ":00" would turn "3:00:00
+        // PM" into "3 PM". A start with no end (CS195 sends one) is dropped
+        // rather than published as a half-range.
+        time: dropSeconds([sched?.startTime, sched?.endTime].filter(Boolean)).join(' – '),
         location: sched?.location || '',
         instructors: ensureArray(sched?.instructors?.instructor).map(instructorFullName).filter(Boolean),
     }))
@@ -325,12 +344,15 @@ function parseCourseNode(courseNode) {
         course_id: `${subject}${code}`.toUpperCase(),
         subject,
         code,
-        title: textVal(courseNode?.title),
-        description: textVal(courseNode?.description)
-            .replace(/&#[A-Z]+\s+039;/g, "'")
-            .replace(/&#039;/g, "'")
-            .replace(/&#[A-Z]+\s+034;/g, '"')
-            .replace(/&amp;/g, '&'),
+        title: decodeEntities(textVal(courseNode?.title)),
+        // The XML double-escapes some entities into "&#QUOT 039;", which no
+        // generic decoder handles, so those two shapes are repaired before
+        // decodeEntities takes the ordinary ones.
+        description: decodeEntities(
+            textVal(courseNode?.description)
+                .replace(/&#[A-Z]+\s+039;/g, "'")
+                .replace(/&#[A-Z]+\s+034;/g, '"')
+        ),
         units: [textVal(courseNode?.unitsMin), textVal(courseNode?.unitsMax)]
             .filter(value => value && value !== '0')
             .join('-') || textVal(courseNode?.unitsMin),

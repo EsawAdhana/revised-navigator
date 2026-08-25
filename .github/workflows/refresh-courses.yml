@@ -23,7 +23,11 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
-      - run: node scripts/scrape-sections.mjs
+      # --with-explorecourses is not optional here: Navigator has no class
+      # record for ~52 catalog listings ExploreCourses does publish (CS 224U,
+      # CS 217 / EE 244, most of LINGUIST), and without the flag they land in
+      # the dump with empty sections and vanish from the schedule.
+      - run: node scripts/scrape-sections.mjs --with-explorecourses
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
