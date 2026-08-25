@@ -342,7 +342,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                         <TabsContent value="overview" className="focus-visible:outline-none focus-visible:ring-0 pl-3 md:pl-4">
                             <div className="space-y-6">
                                 <div className="space-y-3">
-                                    <CourseDescription description={course.description} contextSubject={course.subject} className="text-[15px] leading-relaxed" />
+                                    <CourseDescription courseId={course.id} description={course.description} className="text-[15px] leading-relaxed" />
 
                                     {/* Syllabus */}
                                     <div className="pt-2 space-y-2 group/syllabus">

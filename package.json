@@ -11,7 +11,8 @@
     "dump:catalog": "node --env-file=.env.local scripts/dump-catalog.mjs",
     "typecheck": "tsc --noEmit",
     "build": "next build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:course-links": "esbuild scripts/build-course-links.ts --bundle --platform=node --format=esm --outfile=.tmp-pages/build-course-links.mjs --log-level=error && node .tmp-pages/build-course-links.mjs"
   },
   "keywords": [],
   "author": "",

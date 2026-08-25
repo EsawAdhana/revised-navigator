@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { useCourseStore } from '@/lib/store';
 import { decodeHtmlEntities } from '@/lib/utils';
+import { bareLinksFor } from '@/lib/course-bare-links';
 
 /** Only auto-link course codes when nearby preceding text looks like a prereq / requirement list (not e.g. lab fees like "$MUSIC 80"). */
 const COURSE_REF_CONTEXT_RE =
@@ -15,14 +16,74 @@ function hasCourseReferenceContext(fullText: string, matchIndex: number): boolea
     return COURSE_REF_CONTEXT_RE.test(fullText.slice(start, matchIndex))
 }
 
+/**
+ * Split a description into plain-text and course-reference segments.
+ *
+ * A segment's `text` is ALWAYS the author's original characters — we may wrap a
+ * course reference in a link, but we never rewrite the prose. Inserting the
+ * subject turned "for 80 minutes" into "for CEE 80 minutes" and "12:30 PM" into
+ * "12:CEE 30 PM".
+ *
+ * Two kinds of reference:
+ *  - "CEE 107S" — subject is in the text, resolved live against the catalog.
+ *  - "Prerequisite: 240" — subject is absent, so the target comes from the
+ *    reviewed list in course-bare-links.json. No entry means no link; the
+ *    renderer never guesses a subject for a bare number.
+ */
+export function buildDescriptionSegments(
+    courseId: string,
+    description: string,
+    resolveCourseId: (subject: string, code: string) => string | undefined,
+    bareLinksOverride?: Map<number, [number, string]>,
+): Array<{ text: string; courseId?: string }> {
+    if (!description) return [];
+
+    const decodedText = decodeHtmlEntities(description);
+    const bareLinks = bareLinksOverride ?? bareLinksFor(courseId, decodedText);
+    const courseRegex = /\b(?:([A-Z]{2,4})\s*(\d{1,3}[A-Z]?)|(\d{2,3}[A-Z]?))\b/g;
+
+    const segments: Array<{ text: string; courseId?: string }> = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = courseRegex.exec(decodedText)) !== null) {
+        const precedingText = decodedText.substring(0, match.index);
+        if (precedingText.endsWith('&#') || (match[3] && precedingText.match(/&#\d*$/))) {
+            continue;
+        }
+
+        let courseId: string | undefined;
+        if (match[3]) {
+            const reviewed = bareLinks.get(match.index);
+            courseId = reviewed && reviewed[0] === match[0].length ? reviewed[1] : undefined;
+        } else {
+            const resolved = resolveCourseId(match[1], match[2]);
+            courseId = resolved && hasCourseReferenceContext(decodedText, match.index) ? resolved : undefined;
+        }
+        if (!courseId) continue;
+
+        if (match.index > lastIndex) {
+            segments.push({ text: decodedText.substring(lastIndex, match.index) });
+        }
+        segments.push({ text: match[0], courseId });
+        lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < decodedText.length) {
+        segments.push({ text: decodedText.substring(lastIndex) });
+    }
+
+    return segments;
+}
+
 interface CourseDescriptionProps {
+    /** Catalog id of the course being displayed; keys the reviewed bare-number links. */
+    courseId: string;
     description: string;
-    /** When set, bare course numbers (e.g. "30", "70", "112") in the text are resolved as this subject (e.g. CS 30, CS 70). */
-    contextSubject?: string;
     className?: string;
 }
 
-export function CourseDescription({ description, contextSubject, className }: CourseDescriptionProps) {
+export function CourseDescription({ courseId, description, className }: CourseDescriptionProps) {
     const courses = useCourseStore(s => s.courses);
 
     const courseMap = useMemo(() => {
@@ -35,61 +96,26 @@ export function CourseDescription({ description, contextSubject, className }: Co
 
     const renderedParts = useMemo(() => {
         if (!description) return null;
-
-        const decodedText = decodeHtmlEntities(description);
-        const courseRegex = /\b(?:([A-Z]{2,4})\s*(\d{1,3}[A-Z]?)|(\d{2,3}[A-Z]?))\b/g;
-
-        const parts: React.ReactNode[] = [];
-        let lastIndex = 0;
-        let match;
-
-        while ((match = courseRegex.exec(decodedText)) !== null) {
-            const precedingText = decodedText.substring(0, match.index);
-            if (precedingText.endsWith('&#') || (match[3] && precedingText.match(/&#\d*$/))) {
-                continue;
-            }
-
-            if (match.index > lastIndex) {
-                parts.push(decodedText.substring(lastIndex, match.index));
-            }
-
-            const subject = match[1] ?? (contextSubject && match[3] ? contextSubject : null);
-            const code = match[2] ?? match[3];
-            const fullCode = subject ? `${subject} ${code}` : match[0];
-
-            if (!subject) {
-                parts.push(match[0]);
-                lastIndex = match.index + match[0].length;
-                continue;
-            }
-
-            const courseId = courseMap.get(`${subject}|${code}`);
-            const shouldLink = Boolean(courseId && hasCourseReferenceContext(decodedText, match.index));
-
-            if (shouldLink && courseId) {
-                parts.push(
+        const segments = buildDescriptionSegments(
+            courseId,
+            description,
+            (subject, code) => courseMap.get(`${subject}|${code}`),
+        );
+        return segments.map((seg, i) =>
+            seg.courseId
+                ? (
                     <Link
-                        key={`${match.index}-${fullCode}`}
-                        href={`/courses/${encodeURIComponent(courseId)}`}
+                        key={`${i}-${seg.text}`}
+                        href={`/courses/${encodeURIComponent(seg.courseId)}`}
                         className="text-primary font-bold hover:underline"
                         onClick={(e) => { e.stopPropagation(); }}
                     >
-                        {fullCode}
+                        {seg.text}
                     </Link>
-                );
-            } else {
-                parts.push(fullCode);
-            }
-
-            lastIndex = match.index + match[0].length;
-        }
-
-        if (lastIndex < decodedText.length) {
-            parts.push(decodedText.substring(lastIndex));
-        }
-
-        return parts;
-    }, [description, contextSubject, courseMap]);
+                )
+                : seg.text
+        );
+    }, [courseId, description, courseMap]);
 
     if (!renderedParts) return null;
 
