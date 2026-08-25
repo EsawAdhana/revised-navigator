@@ -1,10 +1,49 @@
 # Performance and UI audit
 
+_Last reviewed: 2026-08-25. Findings 1, 2, 3, 4 and 19 are FIXED — see the status
+notes on each. Do not re-fix them._
+
 Full pass over `src/` focused on performance and UI/UX risk (complements AUDIT.md,
 which was a correctness sweep, and FINDINGS.md, which was a QA pass). Every finding
 below was verified against the code; the payload numbers were measured against the
 live dev server: `/api/courses` (light) = **2.79 MB / 8,641 courses**,
 `/api/courses?full=1` = **45.6 MB / 95,174 sections**.
+
+Measured on production 2026-08-25 (`curl` + Human Behavior real-user vitals, 14d):
+`/api/courses` = **394 KB brotli**, `/api/courses?full=1` = **3.3 MB brotli** on the
+wire (the 45.6 MB figure above is the parsed size, not the download). Real-user
+TTFB p75 was **1720ms** on `/instructors/[slug]`, **1006ms** on `/courses/[code]`,
+**1272ms** on `/browse`, against an origin answering in ~110ms. Rendering was never
+the problem: CLS ~0, INP p75 80ms desktop / 108ms mobile, LCP p75 1.6s.
+
+## Fixed since this audit was written
+
+- **Findings 1 and 2** — `fetchCourses` now does a single `readCacheEntry()` returning
+  `{ data, ts }` and returns early when `Date.now() - entry.ts <= CACHE_TTL`, so the
+  fresh-cache path is reachable and the 45 MB entry is read once.
+- **Finding 3** — the import-time `fetchCourses()` is gone; screens that show courses
+  call `useEnsureCatalog()` (`src/hooks/use-catalog.ts`), and `schedule-sync` kicks the
+  load itself when it needs the catalog. The landing page no longer downloads it.
+- **Finding 4** — `src/middleware.ts` returns `NextResponse.next()` immediately for any
+  path other than `/`, and the matcher excludes `api/`, so the Supabase `getUser()`
+  round trip happens on the landing page only.
+- **Finding 19** — `/api/courses` caches the pre-serialized string (`cachedFull`) and
+  prefers the prebuilt `public/catalog/*.json` dump, so it no longer re-stringifies
+  per request.
+
+## New since this audit (2026-08-25)
+
+**Course and instructor pages were rendered per request despite `revalidate = 86400`.**
+Every response carried `cache-control: private, no-cache, no-store` with no
+`x-nextjs-cache` header, and `x-vercel-cache: MISS` on repeat hits of the same URL —
+reproduced in a local production build, so it was app code, not Vercel. On a cold
+instance each render also paid a 34 MB `full.json` read and parse (measured 70ms +
+124ms locally, 123 MB heap). Cause: a dynamic route with no `generateStaticParams` is
+not entered into the full route cache. Fixed by prerendering both routes from the dump
+(`getAllCourseIdsFromDump` / `getAllInstructorSlugsFromDump`). Verified after the fix:
+`x-nextjs-cache: HIT`, `x-nextjs-prerender: 1`,
+`Cache-Control: s-maxage=86400, stale-while-revalidate=31449600`. Cost: the build now
+generates 15,139 static pages and takes **151s** instead of ~32s.
 
 Format: `path:line - what's wrong / why it hurts / suggested fix`.
 
@@ -12,7 +51,7 @@ Format: `path:line - what's wrong / why it hurts / suggested fix`.
 
 ## P0 - Major, affects every user
 
-### 1. The full 45.6 MB catalog is re-downloaded on every page load; the fresh-cache path is unreachable
+### 1. ~~The full 45.6 MB catalog is re-downloaded on every page load~~ — FIXED
 `src/lib/store.ts:154-242`
 
 `fetchCourses` reads `readStaleCache()` (accepts anything < 24 h) first, then checks
@@ -28,7 +67,7 @@ main thread, every visit.
 Fix: make the fresh-cache check meaningful, e.g. have `readStaleCache` also return the
 entry age, and skip the network fetch entirely when age < TTL.
 
-### 2. Double IndexedDB read of the 45 MB cache entry on every load
+### 2. ~~Double IndexedDB read of the 45 MB cache entry on every load~~ — FIXED
 `src/lib/store.ts:162,181`
 
 `readStaleCache()` and `readCache()` each do a full `get(IDB_KEY)` of the same 45 MB
@@ -36,7 +75,7 @@ entry. When a cache exists (the common case), the second read's result is never 
 (see finding 1). That's a wasted full deserialize of the largest object in the app.
 Fix: read once, return `{ data, ts }`, and decide fresh/stale from the timestamp.
 
-### 3. The catalog fetch fires on *every* page, including the marketing landing page
+### 3. ~~The catalog fetch fires on *every* page, including the marketing landing page~~ — FIXED 2026-08-25
 `src/lib/store.ts:323-325`, import chain: `layout.tsx` → `AuthProvider` →
 `use-sync-schedule` → `schedule-sync` → `store`
 
@@ -46,7 +85,7 @@ catalog still downloads 2.8 MB + 45.6 MB and pays the full parse/cache cost.
 Fix: trigger `fetchCourses()` from the pages that need it (browse, schedule, course
 detail) instead of at import time.
 
-### 4. Middleware makes a Supabase network round trip on every request, including all `/api/*`
+### 4. ~~Middleware makes a Supabase network round trip on every request~~ — FIXED
 `src/middleware.ts:46,67-71`
 
 `supabase.auth.getUser()` is a network call to Supabase Auth. The matcher only
@@ -217,7 +256,7 @@ supabase-js calls aren't deduped by Next. Wrap `fetchCourse` in `React.cache()` 
 single render pays for one query. (ISR with `revalidate = 86400` limits the blast
 radius, but it's still 2x on every revalidation.)
 
-### 19. `/api/courses?full=1` re-serializes 45.6 MB per request on the server
+### 19. ~~`/api/courses?full=1` re-serializes 45.6 MB per request on the server~~ — FIXED
 `src/app/api/courses/route.ts:82-83`
 
 The in-memory cache avoids the DB scan, but `NextResponse.json(data)` still
@@ -235,12 +274,13 @@ Longer term this endpoint is the lever for finding 5 (slim the section shape).
 - `src/lib/evaluation-store.ts:68` - `readEvalCache()` (sessionStorage read + full
   JSON.parse of the cache blob) runs on every `fetchBulkEvaluations` call, even when
   everything is already in memory. Hydrate once per session.
-- `next.config.mjs:22` - production CSP `connect-src` includes
-  `http://localhost:8000 http://127.0.0.1:8000` (HumanBehavior dev ingestion), and
-  `script-src` allows `unsafe-eval` + `https://unpkg.com`. Fine for the demo
-  scaffolding, but tighten before treating this as production.
+- `next.config.mjs` - `script-src` allows `unsafe-eval` + `https://unpkg.com`.
+  Tighten before treating this as production.
 - `src/lib/rate-limit.ts` - unbounded in-memory map, already flagged in AUDIT.md.
 - `e2e/` is an empty directory while Playwright is configured; stale scaffolding.
+- The catalog fetch now has a 20s timeout and one retry (`src/lib/catalog-fetch.ts`);
+  before that, any hiccup left `/browse` on "Couldn't load courses." with a Retry
+  button that re-issued the identical request.
 
 ---
 

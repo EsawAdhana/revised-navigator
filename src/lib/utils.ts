@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import type { Course, Section } from '@/types/course'
+import type { LiveSeat } from './seats'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -124,8 +125,26 @@ export function getCrossListGroupIds(courseId: string, courses: { id: string; ti
 export function aggregateCrossListedSectionEnrollment(
   anchor: Section,
   crossListCourseIds: string[],
-  courses: Course[]
+  courses: Course[],
+  liveSeats?: Map<number, LiveSeat>
 ): Pick<Section, 'enrolled' | 'capacity' | 'waitlist' | 'waitlistMax'> {
+  // A live reading replaces the dump's snapshot for that one section; siblings
+  // with no live reading keep theirs, so a partial fetch still aggregates.
+  const withLive = (s: Section): Section => {
+    const live = liveSeats?.get(s.classId)
+    if (!live) return s
+    // Capacity is the one field where a zero is more likely a gap in the live
+    // reading than a real cap of nothing, and a zero would hide the whole
+    // enrollment line. Counts always take the live value.
+    return {
+      ...s,
+      enrolled: live.enrolled,
+      capacity: live.capacity > 0 ? live.capacity : s.capacity,
+      waitlist: live.waitlist,
+      waitlistMax: live.waitlistMax > 0 ? live.waitlistMax : s.waitlistMax,
+    }
+  }
+  anchor = withLive(anchor)
   const byId = new Map(courses.map(c => [c.id, c]))
   const matches: Section[] = []
   for (const cid of crossListCourseIds) {
@@ -137,7 +156,7 @@ export function aggregateCrossListedSectionEnrollment(
       sameTerm.find(
         s => s.component === anchor.component && s.sectionNumber === anchor.sectionNumber
       )
-    if (hit) matches.push(hit)
+    if (hit) matches.push(withLive(hit))
   }
   if (matches.length === 0) {
     return {

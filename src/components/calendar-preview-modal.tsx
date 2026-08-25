@@ -5,11 +5,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/lib/cart-store';
 import { useCourseStore, getCoursesById } from '@/lib/store';
-import { parseMeetingTimes, parseTimeRange, timeToMinutes, isMeetingOptional, stripSeconds } from '@/lib/schedule-utils';
+import { parseMeetingTimes, parseTimeRange, timeToMinutes, isMeetingOptional, stripSeconds, parseDays } from '@/lib/schedule-utils';
 import { cn, decodeHtmlEntities, parseUnitsOptions } from '@/lib/utils';
 import { AlertTriangle, CalendarPlus, Calendar, Clock, MapPin } from 'lucide-react';
 import type { Course, Section } from '@/types/course';
-import { DAYS, HOUR_HEIGHT, DEFAULT_START_MINUTES, DEFAULT_END_MINUTES, getCalendarColorClasses, layoutDayEvents } from '@/lib/calendar-utils';
+import { DAYS, HOUR_HEIGHT, DEFAULT_START_MINUTES, DEFAULT_END_MINUTES, getCalendarColorClasses, layoutDayEvents, ALL_DAYS, visibleDays, type CalendarDay } from '@/lib/calendar-utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ type CalendarEvent = {
     courseId: string;
     courseCode: string;
     title: string;
-    day: 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri';
+    day: CalendarDay;
     start: number; // minutes from midnight
     end: number;
     startTime: string;
@@ -108,7 +108,7 @@ export function CalendarPreviewModal({
                 const end = timeToMinutes(m.endTime);
                 if (!start || !end || end <= start) return;
                 (m.days || []).forEach(day => {
-                    if (!DAYS.some(d => d.key === day)) return;
+                    if (!ALL_DAYS.some(d => d.key === day)) return;
                     out.push({
                         id: `${c.id}-${day}-${start}`,
                         courseId: c.id,
@@ -144,16 +144,9 @@ export function CalendarPreviewModal({
             const end = timeToMinutes(endTime);
             if (!start || !end || end <= start) return;
 
-            // Parse days (reuse normalization logic)
-            const rawDays = (m.days || '').split(/[,\s]+/).map((d: string) => {
-                const t = d.trim().toLowerCase();
-                if (t.startsWith('mon')) return 'Mon';
-                if (t === 'tu' || t.startsWith('tue')) return 'Tue';
-                if (t.startsWith('wed')) return 'Wed';
-                if (t === 'th' || t.startsWith('thu')) return 'Thu';
-                if (t.startsWith('fri')) return 'Fri';
-                return '';
-            }).filter(Boolean) as CalendarEvent['day'][];
+            // parseDays is the single normalizer; a local copy of it here was
+            // how weekend sections got dropped from the preview.
+            const rawDays = parseDays(m.days || '') as CalendarEvent['day'][];
 
             rawDays.forEach(day => {
                 out.push({
@@ -209,14 +202,16 @@ export function CalendarPreviewModal({
 
     // Events laid out per day
     const eventsByDay = useMemo(() => {
-        const byDay: Record<CalendarEvent['day'], LaidOutEvent[]> = {
-            Mon: [], Tue: [], Wed: [], Thu: [], Fri: [],
-        };
-        DAYS.forEach(({ key }) => {
+        const byDay = {} as Record<CalendarEvent['day'], LaidOutEvent[]>;
+        ALL_DAYS.forEach(({ key }) => {
             byDay[key] = layoutDayEvents(allEvents.filter(e => e.day === key));
         });
         return byDay;
     }, [allEvents]);
+
+    // Saturday/Sunday columns appear only when this term's schedule uses them.
+    const columns = useMemo(() => visibleDays(allEvents.map(e => e.day)), [allEvents]);
+    const gridTemplateColumns = `52px repeat(${columns.length}, minmax(0, 1fr))`;
 
     const gridHeight = ((endMinutes - startMinutes) / 60) * HOUR_HEIGHT;
 
@@ -299,9 +294,9 @@ export function CalendarPreviewModal({
                     <div className="overflow-x-auto px-4 pb-2 pt-3">
                         <div className="min-w-[560px]">
                             {/* Day header */}
-                            <div className="grid grid-cols-[52px_repeat(5,1fr)] border-b border-border/40 mb-0">
+                            <div className="grid border-b border-border/40 mb-0" style={{ gridTemplateColumns }}>
                                 <div className="p-1" />
-                                {DAYS.map(d => (
+                                {columns.map(d => (
                                     <div key={d.key} className="py-1.5 text-[10px] font-semibold text-muted-foreground text-center uppercase tracking-wide">
                                         {d.label}
                                     </div>
@@ -310,8 +305,8 @@ export function CalendarPreviewModal({
 
                             {/* Grid body */}
                             <div
-                                className="grid grid-cols-[52px_repeat(5,1fr)] relative"
-                                style={{ height: `${gridHeight}px`, '--start-minutes': startMinutes } as React.CSSProperties}
+                                className="grid relative"
+                                style={{ gridTemplateColumns, height: `${gridHeight}px`, '--start-minutes': startMinutes } as React.CSSProperties}
                             >
                                 {/* Time rail */}
                                 <div className="relative border-r border-border/30 bg-background/50">
@@ -331,7 +326,7 @@ export function CalendarPreviewModal({
                                 </div>
 
                                 {/* Day columns */}
-                                {DAYS.map(({ key }) => (
+                                {columns.map(({ key }) => (
                                     <div key={key} className="relative border-r last:border-r-0 border-border/20 bg-background/30">
                                         {eventsByDay[key].map(ev => {
                                             const colWidth = 100 / ev.colCount;

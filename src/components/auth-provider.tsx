@@ -5,6 +5,7 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/lib/auth-store'
 import { useSyncSchedule } from '@/hooks/use-sync-schedule'
 import { showAuthError } from '@/lib/auth-errors'
+import { track } from '@/lib/analytics'
 
 /**
  * Initializes the auth session and schedule sync once for the whole app, then
@@ -30,15 +31,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const authError = searchParams.get('auth_error')
     if (!authError) return
 
+    const detail = searchParams.get('error_description') ?? undefined
+    const failureCode = searchParams.get('auth_error_code') ?? undefined
+
+    // The callback distinguishes its failure modes now; the wording stays as it
+    // was, but the reason is recorded so a 1-a-day failure is diagnosable
+    // without catching it live in the server logs.
     if (authError === 'stanford_required') {
       showAuthError('stanford_required')
+    } else if (authError === 'oauth_failed') {
+      showAuthError('oauth_failed', detail)
     } else {
-      const detail = searchParams.get('error_description') ?? undefined
       showAuthError('session_failed', detail)
     }
+    track('login_failed', { reason: authError, ...(failureCode ? { code: failureCode } : {}) })
 
     const params = new URLSearchParams(searchParams.toString())
     params.delete('auth_error')
+    params.delete('auth_error_code')
     params.delete('error_description')
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname)

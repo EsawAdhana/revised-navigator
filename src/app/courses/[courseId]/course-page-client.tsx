@@ -13,8 +13,10 @@ import { compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveT
 import { Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { useEnsureCatalog } from '@/hooks/use-catalog';
 
 export function CoursePageClient({ initialCourse }: { initialCourse?: Course | null }) {
+    useEnsureCatalog();
     const params = useParams();
     const router = useRouter();
     const rawCourseId = params.courseId as string;

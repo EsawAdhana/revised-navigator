@@ -6,8 +6,15 @@ import { resolveInstructorSlug, type InstructorResolution } from '@/lib/instruct
 import { SITE_URL } from '@/lib/site';
 import { SiteHeader } from '@/components/site-header';
 import { InstructorDetailContent } from '@/components/instructor-detail-content';
+import { getAllInstructorSlugsFromDump } from '@/lib/catalog-dump'
 
 export const revalidate = 86400;
+
+/** Prerender every instructor page; same reasoning as the course pages. */
+export async function generateStaticParams() {
+    const slugs = await getAllInstructorSlugsFromDump();
+    return slugs.map(slug => ({ slug }));
+}
 
 const resolve = cache(async (slug: string): Promise<InstructorResolution> => {
     const directory = await getInstructorDirectory();

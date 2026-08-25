@@ -16,14 +16,14 @@ import { useRouter } from 'next/navigation';
 import { startNavProgress } from '@/components/nav-progress';
 import { searchCourses } from '@/lib/search-utils';
 import { compareCourseCodes } from '@/lib/utils';
-import { DAYS, HOUR_HEIGHT, DEFAULT_START_MINUTES, DEFAULT_END_MINUTES, getCalendarColorClasses, layoutDayEvents } from '@/lib/calendar-utils';
+import { DAYS, ALL_DAYS, visibleDays, HOUR_HEIGHT, DEFAULT_START_MINUTES, DEFAULT_END_MINUTES, getCalendarColorClasses, layoutDayEvents, type CalendarDay } from '@/lib/calendar-utils';
 
 type CalendarEvent = {
   id: string
   courseId: string
   courseCode: string
   title: string
-  day: 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri'
+  day: CalendarDay
   startTime: string
   endTime: string
   start: number
@@ -42,6 +42,9 @@ type CalendarViewProps = {
   currentTerm: string
   onPrevTerm: () => void
   onNextTerm: () => void
+  /** False at the edge of the terms we have data for; the arrow disables. */
+  canPrevTerm?: boolean
+  canNextTerm?: boolean
   totalUnitsMin: number
   totalUnitsMax: number
   isOverload: boolean
@@ -55,7 +58,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMin, totalUnitsMax, isOverload, isIgnored, onIgnoreOverload, expectedHoursPerWeek, expectedHoursLoading }: CalendarViewProps) {
+export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, canPrevTerm = true, canNextTerm = true, totalUnitsMin, totalUnitsMax, isOverload, isIgnored, onIgnoreOverload, expectedHoursPerWeek, expectedHoursLoading }: CalendarViewProps) {
   const items = useCartStore(s => s.items)
   const addItem = useCartStore(s => s.addItem)
   const removeItem = useCartStore(s => s.removeItem)
@@ -148,7 +151,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
         const end = timeToMinutes(m.endTime)
         if (!start || !end || end <= start) return
           ; (m.days || []).forEach(day => {
-            if (!DAYS.some(d => d.key === day)) return
+            if (!ALL_DAYS.some(d => d.key === day)) return
             const optional = isMeetingOptional(course, day, m.startTime, m.endTime)
             events.push({
               id: `${course.id}-${day}-${start}-${end}`,
@@ -195,13 +198,19 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
   }, [startMinutes, endMinutes])
 
   const eventsByDay = useMemo(() => {
-    const byDay: Record<CalendarEvent['day'], LaidOutEvent[]> = { Mon: [], Tue: [], Wed: [], Thu: [], Fri: [] }
-    DAYS.forEach(({ key }) => {
-      const dayEvents = calendarEvents.filter(e => e.day === key)
-      byDay[key] = layoutDayEvents(dayEvents)
+    const byDay = {} as Record<CalendarEvent['day'], LaidOutEvent[]>
+    ALL_DAYS.forEach(({ key }) => {
+      byDay[key] = layoutDayEvents(calendarEvents.filter(e => e.day === key))
     })
     return byDay
   }, [calendarEvents])
+
+  // Weekday columns always; Saturday and Sunday only for a term that has one.
+  const columns = useMemo(
+    () => visibleDays(calendarEvents.map(e => e.day)),
+    [calendarEvents]
+  )
+  const gridTemplateColumns = `var(--cal-rail) repeat(${columns.length}, minmax(0, 1fr))`
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -210,29 +219,29 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
           <div className="flex flex-col gap-2 w-full min-w-0">
             <div className="rounded-xl border bg-card overflow-hidden flex flex-col shrink-0">
               <div className="grid grid-cols-[40px_1fr_40px] items-center border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 px-2 py-2">
-                <Button variant="ghost" size="icon" onClick={onPrevTerm} aria-label="Previous term">
+                <Button variant="ghost" size="icon" onClick={onPrevTerm} disabled={!canPrevTerm} aria-label="Previous term">
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <div className="text-center">
                   <div className="font-semibold text-base">{currentTerm}</div>
                 </div>
-                <Button variant="ghost" size="icon" onClick={onNextTerm} aria-label="Next term">
+                <Button variant="ghost" size="icon" onClick={onNextTerm} disabled={!canNextTerm} aria-label="Next term">
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
               <div className="w-full overflow-x-auto scrollbar-hide shrink-0">
                 <div className="min-w-0 sm:min-w-[700px]">
-                  <div className="grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 sticky top-0 z-30">
+                  <div className="grid [--cal-rail:48px] sm:[--cal-rail:72px] border-b bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 sticky top-0 z-30" style={{ gridTemplateColumns }}>
                     <div className="p-1 px-2 sm:p-3 text-xs font-semibold text-muted-foreground border-r" />
-                    {DAYS.map(d => (
+                    {columns.map(d => (
                       <div key={d.key} className="p-1.5 sm:p-3 text-[10px] sm:text-xs font-semibold text-muted-foreground border-r last:border-r-0 text-center truncate px-0.5">
                         {d.label}
                       </div>
                     ))}
                   </div>
                   <div
-                    className="grid grid-cols-[48px_repeat(5,1fr)] sm:grid-cols-[72px_repeat(5,1fr)] relative"
-                    style={{ height: `${((endMinutes - startMinutes) / 60) * HOUR_HEIGHT}px` }}
+                    className="grid [--cal-rail:48px] sm:[--cal-rail:72px] relative"
+                    style={{ gridTemplateColumns, height: `${((endMinutes - startMinutes) / 60) * HOUR_HEIGHT}px` }}
                   >
 
                     {/* Time rail - left column, labels right-justified in box */}
@@ -256,7 +265,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, totalUnitsMi
                     </div>
 
                     {/* Day columns */}
-                    {DAYS.map(({ key }) => (
+                    {columns.map(({ key }) => (
                       <div key={key} className="relative border-r last:border-r-0 bg-background/30">
                         {eventsByDay[key].map(ev => {
                           const colWidth = 100 / ev.colCount

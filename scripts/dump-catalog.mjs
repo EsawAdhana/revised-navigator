@@ -3,6 +3,7 @@
  *
  * Usage:
  *   node --env-file=.env.local scripts/dump-catalog.mjs
+ *   node --env-file=.env.local scripts/dump-catalog.mjs --courses rows.json --out-dir ./local-catalog
  *
  * Writes public/catalog/{light,full,instructors}.json, which /api/courses and
  * the SSR course/department/instructor pages read instead of scanning the DB.
@@ -21,7 +22,24 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const OUT_DIR = join(__dirname, '..', 'public', 'catalog')
+const DEFAULT_OUT_DIR = join(__dirname, '..', 'public', 'catalog')
+
+/**
+ * --courses reads catalog rows from a file (scrape-sections.mjs --out) instead
+ * of Supabase, and --out-dir writes the dumps somewhere other than
+ * public/catalog. Together they build a full local catalog without touching the
+ * shared database or the committed dumps. Evaluations are still read from
+ * Supabase, read-only, because isNew needs the teaching history.
+ */
+function parseArgs() {
+  const args = process.argv.slice(2)
+  const opts = { courses: null, outDir: DEFAULT_OUT_DIR }
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--courses' && args[i + 1]) opts.courses = args[i + 1]
+    if (args[i] === '--out-dir' && args[i + 1]) opts.outDir = args[i + 1]
+  }
+  return opts
+}
 
 /** SUNet → full name; also used to expand leftover "Last, F." rows already in the DB. */
 const INSTRUCTOR_OVERRIDES = JSON.parse(
@@ -49,6 +67,27 @@ function isRetryable(err) {
     err?.code === '57014' ||
     /statement timeout|upstream request timeout|fetch failed|ECONNRESET|schema cache/i.test(msg)
   )
+}
+
+/**
+ * A quality of 0 is not a rating — the scale is 1-5, so 0 means "we computed
+ * nothing", and rendering it puts the worst possible score on a course nobody
+ * rated badly. scrape-evaluations.mjs stopped emitting these (it filters
+ * `median > 0`), but rows written by earlier versions are still in the table:
+ * CEE126Z and CEE177Q as of 2026-08-25. Same argument for hours and the
+ * hours/unit ratio derived from it.
+ */
+function dropNonPositiveMetrics(rows) {
+  let cleared = 0
+  for (const row of rows) {
+    for (const key of ['quality', 'hours', 'difficulty']) {
+      if (row[key] != null && !(row[key] > 0)) {
+        row[key] = null
+        cleared++
+      }
+    }
+  }
+  if (cleared) console.log(`  cleared ${cleared} non-positive eval metric(s)`)
 }
 
 /** Catalog stubs (no sections / TBD-only) stay out of the dump. */
@@ -329,12 +368,16 @@ async function main() {
     process.exit(1)
   }
 
+  const opts = parseArgs()
   const supabase = createClient(url, key, { auth: { persistSession: false } })
-  mkdirSync(OUT_DIR, { recursive: true })
+  mkdirSync(opts.outDir, { recursive: true })
 
-  console.log('Dumping catalog…')
+  console.log(opts.courses ? `Dumping catalog from ${opts.courses}…` : 'Dumping catalog…')
   const t0 = Date.now()
-  const allRaw = (await fetchAll(supabase)).filter(isGradeable).map(expandCourseInstructors)
+  const source = opts.courses
+    ? JSON.parse(readFileSync(opts.courses, 'utf8'))
+    : await fetchAll(supabase)
+  const allRaw = source.filter(isGradeable).map(expandCourseInstructors)
   // Browse/API dump is offerings only — zero-section shells stay in Supabase for
   // eval history joins but should not ship in the static catalog.
   const dropped = allRaw.filter((c) => !(c.sections || []).length).length
@@ -342,16 +385,17 @@ async function main() {
   if (dropped) console.log(`  dropped ${dropped} zero-section rows from dump`)
 
   await markNewCourses(supabase, all)
+  dropNonPositiveMetrics(all)
 
   const fullJson = JSON.stringify(all)
-  writeFileSync(join(OUT_DIR, 'full.json'), fullJson)
+  writeFileSync(join(opts.outDir, 'full.json'), fullJson)
 
   const light = all.map((row) => Object.fromEntries(LIGHT_KEYS.map((k) => [k, row[k]])))
   const lightJson = JSON.stringify(light)
-  writeFileSync(join(OUT_DIR, 'light.json'), lightJson)
+  writeFileSync(join(opts.outDir, 'light.json'), lightJson)
 
   const instructors = await fetchInstructorDump(supabase, all)
-  writeFileSync(join(OUT_DIR, 'instructors.json'), JSON.stringify(instructors))
+  writeFileSync(join(opts.outDir, 'instructors.json'), JSON.stringify(instructors))
   const linkCount = Object.values(instructors.courseLinks).reduce((n, m) => n + Object.keys(m).length, 0)
   console.log(`  ${instructors.names.length} instructor names, ${linkCount} course-scoped links`)
 

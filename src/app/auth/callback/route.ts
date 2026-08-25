@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { authErrorParam, classifyCallback, safeNextPath } from '@/lib/auth-callback'
 
 function getRedirectOrigin(request: Request): string {
   const { origin } = new URL(request.url)
@@ -17,24 +18,40 @@ function getRedirectOrigin(request: Request): string {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/browse'
   const origin = getRedirectOrigin(request)
+  const safeNext = safeNextPath(searchParams.get('next'))
+  const verdict = classifyCallback(searchParams)
 
-  if (!code) {
-    return NextResponse.redirect(`${origin}/?auth_error=session_failed`)
+  if (verdict.kind !== 'exchange') {
+    if (verdict.kind === 'provider_error') {
+      console.error('OAuth provider returned an error:', {
+        reason: verdict.reason,
+        description: verdict.description,
+      })
+    }
+    const param = authErrorParam(verdict)
+    // A cancel is not a failure: send them back to browsing, silently.
+    return NextResponse.redirect(param ? `${origin}/?auth_error=${param}` : `${origin}${safeNext}`)
   }
 
   const supabase = await createSupabaseServerClient()
-  const { error } = await supabase.auth.exchangeCodeForSession(code)
+  const { error } = await supabase.auth.exchangeCodeForSession(verdict.code)
 
   if (error) {
-    console.error('OAuth code exchange failed:', error)
-    return NextResponse.redirect(`${origin}/?auth_error=session_failed`)
+    // Log enough to tell the failure modes apart next time: a missing PKCE
+    // verifier cookie, a reused code, and an expired code all surfaced as the
+    // same "Could not complete sign-in" before this.
+    console.error('OAuth code exchange failed:', {
+      code: error.code,
+      status: error.status,
+      name: error.name,
+      message: error.message,
+      hasCookieHeader: Boolean(request.headers.get('cookie')),
+      userAgent: request.headers.get('user-agent'),
+    })
+    const reason = error.code ? `&auth_error_code=${encodeURIComponent(error.code)}` : ''
+    return NextResponse.redirect(`${origin}/?auth_error=exchange_failed${reason}`)
   }
 
-  // Avoid `/` → middleware → `/browse` bounce after a successful login.
-  let safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/browse'
-  if (safeNext === '/') safeNext = '/browse'
   return NextResponse.redirect(`${origin}${safeNext}`)
 }

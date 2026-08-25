@@ -12,7 +12,9 @@ const DAY_ORDER: Record<string, number> = {
   Tue: 2,
   Wed: 3,
   Thu: 4,
-  Fri: 5
+  Fri: 5,
+  Sat: 6,
+  Sun: 7
 }
 
 function uniq(arr: string[]) {
@@ -29,6 +31,11 @@ function normalizeDayToken(token: string) {
   if (t === 'w' || t.startsWith('wed')) return 'Wed'
   if (t === 'r' || t === 'th' || t.startsWith('thu')) return 'Thu'
   if (t === 'f' || t.startsWith('fri')) return 'Fri'
+  // Weekend classes are rare (39 sections in Autumn 2026) but real: labs,
+  // Human Biology field work, some CSRE and CHPR seminars. Without these two
+  // the day list came back empty and the class disappeared from the schedule.
+  if (t === 'sa' || t.startsWith('sat')) return 'Sat'
+  if (t === 'su' || t.startsWith('sun')) return 'Sun'
   return ''
 }
 
@@ -49,6 +56,12 @@ export function parseDays(daysStr: string) {
 
       if (next2 === 'tu') { chars.push('Tu'); i += 2; continue }
       if (next2 === 'th') { chars.push('Th'); i += 2; continue }
+      // Sat/Sun before the single-character fallthrough, which would otherwise
+      // read "Sat" as S-a-t and resolve the trailing "t" to Tuesday.
+      if (next3 === 'sat') { chars.push('Sat'); i += 3; continue }
+      if (next3 === 'sun') { chars.push('Sun'); i += 3; continue }
+      if (next2 === 'sa') { chars.push('Sa'); i += 2; continue }
+      if (next2 === 'su') { chars.push('Su'); i += 2; continue }
       if (next3 === 'mon') { chars.push('Mon'); i += 3; continue }
       if (next3 === 'tue') { chars.push('Tue'); i += 3; continue }
       if (next3 === 'wed') { chars.push('Wed'); i += 3; continue }

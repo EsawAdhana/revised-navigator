@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickSectionsForTerm, parseMeetingTimes, stripSeconds, standInSectionChanged } from '@/lib/schedule-utils'
+import { pickSectionsForTerm, parseMeetingTimes, stripSeconds, standInSectionChanged, parseDays } from '@/lib/schedule-utils'
 import type { Course, Section } from '@/types/course'
 
 const TERM = 'Autumn 2026'
@@ -166,5 +166,44 @@ describe('stripSeconds', () => {
   it('leaves already-clean and empty values alone', () => {
     expect(stripSeconds('2:30 PM – 3:20 PM')).toBe('2:30 PM – 3:20 PM')
     expect(stripSeconds('')).toBe('')
+  })
+})
+
+describe('parseDays — weekend meetings', () => {
+  // 39 sections in the Autumn 2026 catalog meet on a weekend (CHPR233,
+  // CSRE127B, BIOS215). Before Sat/Sun existed in DAY_ORDER these parsed to []
+  // and the class silently vanished from the schedule.
+  it('parses a lone weekend day', () => {
+    expect(parseDays('Saturday')).toEqual(['Sat'])
+    expect(parseDays('Sunday')).toEqual(['Sun'])
+  })
+
+  it('parses the abbreviations Stanford data uses', () => {
+    expect(parseDays('Sat')).toEqual(['Sat'])
+    expect(parseDays('Sun')).toEqual(['Sun'])
+    expect(parseDays('Sa, Su')).toEqual(['Sat', 'Sun'])
+  })
+
+  it('orders a weekend day after the weekdays', () => {
+    expect(parseDays('Saturday, Monday')).toEqual(['Mon', 'Sat'])
+    expect(parseDays('Sunday, Saturday')).toEqual(['Sat', 'Sun'])
+  })
+
+  it('handles the real ExploreCourses whitespace shape', () => {
+    // BIOS215 Autumn 2026, verbatim from public/catalog/full.json.
+    expect(parseDays('Sunday\n\t\t\t\n\t\t\tSaturday')).toEqual(['Sat', 'Sun'])
+  })
+
+  it('still parses weekday-only patterns unchanged', () => {
+    expect(parseDays('Monday\n\t\t\t\n\t\t\tWednesday')).toEqual(['Mon', 'Wed'])
+    expect(parseDays('MWF')).toEqual(['Mon', 'Wed', 'Fri'])
+    expect(parseDays('TuTh')).toEqual(['Tue', 'Thu'])
+    expect(parseDays('Tues, Thurs')).toEqual(['Tue', 'Thu'])
+  })
+
+  it('does not invent days from junk', () => {
+    expect(parseDays('')).toEqual([])
+    expect(parseDays('TBA')).toEqual([])
+    expect(parseDays('Not Applicable')).toEqual([])
   })
 })

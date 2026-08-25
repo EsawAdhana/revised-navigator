@@ -1,4 +1,4 @@
-export type CalendarDay = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri'
+export type CalendarDay = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'
 
 export const COLORS = {
   sky: 'bg-sky-500/15 border-sky-500/40 text-sky-950 dark:text-sky-50',
@@ -20,6 +20,29 @@ export const DAYS: { key: CalendarDay; label: string }[] = [
   { key: 'Thu', label: 'Thu' },
   { key: 'Fri', label: 'Fri' },
 ]
+
+/**
+ * Saturday and Sunday are off the grid by default — five columns is what a
+ * Stanford week looks like, and 39 of 65,261 sections meet on a weekend. They
+ * appear only for the term the student actually has a weekend class in, so
+ * nobody pays two dead columns for somebody else's Sunday lab.
+ */
+export const WEEKEND_DAYS: { key: CalendarDay; label: string }[] = [
+  { key: 'Sat', label: 'Sat' },
+  { key: 'Sun', label: 'Sun' },
+]
+
+export const ALL_DAYS: { key: CalendarDay; label: string }[] = [...DAYS, ...WEEKEND_DAYS]
+
+/**
+ * The columns to render for one term's events: the weekdays, plus Saturday
+ * and/or Sunday only when something is scheduled there. Sunday alone does not
+ * drag Saturday onto the grid.
+ */
+export function visibleDays(days: Iterable<CalendarDay | string>): { key: CalendarDay; label: string }[] {
+  const present = new Set(days)
+  return ALL_DAYS.filter(d => DAYS.some(w => w.key === d.key) || present.has(d.key))
+}
 
 export const HOUR_HEIGHT = 52
 export const DEFAULT_START_MINUTES = 8 * 60   // 8 AM

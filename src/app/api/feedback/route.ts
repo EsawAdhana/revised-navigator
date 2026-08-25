@@ -7,7 +7,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const supabaseFeedbackKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey
 const resendApiKey = process.env.RESEND_API_KEY || ''
-const feedbackEmailTo = process.env.FEEDBACK_EMAIL_TO || ''
+const feedbackEmailTo = process.env.FEEDBACK_EMAIL_TO || 'adhanaesaw@gmail.com'
 const fromEmail = process.env.RESEND_FROM_EMAIL || 'Stanford Root <onboarding@resend.dev>'
 
 const MAX_TEXT_LENGTH = 2000
@@ -69,20 +69,25 @@ export async function POST (request: Request) {
   }
 
   // Send the notification email after responding so request latency isn't tied to the email provider
-  if (resendApiKey && feedbackEmailTo) {
+  if (resendApiKey) {
     after(async () => {
       try {
         const resend = new Resend(resendApiKey)
-        await resend.emails.send({
+        const { error: emailErr } = await resend.emails.send({
           from: fromEmail,
           to: feedbackEmailTo,
           subject: `[Stanford Root] New feedback: ${typeInput}`,
           text: `Type: ${typeInput}\nFrom: Anonymous\n\n${text}`
         })
+        if (emailErr) {
+          console.error('Feedback email send error:', emailErr)
+        }
       } catch (emailErr) {
         console.error('Feedback email send error:', emailErr)
       }
     })
+  } else {
+    console.warn('Feedback saved but email skipped: RESEND_API_KEY is not set')
   }
 
   return NextResponse.json({ ok: true })

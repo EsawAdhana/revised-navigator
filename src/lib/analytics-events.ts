@@ -8,10 +8,15 @@ export const ANALYTICS_EVENTS = [
   'eval_gate_viewed',
   'login_started',
   'login_completed',
+  'login_failed',
+  'app_crashed',
   'schedule_synced',
   'ics_exported',
   'ics_imported',
   'schedule_times_notice_shown',
+  // Added for src/components/schedule-source-notice.tsx (written by a concurrent
+  // session on 2026-08-25); the component already emits it.
+  'schedule_source_notice_shown',
 ] as const
 
 export type AnalyticsEvent = typeof ANALYTICS_EVENTS[number]

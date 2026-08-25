@@ -439,7 +439,11 @@ export function CommentsPanel({ comments }: { comments: CommentEntry[] }) {
           return filtered.slice(0, displayCount).map((comment, i) => (
             <div
               key={i}
-              className="text-sm text-muted-foreground bg-secondary/15 rounded-lg px-4 py-3 border border-border/20 leading-relaxed hover:bg-secondary/25 transition-colors"
+              // No hover highlight: the card is not clickable, and the highlight
+              // read as an affordance. Students clicked the same comment
+              // repeatedly waiting for it to do something — one session logged
+              // 107 clicks in 29.3s on a single ECON 11N comment.
+              className="text-sm text-muted-foreground bg-secondary/15 rounded-lg px-4 py-3 border border-border/20 leading-relaxed"
             >
               {comment.label && (
                 <div className="text-[11px] font-bold text-destructive mb-1">{comment.label}</div>
@@ -625,9 +629,17 @@ interface CourseEvaluationsProps {
   subject: string
   code: string
   forcedTab?: 'overview' | 'instructors' | 'comments'
+  /**
+   * Whether the catalog dump flagged this cross-list group as first-time-offered:
+   * true swaps the empty state from "our records start in 2021" to "new course",
+   * `undefined` means the catalog hasn't loaded yet and the empty state must wait
+   * rather than assert either. Required (not optional) so a caller can't leave it
+   * unresolved by accident and hang the empty state on a spinner.
+   */
+  isNew: boolean | undefined
 }
 
-export function CourseEvaluations({ courseIds, subject, code, forcedTab }: CourseEvaluationsProps) {
+export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew }: CourseEvaluationsProps) {
   const fetchBulkEvaluations = useEvaluationStore(state => state.fetchBulkEvaluations)
   const getMergedEvaluations = useEvaluationStore(state => state.getMergedEvaluations)
   const loadingCourses = useEvaluationStore(state => state.loadingCourses)
@@ -734,6 +746,26 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab }: Cours
 
   // No data
   if (evaluations.length === 0) {
+    // `isNew` rides on the client-side catalog, not the server-fetched course
+    // row, so on a hard load it is unresolved for a moment. Keep spinning rather
+    // than flash the 2021 line at a course that turns out to be new.
+    if (isNew === undefined) {
+      return (
+        <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+          <Loader2 size={18} className="animate-spin" />
+          <span className="text-sm">Loading evaluations...</span>
+        </div>
+      )
+    }
+    // A first-time offering has no evaluations anywhere, so pointing at our
+    // 2021 cutoff (or at EvaluationKit) would imply data we just don't show.
+    if (isNew) {
+      return (
+        <div className="text-center py-8">
+          <p className="text-muted-foreground text-sm">This is a new course, so there are no evaluations yet.</p>
+        </div>
+      )
+    }
     return (
       <div className="text-center py-8 space-y-3">
         <p className="text-muted-foreground text-sm">No evaluation data found. Note: Our records only go back to <strong>Fall 2021</strong>.</p>

@@ -25,6 +25,7 @@ import { CalendarPreviewModal } from './calendar-preview-modal';
 import { unpickedComponents, stripSeconds } from '@/lib/schedule-utils';
 import { isWimCourse } from '@/lib/wim-courses';
 import { compareTerms, getDefaultTerm, isFutureTerm as isTermInFuture } from '@/lib/terms';
+import { useLiveSeats } from '@/hooks/use-seats';
 
 interface CourseDetailContentProps {
     course: Course;
@@ -34,11 +35,27 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const addItem = useCartStore(s => s.addItem);
     const removeSection = useCartStore(s => s.removeSection);
     const courses = useCourseStore(s => s.courses);
+    const hasLoadedCatalog = useCourseStore(s => s.hasLoaded);
     const fetchBulkEvaluations = useEvaluationStore(s => s.fetchBulkEvaluations);
     const user = useAuthStore(s => s.user);
     const canViewEvals = Boolean(user) || isDevEvalsUnlocked();
 
     const crossListIds = useMemo(() => getCrossListGroupIds(course.id, courses), [course.id, courses]);
+
+    // `isNew` comes from the catalog dump (unscheduled in the three prior
+    // catalogs, no evaluations since). Same rule as the "new courses only"
+    // filter: a sibling the dump judged already-offered vetoes the group, and a
+    // sibling it couldn't judge (flag unset) abstains. The server-fetched course
+    // row carries no flag, so it has to be read off the catalog store — which
+    // means `undefined` until the catalog lands. Once it has (including a catalog
+    // error, where courses stays empty), no flags means not-new.
+    const isNewCourse = useMemo(() => {
+        if (!hasLoadedCatalog) return undefined;
+        const flags = crossListIds
+            .map(id => courses.find(c => c.id === id)?.isNew)
+            .filter((v): v is boolean => v !== undefined);
+        return flags.length > 0 && flags.every(Boolean);
+    }, [hasLoadedCatalog, crossListIds, courses]);
 
     // Warms the eval cache while the user reads the overview, so opening the
     // Charts or Comments tab (which mounts CourseEvaluations) is instant.
@@ -80,17 +97,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         return offered[0] ?? null;
     }, [urlTerms, terms]);
 
-    // Precompute cross-listed enrollment per section so it isn't recomputed for every render/tab switch
-    const enrollmentBySectionId = useMemo(() => {
-        const map = new Map<number, ReturnType<typeof aggregateCrossListedSectionEnrollment>>();
-        for (const term of Object.keys(sectionsByTerm)) {
-            for (const section of sectionsByTerm[term]) {
-                map.set(section.classId, aggregateCrossListedSectionEnrollment(section, crossListIds, courses));
-            }
-        }
-        return map;
-    }, [sectionsByTerm, crossListIds, courses]);
-
     // State for active tab
     const [activeTerm, setActiveTerm] = useState<string>(() => {
         if (cartItem?.selectedTerm && terms.includes(cartItem.selectedTerm)) {
@@ -99,6 +105,41 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         if (incomingPreferredTerm) return incomingPreferredTerm;
         return getDefaultTerm(terms);
     });
+
+    // Live enrollment for the term on screen. The catalog dump is refreshed once
+    // a day (refresh-courses.yml), which is hours stale during enrollment week —
+    // so the sections the student is actually reading get a fresh reading from
+    // Navigator, and everything else keeps the snapshot.
+    const liveClassNbrs = useMemo(() => {
+        const ids = new Set<number>();
+        for (const cid of crossListIds) {
+            const c = courses.find(x => x.id === cid);
+            for (const s of c?.sections ?? []) {
+                if (s.term === activeTerm && s.classId) ids.add(s.classId);
+            }
+        }
+        for (const s of sectionsByTerm[activeTerm] ?? []) {
+            if (s.classId) ids.add(s.classId);
+        }
+        return [...ids];
+    }, [crossListIds, courses, sectionsByTerm, activeTerm]);
+    const { seats: liveSeats, fetchedAt: seatsFetchedAt } = useLiveSeats(activeTerm, liveClassNbrs);
+
+    // Precompute cross-listed enrollment per section so it isn't recomputed for every render/tab switch
+    const enrollmentBySectionId = useMemo(() => {
+        const map = new Map<number, ReturnType<typeof aggregateCrossListedSectionEnrollment>>();
+        for (const term of Object.keys(sectionsByTerm)) {
+            for (const section of sectionsByTerm[term]) {
+                // Live readings are fetched per term, and a classNbr is only unique
+                // within a term (1883 is CS 103 in Autumn 2026 and CEE 180 in
+                // Spring 2027), so they may only be applied to the term they
+                // were fetched for.
+                const live = term === activeTerm ? liveSeats : undefined;
+                map.set(section.classId, aggregateCrossListedSectionEnrollment(section, crossListIds, courses, live));
+            }
+        }
+        return map;
+    }, [sectionsByTerm, crossListIds, courses, liveSeats, activeTerm]);
 
     // Term carousel: show 3 at a time when there are more than 3 terms
     const TERMS_VISIBLE = 3;
@@ -208,7 +249,14 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     };
 
     const handleUnitsChange = (u: number) => {
-        const newValue = selectedUnits === u ? undefined : u;
+        // Compare against the value the chip is actually *showing*, not just
+        // local state. The display falls back to the cart when local state is
+        // empty (see the selected check below), and the initializer/sync effect
+        // that normally keeps them equal both bail when the cart's value is not
+        // among this term's options — so a lit chip could be "re-selected",
+        // producing an identical render and a click that appeared to do nothing.
+        const effectiveUnits = selectedUnits ?? cartItem?.selectedUnits;
+        const newValue = effectiveUnits === u ? undefined : u;
         setSelectedUnits(newValue);
         if (cartItem?.selectedTerm === activeTerm) {
             addItem(course, activeTerm, undefined, newValue);
@@ -351,6 +399,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                 subject={course.subject}
                                 code={course.code}
                                 forcedTab="overview"
+                                isNew={isNewCourse}
                             />
                         </TabsContent>
 
@@ -361,6 +410,7 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                 subject={course.subject}
                                 code={course.code}
                                 forcedTab="comments"
+                                isNew={isNewCourse}
                             />
                         </TabsContent>
                     </Tabs>
@@ -447,7 +497,9 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
 
                                             return termSections.map((section) => {
                                                 const isSelected = selectedIds.includes(section.classId);
-                                                const enrollAgg = enrollmentBySectionId.get(section.classId) ?? aggregateCrossListedSectionEnrollment(section, crossListIds, courses);
+                                                const enrollAgg = enrollmentBySectionId.get(section.classId) ?? aggregateCrossListedSectionEnrollment(section, crossListIds, courses, term === activeTerm ? liveSeats : undefined);
+                                                const liveSeat = term === activeTerm ? liveSeats.get(section.classId) : undefined;
+                                                const sectionStatus = liveSeat?.status || section.status;
                                                 const isIndependent = INDEPENDENT_COMPONENTS.has(section.component);
                                                 const tbdLabel = isIndependent ? 'Not Applicable' : 'TBD';
                                                 const compLabel = formatComponent(section.component);
@@ -460,16 +512,16 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                             <div>
                                                                 <div className="font-bold text-[18px] text-foreground flex flex-wrap items-center gap-2">
                                                                     <span className="shrink-0">{compLabel} {displayNum}</span>
-                                                                    {section.status && (
+                                                                    {sectionStatus && (
                                                                         <span className={cn(
                                                                             "text-[12px] uppercase font-bold px-1.5 py-0.5 rounded",
-                                                                            section.status.toLowerCase() === 'open'
+                                                                            sectionStatus.toLowerCase().replace(/[^a-z]/g, '') === 'open'
                                                                                 ? "text-green-700 bg-green-50 dark:text-green-400 dark:bg-green-950/50"
-                                                                                : section.status.toLowerCase().includes('waitlist')
+                                                                                : sectionStatus.toLowerCase().replace(/[^a-z]/g, '').includes('waitlist')
                                                                                     ? "text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/50"
                                                                                     : "text-muted-foreground bg-secondary/60"
                                                                         )}>
-                                                                            {section.status}
+                                                                            {sectionStatus}
                                                                         </span>
                                                                     )}
                                                                 </div>
@@ -620,6 +672,11 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                 );
                                             });
                                         })()}
+                                        {term === activeTerm && seatsFetchedAt !== null && (
+                                            <div className="text-[13px] text-muted-foreground">
+                                                Enrollment as of {new Date(seatsFetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                            </div>
+                                        )}
                                     </TabsContent>
                                 ))}
                             </Tabs>

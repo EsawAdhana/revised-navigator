@@ -1,18 +1,38 @@
 /**
- * Scrape section data from Stanford's ExploreCourses XML API and update Supabase.
+ * Scrape section data from Stanford Navigator (PeopleSoft, via its public
+ * Algolia index) and update Supabase.
+ *
+ * Navigator replaced ExploreCourses as the source on 2026-08-25: it is the same
+ * PeopleSoft data Axess enrols from, it is ~4x faster to pull, and it carries
+ * meeting days, times, dates, instruction mode and GERs that the XML either
+ * mangles or leaves blank. The ExploreCourses walk is still here behind
+ * --with-explorecourses, because EC publishes a few dozen catalog listings that
+ * Navigator has no class record for (see --compare-sources).
  *
  * Usage:
- *   node --env-file=.env.local scripts/scrape-sections.mjs                  # full run (+ Navigator gap-fill)
- *   node --env-file=.env.local scripts/scrape-sections.mjs --dry-run        # fetch and compare only
+ *   node --env-file=.env.local scripts/scrape-sections.mjs                        # full run from Navigator
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --dry-run              # fetch and compare only
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --with-explorecourses  # also merge EC-only courses
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --compare-sources      # diff Navigator vs EC, no writes
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --out catalog.json      # write rows to a file, not Supabase
  *   node --env-file=.env.local scripts/scrape-sections.mjs --academic-year 20262027
- *   node --env-file=.env.local scripts/scrape-sections.mjs --resume         # only rows on a different year
- *   node --env-file=.env.local scripts/scrape-sections.mjs --course CS106B  # single course
- *   node --env-file=.env.local scripts/scrape-sections.mjs --nav-gaps       # only fill ExploreCourses holes from Navigator
- *   node --env-file=.env.local scripts/scrape-sections.mjs --prior-years    # record which courses the 3 previous catalogs offered
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --resume               # only rows on a different year
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --course CS106B        # single course
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --prior-years          # record which courses the 3 previous catalogs offered
+ *   node --env-file=.env.local scripts/scrape-sections.mjs --rebuild-prior        # re-derive all 3 prior years from Navigator (see the warning on recordPriorOfferings)
  */
 
 import { createClient } from '@supabase/supabase-js'
 import { XMLParser } from 'fast-xml-parser'
+import {
+    backfillMissingGrading,
+    buildCourses,
+    mergeCrossListTitle,
+    createNavigatorClient,
+    crossListsByCrseId,
+    fetchAllRelatedClasses,
+    fetchYearClasses,
+} from './navigator-catalog.mjs'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
@@ -76,15 +96,21 @@ function parseArgs() {
         course: null,
         dryRun: false,
         resume: false,
-        navGaps: false,
+        withExploreCourses: false,
+        compareSources: false,
+        out: null,
         priorYears: false,
+        rebuildPrior: false,
         academicYear: defaultAcademicYear(),
     }
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--dry-run') opts.dryRun = true
         if (args[i] === '--resume') opts.resume = true
-        if (args[i] === '--nav-gaps') opts.navGaps = true
+        if (args[i] === '--with-explorecourses') opts.withExploreCourses = true
+        if (args[i] === '--compare-sources') opts.compareSources = true
+        if (args[i] === '--out' && args[i + 1]) opts.out = args[i + 1]
         if (args[i] === '--prior-years') opts.priorYears = true
+        if (args[i] === '--rebuild-prior') { opts.priorYears = true; opts.rebuildPrior = true }
         if (args[i] === '--course' && args[i + 1]) opts.course = args[i + 1].trim().toUpperCase()
         if (args[i] === '--academic-year' && /^\d{8}$/.test(args[i + 1] || '')) {
             opts.academicYear = args[i + 1]
@@ -490,10 +516,18 @@ async function fetchCatalog(academicYear) {
 }
 
 /**
- * Record which course IDs each of the previous PRIOR_YEAR_COUNT catalogs
- * actually scheduled, so dump-catalog.mjs can tell a genuinely new course from
- * one that simply never collects evaluations. Past catalogs never change, so
- * years already on disk are reused instead of refetched.
+ * Which courses each of the previous PRIOR_YEAR_COUNT catalogs scheduled, so
+ * dump-catalog.mjs can tell a genuinely new course from one that simply never
+ * collects evaluations. Past catalogs never change, so years already on disk
+ * are reused instead of refetched.
+ *
+ * The years on disk were recorded from ExploreCourses, which counts ~250 more
+ * ids per year than Navigator: almost all of them cross-list codes EC named in
+ * a course title but never scheduled (of 248 such ids for 2025-2026, 235 have
+ * no sections in ExploreCourses either, and 0 are in Navigator that year).
+ * Dropping an id from this file turns a long-running course into a "new" one on
+ * the browse page, so a year is only ever added to, never replaced — even under
+ * --rebuild-prior. That keeps isNew stable across the source switch.
  */
 async function recordPriorOfferings(opts) {
     const years = priorAcademicYears(opts.academicYear)
@@ -503,27 +537,46 @@ async function recordPriorOfferings(opts) {
 
     const offerings = {}
     for (const year of years) {
-        if (cached[year]?.length) {
-            offerings[year] = cached[year]
-            console.log(`${academicYearLabel(year)}: ${cached[year].length} scheduled courses (cached)`)
+        const known = new Set(cached[year] || [])
+        if (known.size && !opts.rebuildPrior) {
+            offerings[year] = [...known].sort()
+            console.log(`${academicYearLabel(year)}: ${known.size} scheduled courses (cached)`)
             continue
         }
-        console.log(`Fetching ${academicYearLabel(year)} catalog...`)
-        const { courses } = await fetchCatalog(year)
+        console.log(`Fetching ${academicYearLabel(year)} catalog from Navigator...`)
+        const client = createNavigatorClient()
+        const yearLabel = academicYearLabel(year)
+        const terms = termsForAcademicYear(year)
+        const { classes } = await fetchYearClasses(client, {
+            yearLabel,
+            terms,
+            warn: message => console.warn(`  \u26a0 ${message}`),
+            onProgress: ({ term, done, total, collected }) => {
+                process.stdout.write(`\r  ${term}: ${done}/${total} depts, ${collected} classes`)
+                if (done === total) process.stdout.write('\n')
+            },
+        })
+
         // Cross-list siblings count as offered: which sibling carries the
         // sections moves between years (CS 224U was scheduled as SYMSYS 195U),
-        // and a course taught under any of its codes was taught.
-        const ids = new Set()
-        for (const course of courses) {
-            ids.add(course.course_id)
-            for (const sibling of extractCrossListedIds(course.title)) ids.add(sibling)
+        // and a course taught under any of its codes was taught. PeopleSoft's
+        // crseId groups those codes exactly, where ExploreCourses only hinted
+        // at them inside course titles.
+        const ids = new Set(known)
+        const before = ids.size
+        for (const group of crossListsByCrseId(classes).values()) {
+            for (const id of group) ids.add(id)
         }
         offerings[year] = [...ids].sort()
-        console.log(`${academicYearLabel(year)}: ${offerings[year].length} scheduled courses`)
+        console.log(
+            `${academicYearLabel(year)}: ${offerings[year].length} scheduled courses`
+            + (before ? ` (${before} already recorded, ${offerings[year].length - before} added)` : '')
+        )
     }
 
     if (opts.dryRun) {
         console.log('Dry run - not writing prior-offerings.json')
+        console.log(JSON.stringify(Object.fromEntries(Object.entries(offerings).map(([y, ids]) => [y, ids.length])), null, 2))
         return
     }
     writeFileSync(PRIOR_OFFERINGS_PATH, `${JSON.stringify(offerings)}\n`)
@@ -684,231 +737,188 @@ async function clearStaleCourses(supabase, courseIds) {
     }
 }
 
-// ── Navigator gap-fill (PeopleSoft via Algolia) ─────────────────────────────
-
-const NAV_ALGOLIA_APP = 'RXGHAPCKOF'
-const NAV_ATTRS = [
-    'subject', 'catalogNbr', 'courseCode', 'courseTitle', 'courseDescr', 'termOffered',
-    'classNbr', 'classSection', 'componentPrimary', 'format', 'units', 'gradingBasisDescr',
-    'enrlCap', 'enrlTot', 'waitCap', 'waitTot', 'enrlStatDescr', 'classStatDescr',
-    'instructionModeDescr', 'meetings', 'geRequirements', 'primaryComponentFlag', 'sortPrefix',
-].join(',')
-
-async function getNavigatorAlgoliaKey() {
-    const res = await fetch('https://navigator.stanford.edu/api/generate-key', {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            origin: 'https://navigator.stanford.edu',
-            referer: 'https://navigator.stanford.edu/classes',
-        },
-        body: '{}',
-    })
-    if (!res.ok) throw new Error(`Navigator generate-key failed: HTTP ${res.status}`)
-    const data = await res.json()
-    if (!data.securedApiKey) throw new Error('Navigator generate-key returned no securedApiKey')
-    return data.securedApiKey
-}
-
-async function algoliaMulti(key, requests) {
-    for (let attempt = 1; attempt <= 6; attempt++) {
-        const res = await fetch(`https://${NAV_ALGOLIA_APP}-dsn.algolia.net/1/indexes/*/queries`, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json',
-                'x-algolia-application-id': NAV_ALGOLIA_APP,
-                'x-algolia-api-key': key,
-            },
-            body: JSON.stringify({ requests }),
-        })
-        if (res.ok) return res.json()
-        const text = await res.text()
-        if (attempt === 6 || (res.status !== 429 && res.status < 500)) {
-            throw new Error(`Algolia ${res.status}: ${text.slice(0, 200)}`)
-        }
-        await sleep(400 * attempt)
-    }
-    throw new Error('Algolia multi-query failed')
-}
-
-function navInstructors(meeting) {
-    return (meeting?.instructors || []).map(i => {
-        if (i.lastName && i.firstName) return `${i.lastName}, ${i.firstName}`
-        return i.displayName || ''
-    }).filter(Boolean)
-}
-
-function navHitToSection(hit) {
-    const units = Array.isArray(hit.units) ? hit.units.filter(u => u != null && u !== '').join('-') : ''
-    return {
-        term: hit.termOffered || '',
-        classId: parseInt(hit.classNbr, 10) || 0,
-        sectionNumber: String(hit.classSection || ''),
-        component: hit.componentPrimary || '',
-        units,
-        grading: hit.gradingBasisDescr || '',
-        classLevel: '',
-        instructionalMode: hit.instructionModeDescr || '',
-        status: hit.enrlStatDescr || hit.classStatDescr || '',
-        enrolled: parseInt(hit.enrlTot, 10) || 0,
-        capacity: parseInt(hit.enrlCap, 10) || 0,
-        waitlist: parseInt(hit.waitTot, 10) || 0,
-        waitlistMax: parseInt(hit.waitCap, 10) || 0,
-        openSeats: Math.max(0, (parseInt(hit.enrlCap, 10) || 0) - (parseInt(hit.enrlTot, 10) || 0)),
-        startDate: '',
-        endDate: '',
-        meetings: (hit.meetings || []).map(m => ({
-            days: (m.daysOfWeekList || []).join(', ') || m.daysOfWeek || '',
-            time: [m.startTime, m.endTime].filter(Boolean).join(' – '),
-            location: [m.facilityDescr, m.room].filter(Boolean).join(' ') || '',
-            instructors: navInstructors(m),
-        })),
-        gers: Array.isArray(hit.geRequirements) ? hit.geRequirements : [],
-    }
-}
-
-function navHitsToCourse(hits) {
-    if (!hits.length) return null
-    const first = hits[0]
-    const subject = String(first.subject || '').replace(/\s+/g, '')
-    const code = String(first.catalogNbr || '').replace(/\s+/g, '')
-    if (!subject || !code) return null
-
-    const sections = []
-    const seen = new Set()
-    for (const hit of hits) {
-        const section = navHitToSection(hit)
-        const key = section.classId || `${section.term}:${section.sectionNumber}:${section.component}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        sections.push(section)
-    }
-    if (!sections.length) return null
-
-    const instructors = Array.from(new Set(
-        sections.flatMap(s => s.meetings.flatMap(m => m.instructors))
-    ))
-    const unitSet = [...new Set(sections.map(s => String(s.units || '')).filter(Boolean))]
-    const units = unitSet[0] || ''
-
-    return {
-        course_id: `${subject}${code}`.toUpperCase(),
-        subject,
-        code,
-        title: first.courseTitle || '',
-        description: first.courseDescr || '',
-        units,
-        grading: first.gradingBasisDescr || sections[0]?.grading || '',
-        instructors,
-        sections,
-        terms: sortTerms(Array.from(new Set(sections.map(s => s.term).filter(Boolean)))),
-    }
-}
-
-async function fetchSubjectTermHits(key, subject, term, yearLabel, numericFilters = null) {
-    const params = new URLSearchParams({
-        query: `"${subject} "`,
-        filters: `acadYearLabel:"${yearLabel}" AND termOffered:"${term}"`,
-        hitsPerPage: '1000',
-        attributesToRetrieve: NAV_ATTRS,
-    })
-    if (numericFilters) params.set('numericFilters', numericFilters)
-    const data = await algoliaMulti(key, [{ indexName: 'classes', params: params.toString() }])
-    const res = data.results[0]
-    const hits = (res.hits || []).filter(h => String(h.subject || '').toUpperCase() === subject.toUpperCase())
-    return { nbHits: res.nbHits || 0, hits }
-}
-
-async function fetchSubjectTermAllHits(key, subject, term, yearLabel) {
-    const first = await fetchSubjectTermHits(key, subject, term, yearLabel)
-    if (first.nbHits <= 1000) return first.hits
-
-    // Secured key caps at 1000 hits/query — split on sortPrefix when a subject overflows.
-    const thresholds = [100, 150, 200, 250, 300, 400, 500, 600, 800, 1000]
-    let splitAt = 200
-    for (const t of thresholds) {
-        const lo = await fetchSubjectTermHits(key, subject, term, yearLabel, `sortPrefix<${t}`)
-        const hi = await fetchSubjectTermHits(key, subject, term, yearLabel, `sortPrefix>=${t}`)
-        if (lo.nbHits <= 1000 && hi.nbHits <= 1000) {
-            splitAt = t
-            const seen = new Set()
-            const out = []
-            for (const h of [...lo.hits, ...hi.hits]) {
-                const k = `${h.termOffered}|${h.classNbr}`
-                if (seen.has(k)) continue
-                seen.add(k)
-                out.push(h)
-            }
-            return out
-        }
-    }
-    console.warn(`  ⚠ Navigator overflow for ${subject} ${term} (nbHits=${first.nbHits}); using first 1000 only`)
-    return first.hits
-}
+// ── Navigator catalog (PeopleSoft via Algolia) ──────────────────────────────
 
 /**
- * Pull Navigate Classes (Algolia) for the academic year and return Root-shaped
- * courses. Used to fill holes ExploreCourses never publishes (esp. Med/Law/GSB).
+ * The whole scheduled catalog for an academic year, straight from Navigator.
+ * ~420 Algolia queries plus one detail call per multi-component class, which is
+ * where discussions and labs come from — the index itself holds only primary
+ * classes.
  */
-async function fetchNavigatorCourses(academicYear, subjects) {
+async function fetchNavigatorCatalog(academicYear) {
     const yearLabel = academicYearLabel(academicYear)
     const terms = termsForAcademicYear(academicYear)
-    let key = await getNavigatorAlgoliaKey()
-    const keyRefreshEvery = 80
-    let queries = 0
+    const client = createNavigatorClient()
+    const warn = message => console.warn(`  \u26a0 ${message}`)
 
-    const byCourse = new Map()
-    const jobs = []
-    for (const subject of subjects) {
-        for (const term of terms) jobs.push({ subject, term })
-    }
+    const { classes, expected } = await fetchYearClasses(client, {
+        yearLabel,
+        terms,
+        warn,
+        onProgress: ({ term, done, total, collected }) => {
+            process.stdout.write(`\rNavigator ${term}: ${done}/${total} depts, ${collected} classes`)
+            if (done === total) process.stdout.write('\n')
+        },
+    })
+    console.log(`Navigator: ${classes.length} primary classes (facet count ${expected}), ${client.queryCount} queries`)
 
-    for (let i = 0; i < jobs.length; i++) {
-        if (queries > 0 && queries % keyRefreshEvery === 0) {
-            key = await getNavigatorAlgoliaKey()
-        }
-        const { subject, term } = jobs[i]
-        const hits = await fetchSubjectTermAllHits(key, subject, term, yearLabel)
-        queries++
-        for (const hit of hits) {
-            const id = `${String(hit.subject || '').replace(/\s+/g, '')}${String(hit.catalogNbr || '').replace(/\s+/g, '')}`.toUpperCase()
-            if (!id) continue
-            if (!byCourse.has(id)) byCourse.set(id, [])
-            byCourse.get(id).push(hit)
-        }
-        if ((i + 1) % 25 === 0 || i === jobs.length - 1) {
-            process.stdout.write(`\rNavigator pull ${i + 1}/${jobs.length} jobs, ${byCourse.size} courses`)
-        }
-    }
-    process.stdout.write('\n')
+    const { relatedByClass, targets } = await fetchAllRelatedClasses(classes, {
+        warn,
+        onProgress: ({ done, total }) => {
+            process.stdout.write(`\rNavigator related sections: ${done}/${total} classes`)
+            if (done === total) process.stdout.write('\n')
+        },
+    })
+    const relatedCount = [...relatedByClass.values()].reduce((n, list) => n + list.length, 0)
+    console.log(`Navigator: ${relatedCount} non-primary sections from ${targets} multi-component classes`)
 
-    const courses = []
-    for (const hits of byCourse.values()) {
-        const course = navHitsToCourse(hits)
-        if (course) courses.push(course)
+    const courses = buildCourses(classes, relatedByClass, {
+        instructorOverrides: INSTRUCTOR_OVERRIDES,
+        sortTerms,
+    })
+    const filled = await backfillMissingGrading(courses, classes, { warn })
+    if (filled) console.log(`Navigator: filled grading for ${filled} courses from the class detail API`)
+    if (courses.length < 5000) {
+        throw new Error(`Navigator validation failed: found only ${courses.length} courses; no database writes made`)
     }
-    return courses
+    return { courses, classes, crossLists: crossListsByCrseId(classes) }
+}
+
+/** One course, straight from Navigator — the --course path. */
+async function fetchNavigatorCourse(subject, code, academicYear) {
+    const client = createNavigatorClient()
+    const yearLabel = academicYearLabel(academicYear)
+    const target = `${subject}${code}`.replace(/\s+/g, '').toUpperCase()
+    const res = await client.search({
+        query: `${subject} ${code}`,
+        filters: `acadYearLabel:"${yearLabel}"`,
+        restrictSearchableAttributes: ['courseCode'],
+        hitsPerPage: 200,
+    })
+    const hits = (res.hits || []).filter(hit =>
+        `${hit.subject}${hit.catalogNbr}`.replace(/\s+/g, '').toUpperCase() === target
+    )
+    if (!hits.length) return null
+    const { relatedByClass } = await fetchAllRelatedClasses(hits)
+    const [course] = buildCourses(hits, relatedByClass, { instructorOverrides: INSTRUCTOR_OVERRIDES, sortTerms })
+    return course || null
 }
 
 /**
- * Keep Navigator rows that ExploreCourses missed entirely, or only as empty stubs.
- * Does not overwrite a healthy EC course that already has sections.
+ * Diff Navigator against ExploreCourses for one year, without writing anything.
+ * The point is the two gap lists: EC still publishes a few dozen listings
+ * Navigator has no class for, and Navigator schedules courses EC never lists.
  */
-function pickNavigatorGaps(existingById, navCourses) {
-    const gaps = []
-    for (const course of navCourses) {
-        const existing = existingById.get(course.course_id)
-        if (!existing) {
-            gaps.push(course)
+async function compareSources(opts) {
+    const { courses: navCourses } = await fetchNavigatorCatalog(opts.academicYear)
+    const { courses: ecCourses } = await fetchCatalog(opts.academicYear)
+
+    const navById = new Map(navCourses.map(c => [c.course_id, c]))
+    const ecById = new Map(ecCourses.map(c => [c.course_id, c]))
+    const navOnly = navCourses.filter(c => !ecById.has(c.course_id)).map(c => c.course_id).sort()
+    const ecOnly = ecCourses.filter(c => !navById.has(c.course_id)).map(c => c.course_id).sort()
+
+    const sectionDiffs = []
+    for (const [id, nav] of navById) {
+        const ec = ecById.get(id)
+        if (!ec) continue
+        const navSections = new Set(nav.sections.map(s => s.classId))
+        const ecSections = new Set(ec.sections.map(s => s.classId))
+        const missing = [...ecSections].filter(x => !navSections.has(x)).length
+        const extra = [...navSections].filter(x => !ecSections.has(x)).length
+        if (missing || extra) sectionDiffs.push({ course_id: id, navOnlySections: extra, ecOnlySections: missing })
+    }
+    sectionDiffs.sort((a, b) => (b.ecOnlySections + b.navOnlySections) - (a.ecOnlySections + a.navOnlySections))
+
+    console.log(JSON.stringify({
+        academicYear: opts.academicYear,
+        navigatorCourses: navCourses.length,
+        exploreCoursesCourses: ecCourses.length,
+        navigatorOnly: navOnly.length,
+        exploreCoursesOnly: ecOnly.length,
+        coursesWithSectionDiffs: sectionDiffs.length,
+        navigatorOnlyIds: navOnly,
+        exploreCoursesOnlyIds: ecOnly,
+        worstSectionDiffs: sectionDiffs.slice(0, 25),
+    }, null, 2))
+}
+
+/** A meeting the calendar can place: it names at least one weekday. */
+function hasPlaceableMeeting(section) {
+    return (section.meetings || []).some(meeting => /mon|tue|wed|thu|fri/i.test(meeting.days || ''))
+}
+
+/**
+ * Merge whatever ExploreCourses has that Navigator does not: whole courses,
+ * individual classes, and meeting patterns.
+ *
+ * PeopleSoft withholds a scattering of classes from Navigator (CS 347's Spring
+ * lecture and its nine discussions, for one) and publishes 38 more with no
+ * meeting pattern at all even though ExploreCourses prints days and times for
+ * them, so course-level merging alone would not close the gap.
+ */
+function mergeExploreCoursesGaps(navCourses, ecCourses) {
+    const merged = new Map(navCourses.map(course => [course.course_id, course]))
+    let addedCourses = 0
+    let addedSections = 0
+    let addedMeetings = 0
+    let addedGers = 0
+    let addedCrossLists = 0
+
+    for (const ecCourse of ecCourses) {
+        const nav = merged.get(ecCourse.course_id)
+        if (!nav || (nav.terms || []).length === 0) {
+            merged.set(ecCourse.course_id, ecCourse)
+            addedCourses++
             continue
         }
-        const existingTerms = existing.terms || []
-        // Stale / cleared rows still sit in Supabase with empty terms.
-        if (existingTerms.length === 0 && course.sections.length > 0) {
-            gaps.push(course)
+
+        // ExploreCourses names cross-list siblings PeopleSoft does not group.
+        // Keeping them matters: isNew is judged across the whole parenthetical.
+        const mergedTitle = mergeCrossListTitle(nav.title, ecCourse.title)
+        if (mergedTitle !== nav.title) {
+            nav.title = mergedTitle
+            addedCrossLists++
         }
+
+        const byClassId = new Map(nav.sections.map(section => [section.classId, section]))
+        const extra = []
+        for (const ecSection of ecCourse.sections) {
+            if (!ecSection.classId) continue
+            const navSection = byClassId.get(ecSection.classId)
+            if (!navSection) {
+                extra.push(ecSection)
+                continue
+            }
+            // Navigator wins on everything it knows; it only borrows what it
+            // has none of. Meeting patterns are missing on 38 courses, and the
+            // "Language" requirement on 67 language courses — PeopleSoft simply
+            // does not carry that attribute, where ExploreCourses does.
+            if (!hasPlaceableMeeting(navSection) && hasPlaceableMeeting(ecSection)) {
+                navSection.meetings = ecSection.meetings
+                addedMeetings++
+            }
+            if (!(navSection.gers || []).length && (ecSection.gers || []).length) {
+                navSection.gers = ecSection.gers
+                addedGers++
+            }
+        }
+        if (!extra.length) continue
+
+        const sections = [...nav.sections, ...extra]
+        merged.set(ecCourse.course_id, {
+            ...nav,
+            sections,
+            terms: sortTerms(Array.from(new Set(sections.map(section => section.term).filter(Boolean)))),
+            instructors: Array.from(new Set([
+                ...nav.instructors,
+                ...extra.flatMap(section => section.meetings.flatMap(meeting => meeting.instructors)),
+            ])),
+        })
+        addedSections += extra.length
     }
-    return gaps
+
+    return { courses: [...merged.values()], addedCourses, addedSections, addedMeetings, addedGers, addedCrossLists }
 }
 
 async function loadCourseTermsMap(supabase) {
@@ -947,7 +957,9 @@ async function main() {
         const normalized = opts.course.replace(/\s+/g, '')
         const subject = normalized.match(/^[A-Z&]+/)?.[0] || ''
         const code = normalized.slice(subject.length)
-        const course = await fetchSections(subject, code, opts.academicYear)
+        const course = opts.withExploreCourses
+            ? await fetchSections(subject, code, opts.academicYear)
+            : await fetchNavigatorCourse(subject, code, opts.academicYear)
         if (!course) throw new Error(`Course ${opts.course} not found for ${opts.academicYear}`)
         console.log(JSON.stringify(course, null, opts.dryRun ? 2 : 0))
         if (!opts.dryRun) {
@@ -961,46 +973,33 @@ async function main() {
         return
     }
 
-    if (opts.navGaps) {
-        console.log(`Navigator gap-fill for ${opts.academicYear}...`)
-        const subjects = await listBrowseSubjects(opts.academicYear)
-        console.log(`Subjects to query: ${subjects.length}`)
-        const navCourses = await fetchNavigatorCourses(opts.academicYear, subjects)
-        const existingById = await loadCourseTermsMap(supabase)
-        const gaps = pickNavigatorGaps(existingById, navCourses)
-        console.log(JSON.stringify({
-            academicYear: opts.academicYear,
-            navigatorCourses: navCourses.length,
-            gaps: gaps.length,
-            sampleGapIds: gaps.slice(0, 30).map(c => c.course_id),
-            dryRun: opts.dryRun,
-        }, null, 2))
-        if (opts.dryRun) return
-        if (gaps.length) await upsertCatalog(supabase, gaps)
-        console.log(`Done. Upserted ${gaps.length} Navigator gap courses.`)
+    if (opts.compareSources) {
+        await compareSources(opts)
         return
     }
 
-    console.log(`Fetching Stanford catalog for ${opts.academicYear}...`)
-    const { departments, courses: ecCourses } = await fetchCatalog(opts.academicYear)
+    console.log(`Fetching Stanford catalog for ${opts.academicYear} from Navigator...`)
+    const { courses: navCourses } = await fetchNavigatorCatalog(opts.academicYear)
+    let courses = navCourses
+    let departmentCount = null
 
-    console.log('Filling ExploreCourses holes from Navigator...')
-    const navSubjects = Array.from(new Set([...departments, ...ORPHAN_SUBJECTS])).sort()
-    let courses = ecCourses
-    try {
-        const navCourses = await fetchNavigatorCourses(opts.academicYear, navSubjects)
-        const ecById = new Map(ecCourses.map(c => [c.course_id, c]))
-        const gaps = pickNavigatorGaps(ecById, navCourses)
-        if (gaps.length) {
-            const merged = new Map(ecById)
-            for (const gap of gaps) merged.set(gap.course_id, gap)
-            courses = Array.from(merged.values())
-            console.log(`Merged ${gaps.length} Navigator-only courses into catalog`)
-        } else {
-            console.log('No Navigator gaps to merge')
+    if (opts.withExploreCourses) {
+        console.log('Filling Navigator holes from ExploreCourses...')
+        try {
+            const { departments, courses: ecCourses } = await fetchCatalog(opts.academicYear)
+            departmentCount = departments.length
+            const gaps = mergeExploreCoursesGaps(navCourses, ecCourses)
+            courses = gaps.courses
+            console.log(`Merged ${gaps.addedCourses} ExploreCourses-only courses, ${gaps.addedSections} sections, ${gaps.addedMeetings} meeting patterns, ${gaps.addedGers} GER sets and ${gaps.addedCrossLists} cross-list titles`)
+        } catch (err) {
+            console.warn(`  ⚠ ExploreCourses gap-fill skipped: ${err.message}`)
         }
-    } catch (err) {
-        console.warn(`  ⚠ Navigator gap-fill skipped: ${err.message}`)
+    }
+
+    if (opts.out) {
+        writeFileSync(opts.out, JSON.stringify(courses))
+        console.log(`Wrote ${courses.length} courses to ${opts.out}; no database writes made.`)
+        return
     }
 
     console.log('Loading current Supabase course IDs...')
@@ -1015,7 +1014,8 @@ async function main() {
 
     console.log(JSON.stringify({
         academicYear: opts.academicYear,
-        departments: departments.length,
+        source: opts.withExploreCourses ? 'navigator+explorecourses' : 'navigator',
+        departments: departmentCount,
         courses: courses.length,
         scheduled,
         newCourses: newCourses.length,

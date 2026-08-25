@@ -10,9 +10,44 @@ import {
 import { useCartStore } from './cart-store'
 import { useEvaluationStore } from './evaluation-store'
 import { track } from './analytics'
-import { showAuthError, showAuthLoading, dismissAuthLoading } from './auth-errors'
+import {
+  showAuthError,
+  showAuthLoading,
+  dismissAuthLoading,
+  showAuthRedirectStalled,
+} from './auth-errors'
 
 export type SignInSource = 'hero' | 'header' | 'eval_gate' | 'syllabus_gate' | 'nudge'
+
+/** Delay before the "Redirecting…" toast so a fast hop doesn't flash it. */
+const SIGN_IN_TOAST_DELAY_MS = 150
+
+/**
+ * How long to wait for the browser to actually leave for Google. The whole chain
+ * (Supabase `/authorize` → Google) has to commit a new document before `pagehide`
+ * fires. Measured worst honest case was 8.1s at 2.5s RTT / 120kbps — worse than any
+ * standard "slow 3G" preset — so this leaves real headroom. Firing early is cheap
+ * anyway: it does not cancel the pending navigation, so a redirect that lands late
+ * still works and takes the toast with it.
+ */
+const REDIRECT_WATCHDOG_MS = 15000
+
+// Module-level so the pageshow/pagehide/visibility handlers in initialize() can
+// cancel timers started by signInWithGoogle().
+let signInToastTimer: number | null = null
+let redirectWatchdogTimer: number | null = null
+
+function clearSignInTimers() {
+  if (typeof window === 'undefined') return
+  if (signInToastTimer !== null) {
+    window.clearTimeout(signInToastTimer)
+    signInToastTimer = null
+  }
+  if (redirectWatchdogTimer !== null) {
+    window.clearTimeout(redirectWatchdogTimer)
+    redirectWatchdogTimer = null
+  }
+}
 
 interface AuthState {
   user: User | null
@@ -81,15 +116,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Back from Google/Stanford (bfcache or full reload): clear stuck "Redirecting…"
     // UI so login buttons aren't disabled forever.
     const clearSigningInUi = () => {
+      clearSignInTimers()
       dismissAuthLoading()
       if (get().isSigningIn) set({ isSigningIn: false })
     }
     const handlePageShow = () => clearSigningInUi()
+    // The navigation committed (or the page entered bfcache). Drop the pending
+    // timers: a frozen toast timer would otherwise resume on a bfcache restore and
+    // show "Redirecting…" *after* pageshow already cleared it.
+    const handlePageHide = () => clearSignInTimers()
+    // Came back to the tab/app but we're still on this page, so the redirect never
+    // took. pageshow doesn't fire for a plain tab or app switch.
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') clearSigningInUi()
+    }
     window.addEventListener('pageshow', handlePageShow)
+    window.addEventListener('pagehide', handlePageHide)
+    document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
       subscription.unsubscribe()
       window.removeEventListener('pageshow', handlePageShow)
+      window.removeEventListener('pagehide', handlePageHide)
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
   },
 
@@ -103,8 +152,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     set({ isSigningIn: true })
+    clearSignInTimers()
     // Delay toast slightly so a fast navigate doesn't flash "Redirecting…".
-    const toastTimer = window.setTimeout(() => showAuthLoading(), 150)
+    signInToastTimer = window.setTimeout(() => {
+      signInToastTimer = null
+      showAuthLoading()
+    }, SIGN_IN_TOAST_DELAY_MS)
+
+    // Armed before the await, so it covers both a signInWithOAuth() call that never
+    // settles and a redirect the browser never completes. Every path that resolves
+    // the sign-in either navigates away or calls clearSignInTimers().
+    redirectWatchdogTimer = window.setTimeout(() => {
+      redirectWatchdogTimer = null
+      if (!get().isSigningIn) return
+      dismissAuthLoading()
+      set({ isSigningIn: false })
+      showAuthRedirectStalled(() => {
+        void get().signInWithGoogle(options)
+      })
+    }, REDIRECT_WATCHDOG_MS)
 
     // Landing `/` would bounce `/` → middleware → `/browse` after login; go straight there.
     let next = returnPath ?? `${window.location.pathname}${window.location.search}`
@@ -127,7 +193,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (error) {
         console.error('OAuth sign-in failed:', error)
-        window.clearTimeout(toastTimer)
+        clearSignInTimers()
         dismissAuthLoading()
         set({ isSigningIn: false })
         const isLocalhost = window.location.hostname === 'localhost'
@@ -139,17 +205,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (data?.url) {
+        // Leave the watchdog armed: if the browser never actually leaves — a stalled
+        // request to Supabase or Google, a dropped connection, a refused navigation —
+        // it is the only thing that clears the spinner and the loading toast.
         window.location.replace(data.url)
         return
       }
 
-      window.clearTimeout(toastTimer)
+      clearSignInTimers()
       dismissAuthLoading()
       set({ isSigningIn: false })
       showAuthError('oauth_failed', 'No redirect URL returned from Supabase.')
     } catch (err) {
       console.error('OAuth sign-in failed:', err)
-      window.clearTimeout(toastTimer)
+      clearSignInTimers()
       dismissAuthLoading()
       set({ isSigningIn: false })
       showAuthError('oauth_failed')

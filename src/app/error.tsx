@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { SiteHeader } from '@/components/site-header';
 import { AlertCircle, RefreshCcw } from 'lucide-react';
+import { track } from '@/lib/analytics';
+import { crashProps } from '@/lib/crash-report';
 
 export default function ErrorBoundary({
     error,
@@ -13,8 +15,9 @@ export default function ErrorBoundary({
     reset: () => void;
 }) {
     useEffect(() => {
-        // Optionally log the error to an error reporting service
         console.error('Unhandled application error:', error);
+        // Record it too: a crash on someone else's phone is otherwise invisible.
+        track('app_crashed', crashProps(error));
     }, [error]);
 
     return (

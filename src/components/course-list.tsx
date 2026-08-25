@@ -19,10 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useEnsureCatalog } from '@/hooks/use-catalog';
 const SCROLL_THRESHOLD = 200;
 const SCROLL_STORAGE_KEY = 'course-list-scroll';
 
 export function CourseList() {
+    useEnsureCatalog();
   const { courses, isLoading, getSortDisplayValue, getRatingForCourse, sortBy, setSortBy, sortOrder, setSortOrder } = useFilteredCourses();
   const catalogError = useCourseStore(s => s.catalogError);
   const fetchCourses = useCourseStore(s => s.fetchCourses);

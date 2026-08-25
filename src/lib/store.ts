@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Course } from '@/types/course'
+import { fetchCatalogJson } from './catalog-fetch'
 import { rowToCourse } from '@/lib/course-mapper'
 
 type CourseStore = {
@@ -20,7 +21,12 @@ type CourseStore = {
 // and survives 24h, so a new field (isNew, added for the "new courses only"
 // filter) reaches nobody with a warm cache until this number changes — that
 // shipped once as a filter that matched zero courses for every returning visitor.
-export const CACHE_VERSION = 13
+//
+// Bump it for a change to the cached *values* too, not just the field list: v14
+// is the ExploreCourses -> Navigator switch, which reshaped every meeting day
+// ("\n\tMon\n\tWed" -> "Monday, Wednesday") and time ("1:30:00 PM-2:50:00 PM"
+// -> "1:30 PM - 2:50 PM"), and is what makes weekend sections visible at all.
+export const CACHE_VERSION = 14
 const CACHE_TTL = 1000 * 60 * 30 // 30 minutes
 const STALE_MAX_AGE = 1000 * 60 * 60 * 24 // 24 hours
 const IDB_DB = 'root-cache'
@@ -161,9 +167,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
       // Skip when stale full data is already on screen, so a background revalidate
       // doesn't momentarily downgrade visible courses (sections/descriptions) to light.
       if (!entry) {
-        const lightRes = await fetch('/api/courses')
-        if (!lightRes.ok) throw new Error(`API error: ${lightRes.status}`)
-        const lightRows: any[] = await lightRes.json()
+        const lightRows: any[] = await fetchCatalogJson('/api/courses')
         const lightCourses = lightRows.map(rowToCourse)
 
         set({
@@ -177,9 +181,7 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
       }
 
       // ── Phase 2: full data with sections + description — enrich in background ──
-      const fullRes = await fetch('/api/courses?full=1')
-      if (!fullRes.ok) throw new Error(`API error: ${fullRes.status}`)
-      const fullRows: any[] = await fullRes.json()
+      const fullRows: any[] = await fetchCatalogJson('/api/courses?full=1')
       const fullCourses = fullRows.map(rowToCourse)
 
       await writeCache(fullCourses)
@@ -287,6 +289,6 @@ export const useCourseStore = create<CourseStore>((set, get) => ({
   },
 }))
 
-if (typeof window !== 'undefined') {
-  useCourseStore.getState().fetchCourses()
-}
+// Deliberately NOT fetched at import time: the root layout imports this store,
+// so an import-time fetch downloaded the whole catalog on every page including
+// the landing page. Screens that show courses call `useEnsureCatalog()`.

@@ -16,6 +16,7 @@ import {
 } from '@/components/course-evaluations'
 import type { InstructorEvaluation } from '@/app/api/instructors/[slug]/route'
 import type { DumpInstructorCourse } from '@/lib/catalog-dump'
+import { useEnsureCatalog } from '@/hooks/use-catalog';
 
 interface InstructorDetailContentProps {
   slug: string
@@ -63,6 +64,7 @@ function useInstructorEvaluations(slug: string, enabled: boolean) {
 }
 
 export function InstructorDetailContent({ slug, name, upcoming }: InstructorDetailContentProps) {
+    useEnsureCatalog();
   const user = useAuthStore(s => s.user)
   const authLoading = useAuthStore(s => s.isLoading)
   const canViewEvals = Boolean(user) || isDevEvalsUnlocked()

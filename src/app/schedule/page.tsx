@@ -21,6 +21,7 @@ import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { SchedulePageShell } from '@/components/schedule-page-shell';
 import { ScheduleTimesNotice } from '@/components/schedule-times-notice';
+import { ScheduleSourceNotice } from '@/components/schedule-source-notice';
 import { parseMeetingTimes, timeToMinutes, parseDays } from '@/lib/schedule-utils';
 import { getDefaultTerm, getApproxTermStart } from '@/lib/terms';
 import { useAvailableTerms } from '@/hooks/use-selected-terms';
@@ -33,6 +34,8 @@ import {
 import { parseICS } from '@/lib/ics-parser';
 import { track } from '@/lib/analytics';
 import { toast } from 'sonner';
+import { useEnsureCatalog } from '@/hooks/use-catalog';
+import { compareTerms } from '@/lib/terms'
 
 const IGNORED_OVERLOADS_KEY = 'stanford-root:ignored-overloads'
 
@@ -86,27 +89,48 @@ function ScheduleContent() {
     setCurrentTerm(getDefaultTerm(availableTerms))
   }, [availableTerms])
 
-  const nextTerm = () => {
+  // Terms the arrows may reach: what the catalog offers, plus whatever term the
+  // user's own schedule sits in so a saved term is never unreachable. Without
+  // this the arrows stepped by pure date arithmetic and walked forever — seven
+  // clicks from Autumn 2026 reached Summer 2028, an empty grid, with the arrow
+  // still enabled. Each of those clicks only changed the term label, which is
+  // why they showed up as dead clicks on /schedule.
+  const navTerms = useMemo(() => {
+    const set = new Set<string>(availableTerms)
+    for (const item of items) {
+      if (item.selectedTerm) set.add(item.selectedTerm)
+    }
+    if (currentTerm) set.add(currentTerm)
+    return [...set].sort(compareTerms)
+  }, [availableTerms, items, currentTerm])
+
+  const termIndex = navTerms.indexOf(currentTerm)
+  const canPrevTerm = termIndex > 0
+  const canNextTerm = termIndex >= 0 && termIndex < navTerms.length - 1
+
+  const stepTerm = (delta: 1 | -1) => {
+    const i = navTerms.indexOf(currentTerm)
+    // Catalog not loaded yet: fall back to date arithmetic so the arrows still
+    // work rather than freezing on first paint.
+    if (i === -1 || navTerms.length <= 1) {
+      userPickedTermRef.current = true
+      setCurrentTerm(prev => {
+        const [q, yStr] = prev.split(' ')
+        const year = parseInt(yStr)
+        const qIdx = QUARTERS.indexOf(q)
+        if (delta === 1) return qIdx === 3 ? `Winter ${year + 1}` : `${QUARTERS[qIdx + 1]} ${year}`
+        return qIdx === 0 ? `Autumn ${year - 1}` : `${QUARTERS[qIdx - 1]} ${year}`
+      })
+      return
+    }
+    const target = navTerms[i + delta]
+    if (!target) return
     userPickedTermRef.current = true
-    setCurrentTerm(prev => {
-      const [q, yStr] = prev.split(' ')
-      const year = parseInt(yStr)
-      const qIdx = QUARTERS.indexOf(q)
-      if (qIdx === 3) return `Winter ${year + 1}`
-      return `${QUARTERS[qIdx + 1]} ${year}`
-    })
+    setCurrentTerm(target)
   }
 
-  const prevTerm = () => {
-    userPickedTermRef.current = true
-    setCurrentTerm(prev => {
-      const [q, yStr] = prev.split(' ')
-      const year = parseInt(yStr)
-      const qIdx = QUARTERS.indexOf(q)
-      if (qIdx === 0) return `Autumn ${year - 1}`
-      return `${QUARTERS[qIdx - 1]} ${year}`
-    })
-  }
+  const nextTerm = () => stepTerm(1)
+  const prevTerm = () => stepTerm(-1)
 
   const courseMap = useMemo(() => new Map(courses.map(c => [c.id, c])), [courses])
 
@@ -291,9 +315,11 @@ END:VTIMEZONE
     const termStartDate = getApproxTermStart(currentTerm)
 
     exportEvents.forEach(event => {
-      const dayMap: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5 }
+      // JS getDay() semantics, so Sunday is 0 — hence the explicit undefined
+      // check below. Guarding on falsiness dropped every Sunday meeting.
+      const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
       const targetDay = dayMap[event.day]
-      if (!targetDay) return
+      if (targetDay === undefined) return
 
       const startDate = new Date(termStartDate)
       const currentDay = startDate.getDay()
@@ -444,6 +470,7 @@ END:VEVENT
 
   return (
     <div className="flex flex-col h-screen bg-background">
+      <ScheduleSourceNotice />
       <ScheduleTimesNotice />
       {/* Header */}
       <header className="flex-none h-16 md:h-16 h-auto md:py-0 py-2 border-b bg-card">
@@ -561,6 +588,8 @@ END:VEVENT
             currentTerm={currentTerm}
             onPrevTerm={prevTerm}
             onNextTerm={nextTerm}
+            canPrevTerm={canPrevTerm}
+            canNextTerm={canNextTerm}
             totalUnitsMin={totalUnitsMin}
             totalUnitsMax={totalUnitsMax}
             isOverload={isOverload}
@@ -584,6 +613,7 @@ END:VEVENT
 }
 
 export default function SchedulePage() {
+    useEnsureCatalog();
   return (
     <Suspense fallback={<SchedulePageShell />}>
       <ScheduleContent />

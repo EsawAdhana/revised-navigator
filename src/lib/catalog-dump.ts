@@ -200,3 +200,24 @@ export async function getDepartmentFromDump(subject: string): Promise<DumpDeptCo
     return []
   }
 }
+
+/**
+ * Every course id in the dump, for `generateStaticParams`.
+ *
+ * Without it these pages render per request: the response carried
+ * `cache-control: private, no-cache, no-store` with no `x-nextjs-cache` header
+ * and `x-vercel-cache: MISS` on repeat hits of the same URL, so each view paid a
+ * fresh render — and on a cold instance, a 34MB `full.json` read and parse
+ * (measured 70ms + 124ms locally) before it could answer. Real users saw TTFB
+ * p75 1006ms on `/courses/[code]` and 1720ms on `/instructors/[slug]`.
+ */
+export async function getAllCourseIdsFromDump(): Promise<string[]> {
+  const map = await loadFullById()
+  return [...map.keys()]
+}
+
+/** Every instructor slug in the dump, for `generateStaticParams`. */
+export async function getAllInstructorSlugsFromDump(): Promise<string[]> {
+  const dir = await getInstructorDirectory()
+  return [...dir.bySlug.keys()]
+}

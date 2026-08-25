@@ -3,6 +3,7 @@ import { useCartStore } from './cart-store'
 import { useCourseStore } from './store'
 import { cartHydrated } from './cart-hydration'
 import { track } from './analytics'
+import { useUnresolvedSchedule } from './unresolved-schedule'
 
 // Minimal payload stored server-side — no full Course catalog data
 export type ScheduleItem = {
@@ -22,7 +23,7 @@ function readSectionIds(item: ScheduleItem): number[] | undefined {
 }
 
 function toScheduleItems(): ScheduleItem[] {
-  return useCartStore.getState().items.map(item => ({
+  const items: ScheduleItem[] = useCartStore.getState().items.map(item => ({
     id: item.id,
     selectedTerm: item.selectedTerm,
     selectedSectionIds: item.selectedSectionIds,
@@ -30,6 +31,26 @@ function toScheduleItems(): ScheduleItem[] {
     color: item.color,
     optionalMeetings: item.optionalMeetings,
   }))
+  // Saved entries the catalog cannot resolve are not in the cart, so they would
+  // be dropped from this payload and erased server-side. Carry them through.
+  const inCart = new Set(items.map(i => i.id))
+  for (const unresolved of unresolvedPayload) {
+    if (!inCart.has(unresolved.id)) items.push(unresolved)
+  }
+  return items
+}
+
+/**
+ * The raw saved entries hydration could not match to a catalog course. Kept
+ * verbatim so a course that returns to the catalog rehydrates untouched.
+ */
+let unresolvedPayload: ScheduleItem[] = []
+
+function recordUnresolved(scheduleItems: ScheduleItem[], resolvedIds: Set<string>) {
+  unresolvedPayload = scheduleItems.filter(item => !resolvedIds.has(item.id))
+  useUnresolvedSchedule.getState().set(
+    unresolvedPayload.map(item => ({ id: item.id, selectedTerm: item.selectedTerm }))
+  )
 }
 
 /** Waits for the course catalog to be loaded, then resolves. Resolves after a
@@ -40,6 +61,10 @@ function waitForCourses(timeoutMs = 10000): Promise<void> {
       resolve()
       return
     }
+    // Nothing else may have started the catalog load — a signed-in user sitting
+    // on the landing page has no catalog screen mounted — and sync needs it to
+    // re-attach Course objects to the saved schedule.
+    void useCourseStore.getState().fetchCourses()
     let settled = false
     const finish = () => {
       if (settled) return
@@ -55,7 +80,12 @@ function waitForCourses(timeoutMs = 10000): Promise<void> {
   })
 }
 
-/** Re-attaches full Course objects from catalog. Drops unknown course IDs (logs in dev). */
+/**
+ * Re-attaches full Course objects from catalog. Course IDs the catalog does not
+ * know stay out of the cart — nothing downstream can render a course it has no
+ * data for — but they are recorded so the push payload keeps them and the
+ * schedule page can say what happened to them.
+ */
 function hydrateItems(scheduleItems: ScheduleItem[], logPrefix = '') {
   const courses = useCourseStore.getState().courses
   const courseMap = new Map(courses.map(c => [c.id, c]))
@@ -71,6 +101,7 @@ function hydrateItems(scheduleItems: ScheduleItem[], logPrefix = '') {
       optionalMeetings: item.optionalMeetings,
     }]
   })
+  recordUnresolved(scheduleItems, new Set(result.map(item => item.id)))
   if (process.env.NODE_ENV === 'development' && result.length < scheduleItems.length) {
     const dropped = scheduleItems.filter(s => !courseMap.has(s.id)).map(s => s.id)
     console.warn(

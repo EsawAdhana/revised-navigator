@@ -1,5 +1,6 @@
 import { cache } from 'react'
-import { XMLParser } from 'fast-xml-parser'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
 import { getPublicClient } from '@/lib/supabase-admin'
 import { compareCourseCodes } from '@/lib/utils'
 
@@ -69,29 +70,41 @@ function dedupeRows(rows: any[]): DeptCourse[] {
   return Array.from(byId.values())
 }
 
-/** Current ExploreCourses department codes, sorted A-Z. */
+/**
+ * Department codes with courses in the catalog, sorted A-Z.
+ *
+ * Read from the committed catalog dump the rest of the site serves, so the
+ * department list can never drift from the courses behind it. This used to
+ * fetch the ExploreCourses browse XML on every render; the scraper stopped
+ * using ExploreCourses on 2026-08-25 and this was the last live call to it.
+ */
 export const getDepartments = cache(async (): Promise<{ subject: string }[]> => {
-  const now = new Date()
-  const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1
-  const response = await fetch(
-    `https://explorecourses.stanford.edu/browse?view=xml-20200810&academicYear=${start}${start + 1}`,
-    { next: { revalidate: 86400 } },
-  )
-  if (!response.ok) throw new Error(`ExploreCourses returned ${response.status}`)
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '',
-    isArray: (name) => name === 'school' || name === 'department',
-  })
-  const parsed = parser.parse(await response.text())
-  const subjects = new Set<string>(
-    (parsed.schools?.school || [])
-      .flatMap((school: { department?: { name?: string }[] }) => school.department || [])
-      .map((department: { name?: string }) => department.name)
-      .filter(Boolean),
-  )
+  const subjects = new Set<string>()
+
+  const dump = await readCatalogDump()
+  if (dump) {
+    for (const course of dump) {
+      if (course.subject) subjects.add(course.subject)
+    }
+  } else {
+    for (const row of await fetchPaginated('course_id, subject', (q) => q)) {
+      if (row.subject) subjects.add(row.subject)
+    }
+  }
+
   return Array.from(subjects).sort().map(subject => ({ subject }))
 })
+
+/** The committed light catalog, or null when it is not on disk (dev, cold clone). */
+async function readCatalogDump(): Promise<{ subject?: string }[] | null> {
+  try {
+    const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'light.json'), 'utf8')
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 /** All gradeable courses in one department, sorted by course code. */
 export const getDepartmentCourses = cache(async (subject: string): Promise<DeptCourse[]> => {

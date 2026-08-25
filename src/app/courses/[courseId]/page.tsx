@@ -14,12 +14,22 @@ import { stripSeconds } from '@/lib/schedule-utils';
 import { isWimCourse } from '@/lib/wim-courses';
 import { compareTerms } from '@/lib/terms';
 import { SITE_URL } from '@/lib/site';
-import { getCourseFromDump, getDepartmentFromDump } from '@/lib/catalog-dump';
+import { getAllCourseIdsFromDump, getCourseFromDump, getDepartmentFromDump } from '@/lib/catalog-dump';
 import Link from 'next/link';
 import { CoursePageClient } from './course-page-client';
 
 // Cache the server render (metadata + SSR summary + JSON-LD) for a day.
 export const revalidate = 86400;
+
+/**
+ * Prerender every course page at build time. The catalog is a local JSON file,
+ * so this needs no database, and it is what makes these pages CDN-cacheable
+ * instead of re-rendered per view.
+ */
+export async function generateStaticParams() {
+    const ids = await getAllCourseIdsFromDump();
+    return ids.map(courseId => ({ courseId }));
+}
 
 /** Prefer prebuilt catalog dump — live Supabase section reads hang after the 26-27 refresh. */
 const fetchCourse = cache(async (courseId: string): Promise<Course | null> => {
