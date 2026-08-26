@@ -15,7 +15,7 @@ import { formatInstructorName, instructorSlug } from '@/lib/instructors'
 import { isDevEvalsUnlocked } from '@/lib/dev-flags'
 import { compareTerms } from '@/lib/terms'
 import type { Course, CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
-import { addRatingCounts, pooledMean, rankLabel } from '@/lib/quality-score.mjs'
+import { addRatingCounts, pooledMean, rankShare } from '@/lib/quality-score.mjs'
 
 // --- Color helpers (green=good, yellow/orange=mid, red=bad) ---
 
@@ -33,6 +33,33 @@ function scoreBg(score: number): string {
   if (score >= 3.5) return 'bg-yellow-500/12 border-yellow-500/25'
   if (score >= 3.0) return 'bg-orange-500/12 border-orange-500/25'
   return 'bg-red-500/12 border-red-500/25'
+}
+
+/**
+ * Colour for a percentile, on the same five-step vocabulary as the 1-5 scores. Keyed to
+ * the percentile rather than the score because the percentile is what it sits beside --
+ * a 4.5 that only beats 40% of Stanford should not read as green.
+ */
+function rankColor(pct: number): string {
+  if (pct >= 80) return 'text-emerald-600'
+  if (pct >= 60) return 'text-green-600'
+  if (pct >= 40) return 'text-yellow-600'
+  if (pct >= 20) return 'text-orange-600'
+  return 'text-red-600'
+}
+
+/** "Ranks higher than 71% of courses", with the share sized and coloured to be read first. */
+function RankLine({ percentile, className }: { percentile: number, className?: string }) {
+  const share = rankShare(percentile) as number
+  return (
+    <div className={cn('text-[11px] text-muted-foreground', className)}>
+      Ranks higher than{' '}
+      <span className={cn('text-[15px] font-bold tabular-nums', rankColor(percentile))}>
+        {share}%
+      </span>{' '}
+      of courses
+    </div>
+  )
 }
 
 export function barFill(score: number): string {
@@ -184,12 +211,6 @@ export function ScoreBadge({ score, size = 'md' }: { score: number, size?: 'sm' 
 }
 
 /**
- * Below this many responses, shrinkage moves the rating by enough that the row should
- * say so -- at the corpus weight of ~5 responses, n=20 is still a ~20% pull.
- */
-const SMALL_SAMPLE = 20
-
-/**
  * Overall rating row. Deliberately the same shape as the category headers below it
  * (label / bar / ScoreBadge) so it reads as one more row of the same table rather
  * than a callout -- the rank is the new information, not the styling.
@@ -197,12 +218,10 @@ const SMALL_SAMPLE = 20
  * `score` is courses.quality, which is already shrunk toward the Stanford average by
  * sample size, so the number and the rank always agree.
  */
-export function QualityRank({ score, n, percentile }: {
+export function QualityRank({ score, percentile }: {
   score: number
-  n: number
   percentile?: number | null
 }) {
-  const label = rankLabel(percentile) as string | null
 
   return (
     <div className="px-4 py-3 bg-secondary/5 rounded-lg border border-border/20">
@@ -213,12 +232,7 @@ export function QualityRank({ score, n, percentile }: {
         </div>
         <ScoreBadge score={score} size="sm" />
       </div>
-      <div className="text-[10px] text-muted-foreground mt-1.5 tabular-nums">
-        {label && <>{label} &middot; </>}
-        {n.toLocaleString()} {n === 1 ? 'rating' : 'ratings'}
-        {/* Explains why a handful of glowing reviews below don't add up to a 5 here. */}
-        {n < SMALL_SAMPLE && <> &middot; pulled toward the Stanford average on a small sample</>}
-      </div>
+      {percentile != null && <RankLine percentile={percentile} className="mt-1.5" />}
     </div>
   )
 }
@@ -571,16 +585,15 @@ function AggregatedRatingBreakdown({ questions, aggregateScore }: { questions: E
 }
 
 /** Median score per category with an expandable response breakdown for each. */
-export function EvaluationOverview({ evaluations, quality, qualityN, qualityPct, breakdown }: {
+export function EvaluationOverview({ evaluations, quality, qualityPct, breakdown }: {
   evaluations: CourseEvaluation[]
   /**
-   * courses.quality / quality_n / quality_pct / rating_breakdown -- precomputed over the
-   * course's whole history. Neither the shrinkage prior nor the percentile can be derived
-   * from one course's rows, so callers showing a subset omit these and each row falls back
-   * to the unranked mean of what's on screen rather than mislabelling it.
+   * courses.quality / quality_pct / rating_breakdown -- precomputed over the course's
+   * whole history. Neither the shrinkage prior nor the percentile can be derived from one
+   * course's rows, so callers showing a subset omit these and each row falls back to the
+   * unranked mean of what's on screen rather than mislabelling it.
    */
   quality?: number | null
-  qualityN?: number | null
   qualityPct?: number | null
   breakdown?: Course['ratingBreakdown'] | null
 }) {
@@ -601,9 +614,7 @@ export function EvaluationOverview({ evaluations, quality, qualityN, qualityPct,
 
   return (
     <div className="space-y-4">
-      {quality != null && qualityN != null && (
-        <QualityRank score={quality} n={qualityN} percentile={qualityPct} />
-      )}
+      {quality != null && <QualityRank score={quality} percentile={qualityPct} />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {RATING_CATEGORIES.map(cat => {
@@ -660,10 +671,7 @@ export function EvaluationOverview({ evaluations, quality, qualityN, qualityPct,
               {/* Each category is ranked against its own corpus -- the questions have
                   different response spreads and different averages. */}
               {stat && (
-                <div className="text-[10px] text-muted-foreground -mt-1 tabular-nums">
-                  {rankLabel(stat.pct) as string} &middot; {stat.n.toLocaleString()} {stat.n === 1 ? 'rating' : 'ratings'}
-                  {stat.n < SMALL_SAMPLE && <> &middot; pulled toward the Stanford average on a small sample</>}
-                </div>
+                <RankLine percentile={stat.pct} className="-mt-1" />
               )}
               <AggregatedRatingBreakdown questions={questions} aggregateScore={score} />
             </div>
@@ -716,14 +724,13 @@ interface CourseEvaluationsProps {
    * unresolved by accident and hang the empty state on a spinner.
    */
   isNew: boolean | undefined
-  /** courses.quality / quality_n / quality_pct -- the overall rating row. */
+  /** courses.quality / quality_pct -- the overall rating row. */
   quality?: number | null
-  qualityN?: number | null
   qualityPct?: number | null
   ratingBreakdown?: Course['ratingBreakdown'] | null
 }
 
-export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, quality, qualityN, qualityPct, ratingBreakdown }: CourseEvaluationsProps) {
+export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, quality, qualityPct, ratingBreakdown }: CourseEvaluationsProps) {
   const fetchBulkEvaluations = useEvaluationStore(state => state.fetchBulkEvaluations)
   const getMergedEvaluations = useEvaluationStore(state => state.getMergedEvaluations)
   const loadingCourses = useEvaluationStore(state => state.loadingCourses)
@@ -948,7 +955,6 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, 
             // Computed over the course's whole history, so it would not describe the
             // breakdown beside it once a single term is selected.
             quality={activeTermFilter === 'all' ? quality : null}
-            qualityN={activeTermFilter === 'all' ? qualityN : null}
             qualityPct={activeTermFilter === 'all' ? qualityPct : null}
             breakdown={activeTermFilter === 'all' ? ratingBreakdown : null}
           />

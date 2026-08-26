@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  pooledMean, addRatingCounts, percentileRanks, rankLabel,
+  pooledMean, addRatingCounts, percentileRanks, rankLabel, rankShare,
   estimatePrior, shrinkToPrior, adjustAndRank, headlineSampleSize,
 } from '@/lib/quality-score.mjs'
 
@@ -359,5 +359,25 @@ describe('headlineSampleSize', () => {
   it('does not treat a zero quality count as absent', () => {
     // ?? not ||, so an explicit 0 is honoured rather than silently replaced.
     expect(headlineSampleSize({ quality: { score: 4, n: 0, pct: 1 }, learning: { score: 4, n: 9, pct: 5 } })).toBe(0)
+  })
+})
+
+describe('rankShare', () => {
+  it('returns just the clamped percentage for callers that style it themselves', () => {
+    expect(rankShare(71)).toBe(71)
+    expect(rankShare(100)).toBe(99)
+    expect(rankShare(0)).toBe(1)
+  })
+
+  it('stays in step with rankLabel', () => {
+    for (let pct = 0; pct <= 100; pct++) {
+      expect(rankLabel(pct)).toBe(`Ranks higher than ${rankShare(pct)}% of courses`)
+    }
+  })
+
+  it('returns null for a missing percentile', () => {
+    expect(rankShare(null)).toBeNull()
+    expect(rankShare(undefined)).toBeNull()
+    expect(rankShare(NaN)).toBeNull()
   })
 })
