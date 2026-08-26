@@ -47,10 +47,11 @@ const INSTRUCTOR_OVERRIDES = JSON.parse(
 )
 
 const FULL_COLUMNS =
-  'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, difficulty'
+  'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, quality_pct, quality_n, rating_breakdown, cross_list_with, difficulty'
 const LIGHT_KEYS = [
   'course_id', 'subject', 'code', 'title', 'units',
-  'instructors', 'terms', 'grading', 'hours', 'quality', 'difficulty', 'isNew',
+  'instructors', 'terms', 'grading', 'hours', 'quality', 'quality_pct', 'quality_n',
+  'rating_breakdown', 'cross_list_with', 'difficulty', 'isNew',
 ]
 
 const PRIOR_OFFERINGS_PATH = join(__dirname, 'prior-offerings.json')

@@ -71,136 +71,20 @@ export function normalizeCatalogDescription(description: string | null | undefin
 }
 
 /**
- * Extract alternate course codes from a title's trailing parenthetical, e.g. "(CS 137A, EE 160A)".
- * Returns normalized ids (no space, uppercase) for comparison, or empty array if none.
+ * Cross-list grouping lives in ./cross-list.mjs so the scraper can import the exact same
+ * implementation -- refreshMetrics pools a class's evaluations over its group and the
+ * course page merges the on-screen ones over its group, so the two must never diverge.
+ * Re-exported here because everything already imports these from '@/lib/utils'.
  */
-export function getAlternateCourseCodesFromTitle(title: string): string[] {
-  if (!title || typeof title !== 'string') return []
-  const trimmed = title.trim()
-  const match = trimmed.match(/\s*\(([^)]+)\)\s*$/)
-  if (!match) return []
-  const inner = match[1].trim()
-  const courseCodeList = /^[A-Za-z&]{2,10}\s+\d{1,3}[A-Za-z]?(\s*,\s*[A-Za-z&]{2,10}\s+\d{1,3}[A-Za-z]?)*$/
-  if (!courseCodeList.test(inner)) return []
-  return inner.split(/\s*,\s*/).map(part => part.replace(/\s+/g, '').toUpperCase())
-}
-
-/** Normalize course id for comparison (no spaces, uppercase). */
-export function normalizeCourseId(id: string): string {
-  if (!id || typeof id !== 'string') return ''
-  return id.replace(/\s+/g, '').toUpperCase()
-}
-
-/**
- * Map from normalized member id -> the canonical id of its cross-list class.
- *
- * Titles declare siblings ("Principles of Robot Autonomy I (AA 274A, CS 237A,
- * EE 260A)"), but they declare them pairwise and inconsistently: AA 274A's title
- * may name three siblings while CS 237A's names three different ones. Following
- * those links one hop at a time made a four-code class resolve to three
- * different canonical ids depending on which code you entered from, so the same
- * class showed different pooled evaluations per URL.
- *
- * So group by connected component (union-find) and pick one canonical member —
- * the alphabetically first id that exists in the catalog. Only non-canonical
- * members are keyed, which makes resolution a single hop and idempotent.
- *
- * Cached per `courses` array identity: /browse mounts FilterSidebar and
- * CourseList, which each built their own copy, and getCrossListGroupIds rebuilt
- * one per call — ~6 ms each over 8,648 courses, repeated on every catalog change.
- */
-const primaryMapCache = new WeakMap<object, Map<string, string>>()
-
-export function getCrossListPrimaryMap(courses: { id: string; title: string }[]): Map<string, string> {
-  const cached = primaryMapCache.get(courses)
-  if (cached) return cached
-  const built = buildCrossListPrimaryMap(courses)
-  primaryMapCache.set(courses, built)
-  return built
-}
-
-function buildCrossListPrimaryMap(courses: { id: string; title: string }[]): Map<string, string> {
-  const parent = new Map<string, string>()
-  const find = (x: string): string => {
-    let root = x
-    while (parent.get(root) !== root) root = parent.get(root)!
-    // Path-compress so repeated lookups over the whole catalog stay cheap.
-    let cur = x
-    while (parent.get(cur) !== root) {
-      const next = parent.get(cur)!
-      parent.set(cur, root)
-      cur = next
-    }
-    return root
-  }
-  const add = (x: string) => { if (!parent.has(x)) parent.set(x, x) }
-  const union = (a: string, b: string) => {
-    const ra = find(a)
-    const rb = find(b)
-    if (ra === rb) return
-    // Keep the alphabetically smaller id as the root so the canonical choice
-    // does not depend on iteration order.
-    if (ra < rb) parent.set(rb, ra)
-    else parent.set(ra, rb)
-  }
-
-  const real = new Set(courses.map(c => normalizeCourseId(c.id)))
-  for (const c of courses) {
-    const self = normalizeCourseId(c.id)
-    add(self)
-    for (const alt of getAlternateCourseCodesFromTitle(c.title)) {
-      // Ignore codes that are not in the catalog: they cannot be a destination.
-      if (!real.has(alt)) continue
-      add(alt)
-      union(self, alt)
-    }
-  }
-
-  const map = new Map<string, string>()
-  for (const id of parent.keys()) {
-    const canonical = find(id)
-    if (canonical !== id) map.set(id, canonical)
-  }
-  return map
-}
-
-/**
- * Resolve a normalized course id to its canonical primary (for redirects).
- * One hop with the component map above; the visited guard is kept so a
- * hand-built or legacy map cannot spin.
- */
-export function resolveToCanonicalPrimary(norm: string, primaryMap: Map<string, string>): string {
-  const visited = new Set<string>()
-  let current = norm
-  while (primaryMap.has(current)) {
-    if (visited.has(current)) {
-      return [...visited].sort()[0]
-    }
-    visited.add(current)
-    current = primaryMap.get(current)!
-  }
-  return current
-}
-
-/**
- * Returns all course IDs in the same cross-list group as the given course.
- * Used to aggregate evaluations from CS 24, LINGUIST 35, BILL 99, etc. when they're the same class.
- * Falls back to [courseId] when courses is empty (e.g. still loading) or course not in catalog.
- */
-export function getCrossListGroupIds(courseId: string, courses: { id: string; title: string }[]): string[] {
-  if (!courses.length) return [courseId]
-  const primaryMap = getCrossListPrimaryMap(courses)
-  const norm = normalizeCourseId(courseId)
-  const canonical = resolveToCanonicalPrimary(norm, primaryMap)
-  const group: string[] = []
-  for (const c of courses) {
-    const cNorm = normalizeCourseId(c.id)
-    if (resolveToCanonicalPrimary(cNorm, primaryMap) === canonical) {
-      group.push(c.id)
-    }
-  }
-  return group.length > 0 ? group : [courseId]
-}
+export {
+  getAlternateCourseCodesFromTitle,
+  normalizeCourseId,
+  getCrossListPrimaryMap,
+  resolveToCanonicalPrimary,
+  getCrossListGroupIds,
+  buildCrossListGroups,
+  deriveEvalPairings,
+} from './cross-list.mjs'
 
 /**
  * Aggregate enrollment for the same logical section across cross-listed catalog entries.
@@ -420,6 +304,40 @@ export function aggregateCrossListMetrics(
     ...(hours != null && { hours }),
     ...(quality != null && { quality }),
     ...(hrsPerUnit != null && { hrsPerUnit }),
+  }
+}
+
+/**
+ * Pick the precomputed rating figures for a cross-listed class.
+ *
+ * Not averaged, and not pooled, because a cross-listed group's evaluation rows are
+ * DUPLICATES rather than a partition: one report is filed verbatim under each code it
+ * lists (1,907 of 1,907 multi-listing reports in the table have byte-identical response
+ * counts). So all members that have data carry the same numbers, and averaging them is
+ * arithmetically equivalent to taking one -- while pooling them would count 20 students
+ * as 40 and wrongly weaken the small-sample shrinkage.
+ *
+ * Taking the member with the most responses is the cheap way to say "whichever listing
+ * actually has the data" -- AFRICAAM 10 has none while its CSRE 10 and TAPS 10 listings
+ * have the same 20 responses.
+ *
+ * Averaging the score would give the same answer today. Averaging the PERCENTILE would
+ * not be safe even so: it is a rank, not a quantity, so the mean of the 95th and 4th
+ * percentiles is a number that no course's score maps to.
+ */
+export function resolveCrossListRating(
+  members: Array<Pick<Course, 'quality' | 'qualityN' | 'qualityPct' | 'ratingBreakdown'>>,
+): Pick<Course, 'quality' | 'qualityN' | 'qualityPct' | 'ratingBreakdown'> {
+  let best: (typeof members)[number] | undefined
+  for (const member of members) {
+    if (member?.quality == null) continue
+    if (!best || (member.qualityN ?? 0) > (best.qualityN ?? 0)) best = member
+  }
+  return {
+    quality: best?.quality,
+    qualityN: best?.qualityN,
+    qualityPct: best?.qualityPct,
+    ratingBreakdown: best?.ratingBreakdown,
   }
 }
 

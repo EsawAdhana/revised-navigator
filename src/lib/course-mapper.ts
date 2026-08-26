@@ -45,6 +45,10 @@ export function rowToCourse(row: any): Course {
     sections: sections,
     hours: row.hours != null ? Number(row.hours) : undefined,
     quality: row.quality != null ? Number(row.quality) : undefined,
+    qualityPct: row.quality_pct != null ? Number(row.quality_pct) : undefined,
+    qualityN: row.quality_n != null ? Number(row.quality_n) : undefined,
+    ratingBreakdown: row.rating_breakdown ?? undefined,
+    crossListWith: Array.isArray(row.cross_list_with) ? row.cross_list_with : undefined,
     isNew: typeof row.isNew === 'boolean' ? row.isNew : undefined,
   }
 }

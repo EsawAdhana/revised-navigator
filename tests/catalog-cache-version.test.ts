@@ -11,9 +11,16 @@ import { rowToCourse } from '@/lib/course-mapper'
 // v15 dropped `difficulty` (hrs/unit is derived from hours + units now) and
 // started normalising title/description in rowToCourse, so a v14 cache holds
 // both a dead field and untidied text.
-const CACHED_COURSE_FIELDS_AT_V15 = [
+// v16 added qualityPct/qualityN, and redefined `quality` from a median of section
+// medians to a pooled mean, so a v15 cache holds a number computed the old way.
+// v17 added ratingBreakdown, and redefined `quality` again as the mean of the adjusted
+// per-category scores, so a v16 cache holds both a stale number and no breakdown.
+// v18 added crossListWith, which the browser needs to group paired undergrad/grad
+// listings; without it a v17 cache groups them wrongly and shows the wrong rating.
+const CACHED_COURSE_FIELDS_AT_V18 = [
   'id', 'subject', 'code', 'title', 'description', 'units', 'grading',
-  'instructors', 'terms', 'sections', 'hours', 'quality', 'isNew',
+  'instructors', 'terms', 'sections', 'hours', 'quality', 'qualityPct',
+  'qualityN', 'ratingBreakdown', 'crossListWith', 'isNew',
 ].sort()
 
 describe('catalog cache version', () => {
@@ -21,14 +28,16 @@ describe('catalog cache version', () => {
     const shape = Object.keys(rowToCourse({
       course_id: 'CS106B', subject: 'CS', code: '106B', title: 'Programming Abstractions',
       description: 'x', units: '5', grading: 'Letter (ABCD/NP)', instructors: [], terms: [],
-      sections: [], hours: 10, quality: 4, difficulty: 2, isNew: false,
+      sections: [], hours: 10, quality: 4.32, quality_pct: 61, quality_n: 840,
+      rating_breakdown: { quality: { score: 4.4, n: 840, pct: 66 } },
+      cross_list_with: ['CS106X'], difficulty: 2, isNew: false,
     })).sort()
 
     expect(
       shape,
       `Course gained or lost a field. Bump CACHE_VERSION (currently ${CACHE_VERSION}) ` +
       'and update this list, or returning visitors keep a catalog without it.',
-    ).toEqual(CACHED_COURSE_FIELDS_AT_V15)
-    expect(CACHE_VERSION).toBeGreaterThanOrEqual(15)
+    ).toEqual(CACHED_COURSE_FIELDS_AT_V18)
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(18)
   })
 })

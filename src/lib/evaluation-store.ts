@@ -168,7 +168,16 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
     for (const id of courseIds) {
       const evals = evaluations[id] || []
       for (const ev of evals) {
-        const key = `${ev.term}|${normalizeInstructor(ev.instructor)}`
+        // courseCode is what separates a real duplicate from a second section.
+        //
+        // A cross-listed class files ONE report verbatim under each of its codes, and
+        // every copy carries the same slash-joined courseCode ("Sp24-MATH-51-01/..."),
+        // so those still collapse. But a course commonly runs several sections in one
+        // term under the SAME instructor, and those are different students -- keying on
+        // term+instructor alone dropped all but one of them, hiding 21,824 responses
+        // across the catalog and making these breakdowns disagree with the headline
+        // rating (MATH 51 showed 1,406 of its 2,468 ratings).
+        const key = `${ev.courseCode}|${ev.term}|${normalizeInstructor(ev.instructor)}`
         if (!seen.has(key)) {
           seen.add(key)
           merged.push(ev)
