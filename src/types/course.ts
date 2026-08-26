@@ -47,10 +47,32 @@ export interface Course {
   color?: string; // User-selected color theme for the course (e.g. 'sky', 'emerald')
   /** Precomputed from evaluations (hrs/wk median) */
   hours?: number;
-  /** Precomputed from evaluations (1-5 rating) */
+  /** Precomputed from evaluations: pooled mean of every 1-5 rating response */
   quality?: number;
+  /** Precomputed: percentile rank (1-100) of `quality` across all rated Stanford courses */
+  qualityPct?: number;
+  /** Precomputed: how many individual 1-5 responses `quality` is based on */
+  qualityN?: number;
+  /** Precomputed per-category adjusted score, sample size and percentile */
+  ratingBreakdown?: Partial<Record<'quality' | 'learning' | 'organization', RatingStat>>;
+  /**
+   * Other catalog codes that appear on the same evaluation report as this one, derived
+   * from the evaluations' own course_code. Grouped alongside the codes the title
+   * declares, because paired undergrad/grad listings share students without the catalog
+   * ever declaring them cross-listed.
+   */
+  crossListWith?: string[];
   /** Precomputed: not scheduled in any of the three prior catalogs, and no evaluations from those years */
   isNew?: boolean;
+}
+
+export interface RatingStat {
+  /** 1-5, shrunk toward this category's corpus mean by sample size */
+  score: number;
+  /** Individual responses behind `score` */
+  n: number;
+  /** Percentile rank (1-100) of `score` within this category. 100 = highest rated. */
+  pct: number;
 }
 
 // --- Course Evaluation Types ---

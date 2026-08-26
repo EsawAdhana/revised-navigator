@@ -14,7 +14,8 @@ import { cn, decodeHtmlEntities } from '@/lib/utils'
 import { formatInstructorName, instructorSlug } from '@/lib/instructors'
 import { isDevEvalsUnlocked } from '@/lib/dev-flags'
 import { compareTerms } from '@/lib/terms'
-import type { CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
+import type { Course, CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
+import { addRatingCounts, pooledMean, rankLabel } from '@/lib/quality-score.mjs'
 
 // --- Color helpers (green=good, yellow/orange=mid, red=bad) ---
 
@@ -91,29 +92,47 @@ function median(values: number[]): number | null {
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
-// --- Aggregation (all medians, never mean) ---
+/**
+ * Aggregation: pooled means for the 1-5 ratings, medians for the open-ended numerics.
+ *
+ * Ratings pool every individual response across sections and terms -- see
+ * src/lib/quality-score.mjs for why a median is the wrong statistic on a scale whose
+ * mode sits on the ceiling. Hours stays a median: it is unbounded and a single
+ * "60 hours" answer would drag a mean.
+ */
+const POOLED_CATEGORIES: QuestionCategory[] = ['quality', 'learning', 'organization', 'goals']
 
 export function aggregateMetrics(evals: CourseEvaluation[]) {
   try {
     if (!Array.isArray(evals)) return {}
-    const byCat: Record<QuestionCategory, number[]> = {
+    const medianCats: Record<QuestionCategory, number[]> = {
       quality: [], learning: [], organization: [], goals: [], hours: [],
       attendance_in_person: [], attendance_online: [], unknown: []
     }
+    const pooled = new Map<QuestionCategory, Map<number, number>>()
 
     for (const ev of evals) {
       const questions = ev?.questions || []
       for (const q of questions) {
         const cat = categorizeQuestion(q?.text ?? '')
+        if (POOLED_CATEGORIES.includes(cat)) {
+          if (!pooled.has(cat)) pooled.set(cat, new Map())
+          addRatingCounts(pooled.get(cat)!, q)
+          continue
+        }
         const val = typeof q?.median === 'number' && !isNaN(q.median) ? q.median : null
-        if (val != null) byCat[cat].push(val)
+        if (val != null) medianCats[cat].push(val)
       }
     }
 
     const result: Partial<Record<QuestionCategory, number>> = {}
-    for (const [cat, values] of Object.entries(byCat)) {
+    for (const [cat, values] of Object.entries(medianCats)) {
       const m = median(values)
       if (m != null) result[cat as QuestionCategory] = m
+    }
+    for (const [cat, counts] of pooled) {
+      const p = pooledMean(counts)
+      if (p) result[cat] = p.mean
     }
     return result
   } catch {
@@ -122,40 +141,29 @@ export function aggregateMetrics(evals: CourseEvaluation[]) {
 }
 
 function computeInstructorStats(evals: CourseEvaluation[]) {
-  const byInstructor: Record<string, { scores: Record<QuestionCategory, number[]>, evalCount: number, terms: Set<string> }> = {}
-
+  // Group first, then reuse aggregateMetrics so an instructor row and the course
+  // summary above it are always computed the same way.
+  const byInstructor = new Map<string, CourseEvaluation[]>()
   for (const ev of evals) {
-    const name = ev.instructor
-    if (!byInstructor[name]) {
-      byInstructor[name] = {
-        scores: {
-          quality: [], learning: [], organization: [], goals: [], hours: [],
-          attendance_in_person: [], attendance_online: [], unknown: []
-        },
-        evalCount: 0,
-        terms: new Set()
-      }
-    }
-    byInstructor[name].evalCount++
-    byInstructor[name].terms.add(ev.term)
-    for (const q of ev.questions) {
-      const cat = categorizeQuestion(q.text)
-      byInstructor[name].scores[cat].push(q.median)
-    }
+    if (!byInstructor.has(ev.instructor)) byInstructor.set(ev.instructor, [])
+    byInstructor.get(ev.instructor)!.push(ev)
   }
 
-  return Object.entries(byInstructor).map(([name, data]) => {
-    const scores: Partial<Record<QuestionCategory, number>> = {}
-    for (const [cat, values] of Object.entries(data.scores)) {
-      const m = median(values)
-      if (m != null) scores[cat as QuestionCategory] = m
-    }
-    return { name, scores, evalCount: data.evalCount, terms: Array.from(data.terms) }
-  }).sort((a, b) => (b.scores.quality || 0) - (a.scores.quality || 0))
+  return Array.from(byInstructor, ([name, own]) => ({
+    name,
+    scores: aggregateMetrics(own),
+    evalCount: own.length,
+    terms: Array.from(new Set(own.map(ev => ev.term))),
+  })).sort((a, b) => (b.scores.quality || 0) - (a.scores.quality || 0))
 }
 
 // --- Sub-components ---
 
+/**
+ * Option C headline: the pooled 1-5 mean, plus where that mean sits in Stanford's own
+ * distribution. The rank is the point of the component -- on its own a 4.6 looks
+ * excellent when it is in fact merely typical here.
+ */
 export function ScoreBadge({ score, size = 'md' }: { score: number, size?: 'sm' | 'md' | 'lg' }) {
   const sizeClasses = {
     sm: 'text-xs px-1.5 py-0.5 min-w-[36px]',
@@ -172,6 +180,46 @@ export function ScoreBadge({ score, size = 'md' }: { score: number, size?: 'sm' 
     )}>
       {score.toFixed(size === 'sm' ? 1 : 2)}
     </span>
+  )
+}
+
+/**
+ * Below this many responses, shrinkage moves the rating by enough that the row should
+ * say so -- at the corpus weight of ~5 responses, n=20 is still a ~20% pull.
+ */
+const SMALL_SAMPLE = 20
+
+/**
+ * Overall rating row. Deliberately the same shape as the category headers below it
+ * (label / bar / ScoreBadge) so it reads as one more row of the same table rather
+ * than a callout -- the rank is the new information, not the styling.
+ *
+ * `score` is courses.quality, which is already shrunk toward the Stanford average by
+ * sample size, so the number and the rank always agree.
+ */
+export function QualityRank({ score, n, percentile }: {
+  score: number
+  n: number
+  percentile?: number | null
+}) {
+  const label = rankLabel(percentile) as string | null
+
+  return (
+    <div className="px-4 py-3 bg-secondary/5 rounded-lg border border-border/20">
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-foreground font-medium flex-1 text-left">Overall rating</span>
+        <div className="w-20 h-1.5 bg-secondary/60 rounded-full overflow-hidden">
+          <div className={cn('h-full rounded-full', barFill(score))} style={{ width: `${(score / 5) * 100}%` }} />
+        </div>
+        <ScoreBadge score={score} size="sm" />
+      </div>
+      <div className="text-[10px] text-muted-foreground mt-1.5 tabular-nums">
+        {label && <>{label} &middot; </>}
+        {n.toLocaleString()} {n === 1 ? 'rating' : 'ratings'}
+        {/* Explains why a handful of glowing reviews below don't add up to a 5 here. */}
+        {n < SMALL_SAMPLE && <> &middot; pulled toward the Stanford average on a small sample</>}
+      </div>
+    </div>
   )
 }
 
@@ -523,7 +571,19 @@ function AggregatedRatingBreakdown({ questions, aggregateScore }: { questions: E
 }
 
 /** Median score per category with an expandable response breakdown for each. */
-export function EvaluationOverview({ evaluations }: { evaluations: CourseEvaluation[] }) {
+export function EvaluationOverview({ evaluations, quality, qualityN, qualityPct, breakdown }: {
+  evaluations: CourseEvaluation[]
+  /**
+   * courses.quality / quality_n / quality_pct / rating_breakdown -- precomputed over the
+   * course's whole history. Neither the shrinkage prior nor the percentile can be derived
+   * from one course's rows, so callers showing a subset omit these and each row falls back
+   * to the unranked mean of what's on screen rather than mislabelling it.
+   */
+  quality?: number | null
+  qualityN?: number | null
+  qualityPct?: number | null
+  breakdown?: Course['ratingBreakdown'] | null
+}) {
   const metrics = useMemo(() => aggregateMetrics(evaluations), [evaluations])
 
   const questionsByCategory = useMemo(() => {
@@ -540,7 +600,12 @@ export function EvaluationOverview({ evaluations }: { evaluations: CourseEvaluat
   }, [evaluations])
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="space-y-4">
+      {quality != null && qualityN != null && (
+        <QualityRank score={quality} n={qualityN} percentile={qualityPct} />
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {RATING_CATEGORIES.map(cat => {
         if (metrics[cat] === undefined) return null
         const questions = questionsByCategory[cat]
@@ -571,6 +636,11 @@ export function EvaluationOverview({ evaluations }: { evaluations: CourseEvaluat
           )
         }
 
+        // Prefer the precomputed adjusted score so the number matches the rank beside
+        // it; fall back to the on-screen mean when a term filter is active.
+        const stat = breakdown?.[cat as 'quality' | 'learning' | 'organization']
+        const score = stat?.score ?? metrics[cat]!
+
         return (
           <div key={cat}>
             <div className="w-full flex items-center gap-3 px-4 py-3 bg-secondary/5 rounded-t-lg border-b border-border/30">
@@ -579,19 +649,28 @@ export function EvaluationOverview({ evaluations }: { evaluations: CourseEvaluat
               </span>
               <div className="w-20 h-1.5 bg-secondary/60 rounded-full overflow-hidden">
                 <div
-                  className={cn('h-full rounded-full', barFill(metrics[cat]!))}
-                  style={{ width: `${(metrics[cat]! / 5) * 100}%` }}
+                  className={cn('h-full rounded-full', barFill(score))}
+                  style={{ width: `${(score / 5) * 100}%` }}
                 />
               </div>
-              <ScoreBadge score={metrics[cat]!} size="sm" />
+              <ScoreBadge score={score} size="sm" />
             </div>
 
             <div className="px-5 pb-4 pt-4 bg-secondary/5 border border-border/20 rounded-b-lg space-y-4">
-              <AggregatedRatingBreakdown questions={questions} aggregateScore={metrics[cat]!} />
+              {/* Each category is ranked against its own corpus -- the questions have
+                  different response spreads and different averages. */}
+              {stat && (
+                <div className="text-[10px] text-muted-foreground -mt-1 tabular-nums">
+                  {rankLabel(stat.pct) as string} &middot; {stat.n.toLocaleString()} {stat.n === 1 ? 'rating' : 'ratings'}
+                  {stat.n < SMALL_SAMPLE && <> &middot; pulled toward the Stanford average on a small sample</>}
+                </div>
+              )}
+              <AggregatedRatingBreakdown questions={questions} aggregateScore={score} />
             </div>
           </div>
         )
       })}
+      </div>
     </div>
   )
 }
@@ -637,9 +716,14 @@ interface CourseEvaluationsProps {
    * unresolved by accident and hang the empty state on a spinner.
    */
   isNew: boolean | undefined
+  /** courses.quality / quality_n / quality_pct -- the overall rating row. */
+  quality?: number | null
+  qualityN?: number | null
+  qualityPct?: number | null
+  ratingBreakdown?: Course['ratingBreakdown'] | null
 }
 
-export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew }: CourseEvaluationsProps) {
+export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, quality, qualityN, qualityPct, ratingBreakdown }: CourseEvaluationsProps) {
   const fetchBulkEvaluations = useEvaluationStore(state => state.fetchBulkEvaluations)
   const getMergedEvaluations = useEvaluationStore(state => state.getMergedEvaluations)
   const loadingCourses = useEvaluationStore(state => state.loadingCourses)
@@ -858,7 +942,17 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew }
       <div className="min-h-[200px]">
 
         {/* === Overview tab === */}
-        {activeTab === 'overview' && <EvaluationOverview evaluations={filteredEvals} />}
+        {activeTab === 'overview' && (
+          <EvaluationOverview
+            evaluations={filteredEvals}
+            // Computed over the course's whole history, so it would not describe the
+            // breakdown beside it once a single term is selected.
+            quality={activeTermFilter === 'all' ? quality : null}
+            qualityN={activeTermFilter === 'all' ? qualityN : null}
+            qualityPct={activeTermFilter === 'all' ? qualityPct : null}
+            breakdown={activeTermFilter === 'all' ? ratingBreakdown : null}
+          />
+        )}
 
         {/* === Instructors tab (only with 2+ instructors) === */}
         {activeTab === 'instructors' && hasMultipleInstructors && (

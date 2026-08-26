@@ -21,10 +21,10 @@ export function getPublicClient(): SupabaseClient {
 }
 
 /** Full course row columns (card data + sections + description). */
-export const FULL_COURSE_COLUMNS = 'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality'
+export const FULL_COURSE_COLUMNS = 'course_id, subject, code, title, description, units, grading, instructors, terms, sections, hours, quality, quality_pct, quality_n, rating_breakdown, cross_list_with'
 
 /** Light course row columns (card-level only — no description/sections). */
-export const LIGHT_COURSE_COLUMNS = 'course_id, subject, code, title, units, instructors, terms, grading, hours, quality'
+export const LIGHT_COURSE_COLUMNS = 'course_id, subject, code, title, units, instructors, terms, grading, hours, quality, quality_pct, quality_n, rating_breakdown, cross_list_with'
 
 /** Merge rows that share a course_id (cross-listed / multi-term), combining terms + sections. */
 export function mergeCourseRows(rows: any[]) {

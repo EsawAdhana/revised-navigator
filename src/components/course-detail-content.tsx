@@ -9,7 +9,7 @@ import { useAuthStore } from '@/lib/auth-store';
 import { promptLoginToSyncOnce } from '@/lib/login-nudge';
 import { track } from '@/lib/analytics';
 import { Section } from '@/types/course';
-import { cn, getSyllabusUrl, parseUnitsOptions, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities, getCrossListGroupIds, aggregateCrossListedSectionEnrollment } from '@/lib/utils';
+import { cn, getSyllabusUrl, parseUnitsOptions, formatLevel, abbreviateGer, unitsLabel, compareCourseCodes, formatComponent, isAllowedGer, decodeHtmlEntities, getCrossListGroupIds, aggregateCrossListedSectionEnrollment, resolveCrossListRating } from '@/lib/utils';
 import { isDevEvalsUnlocked } from '@/lib/dev-flags';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -41,6 +41,15 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const canViewEvals = Boolean(user) || isDevEvalsUnlocked();
 
     const crossListIds = useMemo(() => getCrossListGroupIds(course.id, courses), [course.id, courses]);
+
+    // Evaluations are filed under only some of a cross-listed class's codes, so read the
+    // precomputed rating off the whole group rather than off this one row -- otherwise
+    // AFRICAAM 10 shows no rating while its CSRE 10 listing shows one.
+    const rating = useMemo(() => {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const members = crossListIds.map(id => byId.get(id)).filter((c): c is Course => c != null);
+        return resolveCrossListRating(members.length > 0 ? members : [course]);
+    }, [crossListIds, courses, course]);
 
     // `isNew` comes from the catalog dump (unscheduled in the three prior
     // catalogs, no evaluations since). Same rule as the "new courses only"
@@ -400,6 +409,10 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                 code={course.code}
                                 forcedTab="overview"
                                 isNew={isNewCourse}
+                                quality={rating.quality ?? null}
+                                qualityN={rating.qualityN ?? null}
+                                qualityPct={rating.qualityPct ?? null}
+                                ratingBreakdown={rating.ratingBreakdown ?? null}
                             />
                         </TabsContent>
 

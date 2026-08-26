@@ -8,10 +8,17 @@
  *   node --env-file=.env.local scripts/scrape-evaluations.mjs
  *   node --env-file=.env.local scripts/scrape-evaluations.mjs --terms W26,Sp26,Su26
  *   node --env-file=.env.local scripts/scrape-evaluations.mjs --course CS106B --dry-run
+ *   node --env-file=.env.local scripts/scrape-evaluations.mjs --metrics-only
+ *
+ * --metrics-only recomputes courses.quality / quality_n / quality_pct /
+ * rating_breakdown / cross_list_with from the evaluations already stored, with no
+ * scrape and no SSO login. Use it after changing the rating maths.
  */
 
 import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
+import { addRatingCounts, pooledMean, percentileRanks, adjustAndRank, round3, headlineSampleSize } from '../src/lib/quality-score.mjs'
+import { buildCrossListGroups, deriveEvalPairings, normalizeCourseId } from '../src/lib/cross-list.mjs'
 
 const BASE_URL = 'https://stanford.evaluationkit.com'
 const SEARCH_URL = `${BASE_URL}/Report/Public/Results`
@@ -26,10 +33,11 @@ const TERM_LABELS = {
 
 function parseArgs() {
     const args = process.argv.slice(2)
-    const opts = { dryRun: false, concurrency: 20, terms: DEFAULT_TERMS, course: null, metrics: true, force: false, repairEmpty: false }
+    const opts = { dryRun: false, concurrency: 20, terms: DEFAULT_TERMS, course: null, metrics: true, metricsOnly: false, force: false, repairEmpty: false }
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--dry-run') opts.dryRun = true
         if (args[i] === '--no-metrics') opts.metrics = false
+        if (args[i] === '--metrics-only') opts.metricsOnly = true
         if (args[i] === '--force') opts.force = true
         if (args[i] === '--repair-empty') opts.repairEmpty = true
         if (args[i] === '--course' && args[i + 1]) opts.course = args[++i].replace(/\s+/g, '').toUpperCase()
@@ -294,31 +302,164 @@ function units(value) {
 async function refreshMetrics(supabase) {
     console.log('Recomputing course metrics...')
     const [evaluations, courses] = await Promise.all([
-        loadAll(supabase, 'evaluations', 'course_id,questions'),
-        loadAll(supabase, 'courses', 'course_id,units'),
+        loadAll(supabase, 'evaluations', 'course_id,course_code,term,instructor,questions'),
+        loadAll(supabase, 'courses', 'course_id,title,units,quality,quality_n,quality_pct,rating_breakdown'),
     ])
-    const byCourse = new Map()
-    for (const evaluation of evaluations) {
-        if (!byCourse.has(evaluation.course_id)) byCourse.set(evaluation.course_id, [])
-        byCourse.get(evaluation.course_id).push(...(evaluation.questions || []))
-    }
     const courseUnits = new Map(courses.map(course => [course.course_id, units(course.units)]))
-    const updates = []
-    for (const [courseId, questions] of byCourse) {
-        const values = { quality: [], learning: [], organization: [], hours: [] }
+
+    // Metrics are computed per CROSS-LIST GROUP, not per course_id, using the same
+    // grouping the course page uses to merge the evaluations it charts.
+    //
+    // A class's evaluations are filed unevenly across the codes it is listed under:
+    // ETHICSOC 185M holds three terms (49 responses) while its PHIL 72 listing holds
+    // only the newest (19). Computing per course_id gave the same class two different
+    // ratings depending on the URL, and made every listing's headline disagree with the
+    // charts underneath it, which pool the group. Pooling the group fixes both and uses
+    // all the data.
+    // Codes Stanford evaluated jointly are part of the same class even when the catalog
+    // title never says so, so feed those pairings into the grouping before using it.
+    const catalogIds = new Set(courses.map(course => normalizeCourseId(course.course_id)))
+    const pairings = deriveEvalPairings(evaluations, catalogIds)
+    const groupInput = courses.map(course => ({
+        id: course.course_id,
+        title: course.title || '',
+        crossListWith: pairings.get(normalizeCourseId(course.course_id)) || [],
+    }))
+    const groups = buildCrossListGroups(groupInput)
+    const groupOfCourse = new Map()
+    for (const [canonical, memberIds] of groups) {
+        for (const memberId of memberIds) groupOfCourse.set(memberId, canonical)
+    }
+
+    // De-duplicate by report, not by row: one report is filed verbatim under every code
+    // it lists, and 6 are stored twice under a single course_id. Distinct sections keep
+    // distinct course_codes, so they survive.
+    const questionsByGroup = new Map()
+    const seenReports = new Set()
+    let duplicates = 0
+    for (const evaluation of evaluations) {
+        const canonical = groupOfCourse.get(evaluation.course_id) ?? evaluation.course_id
+        const reportKey = `${canonical}||${evaluation.course_code}||${evaluation.term}||${evaluation.instructor}`
+        if (seenReports.has(reportKey)) { duplicates++; continue }
+        seenReports.add(reportKey)
+        if (!questionsByGroup.has(canonical)) questionsByGroup.set(canonical, [])
+        questionsByGroup.get(canonical).push(...(evaluation.questions || []))
+    }
+    console.log(`  ${seenReports.size} distinct reports over ${questionsByGroup.size} classes (${duplicates} duplicate rows skipped)`)
+
+    // One pooled response distribution per class per rating category. Kept separate
+    // because the categories are not the same scale -- see adjustAndRank.
+    const RATING_CATEGORIES = ['quality', 'learning', 'organization']
+    const pooledByCategory = new Map(RATING_CATEGORIES.map(key => [key, new Map()]))
+    const hoursByGroup = new Map()
+
+    for (const [canonical, questions] of questionsByGroup) {
         for (const question of questions) {
             const key = category(question.text)
-            if (key && Number.isFinite(question.median) && question.median > 0) values[key].push(question.median)
+            if (!key) continue
+            if (key === 'hours') {
+                if (Number.isFinite(question.median) && question.median > 0) {
+                    if (!hoursByGroup.has(canonical)) hoursByGroup.set(canonical, [])
+                    hoursByGroup.get(canonical).push(question.median)
+                }
+                continue
+            }
+            const forCategory = pooledByCategory.get(key)
+            if (!forCategory) continue
+            if (!forCategory.has(canonical)) forCategory.set(canonical, new Map())
+            addRatingCounts(forCategory.get(canonical), question)
         }
-        const hours = median(values.hours)
-        const quality = median(['quality', 'learning', 'organization'].map(key => median(values[key])).filter(value => value != null))
-        if (hours == null && quality == null) continue
-        updates.push({
-            course_id: courseId,
-            ...(hours != null && { hours, difficulty: hours / (courseUnits.get(courseId) || 1) }),
-            ...(quality != null && { quality }),
+    }
+
+    // Adjust and rank each category against its own corpus, one class = one entry.
+    const breakdown = new Map()
+    for (const key of RATING_CATEGORIES) {
+        const ids = []
+        const observations = []
+        for (const [canonical, counts] of pooledByCategory.get(key)) {
+            const pooled = pooledMean(counts)
+            if (!pooled) continue
+            ids.push(canonical)
+            observations.push(pooled)
+        }
+        if (ids.length === 0) continue
+        const { prior, scores, percentiles } = adjustAndRank(observations)
+        console.log(`  ${key}: mean ${prior.grandMean.toFixed(3)}, shrinkage weight ${prior.weight.toFixed(1)} responses, ${ids.length} classes`)
+        ids.forEach((canonical, index) => {
+            if (!breakdown.has(canonical)) breakdown.set(canonical, {})
+            breakdown.get(canonical)[key] = {
+                score: scores[index],
+                n: observations[index].n,
+                pct: percentiles[index],
+            }
         })
     }
+
+    // The overall rating averages the adjusted category scores rather than pooling the
+    // raw responses together: the categories sit ~0.19 apart on average, so pooling let
+    // a class's score depend on which questions its evaluations happened to include.
+    const perGroup = new Map()
+    for (const canonical of new Set([...breakdown.keys(), ...hoursByGroup.keys()])) {
+        const parts = Object.values(breakdown.get(canonical) || {})
+        perGroup.set(canonical, {
+            hoursMedian: median(hoursByGroup.get(canonical) || []),
+            ...(parts.length > 0 && {
+                quality: round3(parts.reduce((sum, p) => sum + p.score, 0) / parts.length),
+                quality_n: headlineSampleSize(breakdown.get(canonical)),
+                rating_breakdown: breakdown.get(canonical),
+            }),
+        })
+    }
+    const scored = [...perGroup.entries()].filter(([, value]) => value.quality != null)
+    const overallRanks = percentileRanks(scored.map(([, value]) => value.quality))
+    scored.forEach(([, value], index) => { value.quality_pct = overallRanks[index] })
+
+    // Write the class's figures to every code it is listed under, so the rating never
+    // depends on which listing the student opened. hrs/unit stays per-listing because
+    // cross-listed codes can carry different unit counts.
+    const updates = []
+    for (const course of courses) {
+        const canonical = groupOfCourse.get(course.course_id) ?? course.course_id
+        const value = perGroup.get(canonical)
+        if (!value) continue
+        const hours = value.hoursMedian
+        const update = { course_id: course.course_id }
+        if (hours != null) {
+            update.hours = hours
+            update.difficulty = hours / (courseUnits.get(course.course_id) || 1)
+        }
+        if (value.quality != null) {
+            update.quality = value.quality
+            update.quality_n = value.quality_n
+            update.quality_pct = value.quality_pct
+            update.rating_breakdown = value.rating_breakdown
+        }
+        // The browser rebuilds the same groups from this, so it must be stored.
+        const pairs = pairings.get(normalizeCourseId(course.course_id))
+        if (pairs && pairs.length > 0) update.cross_list_with = pairs
+        if (Object.keys(update).length > 1) updates.push(update)
+    }
+
+    // Clear ratings that no longer have anything behind them. Earlier scraper versions
+    // wrote quality = 0 for courses whose evaluations carry no usable 1-5 response
+    // (6 rows as of 2026-08-26, e.g. AMSTUD 261W), and 0 renders as the worst possible
+    // score on a 1-5 scale. This write has to be authoritative, not additive.
+    const written = new Set(updates.filter(update => update.quality != null).map(update => update.course_id))
+    let cleared = 0
+    for (const course of courses) {
+        if (written.has(course.course_id)) continue
+        const hasStale = course.quality != null || course.quality_n != null
+            || course.quality_pct != null || course.rating_breakdown != null
+        if (!hasStale) continue
+        cleared++
+        const existing = updates.find(update => update.course_id === course.course_id)
+        const nulls = { quality: null, quality_n: null, quality_pct: null, rating_breakdown: null }
+        if (existing) Object.assign(existing, nulls)
+        else updates.push({ course_id: course.course_id, ...nulls })
+    }
+    if (cleared) console.log(`  clearing ${cleared} stale rating(s) with no supporting responses`)
+    console.log(`  writing ${updates.length} course rows`)
+
     for (let i = 0; i < updates.length; i += 100) {
         const batch = updates.slice(i, i + 100)
         const results = await Promise.all(batch.map(({ course_id, ...fields }) =>
@@ -337,6 +478,13 @@ async function main() {
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!url || !key) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
     const supabase = createClient(url, key, { auth: { persistSession: false } })
+
+    // Recompute from what is already stored: no scrape, no browser, no SSO.
+    if (opts.metricsOnly) {
+        await refreshMetrics(supabase)
+        return
+    }
+
     const [courses, existing] = await Promise.all([
         loadAll(supabase, 'courses', 'course_id'),
         loadAll(supabase, 'evaluations', 'course_id,term,instructor'),
