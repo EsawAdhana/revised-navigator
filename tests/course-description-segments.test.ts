@@ -68,3 +68,47 @@ describe('bare numbers link only from the reviewed list', () => {
         expect(segs.filter(s => s.courseId)).toEqual([])
     })
 })
+
+describe('bare links to courses that left the catalog', () => {
+    const resolve = () => undefined
+    const text = 'Prerequisites: 30 or consent.'
+    const reviewed = new Map<number, [number, string]>([[15, [2, 'CEE30']]])
+
+    it('renders plain text when the reviewed target is gone', () => {
+        // Stanford unschedules courses. CS 224V linked a bare "180" to LINGUIST 180 and
+        // sent users to "Course Not Found"; a dead target must degrade, not link.
+        const segs = buildDescriptionSegments('CEE107D', text, resolve, reviewed, () => false)
+        expect(segs.filter(s => s.courseId)).toEqual([])
+        expect(segs.map(s => s.text).join('')).toBe(text)
+    })
+
+    it('still links when the target is in the catalog', () => {
+        const segs = buildDescriptionSegments('CEE107D', text, resolve, reviewed, id => id === 'CEE30')
+        expect(segs.filter(s => s.courseId)).toEqual([{ text: '30', courseId: 'CEE30' }])
+    })
+
+    it('checks the reviewed target, not the course being described', () => {
+        const segs = buildDescriptionSegments('CEE107D', text, resolve, reviewed, id => id === 'CEE107D')
+        expect(segs.filter(s => s.courseId)).toEqual([])
+    })
+
+    it('treats an omitted checker as no check, so existing callers are unaffected', () => {
+        const segs = buildDescriptionSegments('CEE107D', text, resolve, reviewed)
+        expect(segs.filter(s => s.courseId)).toEqual([{ text: '30', courseId: 'CEE30' }])
+    })
+
+    it('applies the guard to every bare link in one description, not just the first', () => {
+        const many = 'Prerequisites: 30 and 40 recommended.'
+        const links = new Map<number, [number, string]>([[15, [2, 'CEE30']], [22, [2, 'CEE40']]])
+        const segs = buildDescriptionSegments('CEE107D', many, resolve, links, id => id === 'CEE40')
+        expect(segs.filter(s => s.courseId)).toEqual([{ text: '40', courseId: 'CEE40' }])
+        expect(segs.map(s => s.text).join('')).toBe(many)
+    })
+
+    it('does not weaken the span check when the target does exist', () => {
+        // A drifted offset must still refuse to link even for a live course.
+        const drifted = new Map<number, [number, string]>([[14, [2, 'CEE30']]])
+        const segs = buildDescriptionSegments('CEE107D', text, resolve, drifted, () => true)
+        expect(segs.filter(s => s.courseId)).toEqual([])
+    })
+})

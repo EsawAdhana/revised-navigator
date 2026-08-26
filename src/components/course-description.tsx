@@ -35,6 +35,16 @@ export function buildDescriptionSegments(
     description: string,
     resolveCourseId: (subject: string, code: string) => string | undefined,
     bareLinksOverride?: Map<number, [number, string]>,
+    /**
+     * Whether a course id is still in the catalog. Stanford unschedules courses, and a
+     * reviewed bare link then points at a page that renders "Course Not Found" -- CS 224V
+     * linked a bare "180" to LINGUIST 180 for exactly that reason. A subject-qualified
+     * reference already degrades to plain text when absent, because resolveCourseId
+     * returns undefined; this gives the bare-number path the same guard instead of
+     * trusting the frozen target forever. Omitted means "don't check", which keeps the
+     * unit tests that pass a stub resolver working.
+     */
+    courseExists?: (courseId: string) => boolean,
 ): Array<{ text: string; courseId?: string }> {
     if (!description) return [];
 
@@ -55,7 +65,9 @@ export function buildDescriptionSegments(
         let courseId: string | undefined;
         if (match[3]) {
             const reviewed = bareLinks.get(match.index);
-            courseId = reviewed && reviewed[0] === match[0].length ? reviewed[1] : undefined;
+            const spanMatches = reviewed && reviewed[0] === match[0].length;
+            const targetLives = spanMatches && (!courseExists || courseExists(reviewed[1]));
+            courseId = targetLives ? reviewed[1] : undefined;
         } else {
             const resolved = resolveCourseId(match[1], match[2]);
             courseId = resolved && hasCourseReferenceContext(decodedText, match.index) ? resolved : undefined;
@@ -94,12 +106,16 @@ export function CourseDescription({ courseId, description, className }: CourseDe
         return map;
     }, [courses]);
 
+    const courseIds = useMemo(() => new Set(courses.map(c => c.id)), [courses]);
+
     const renderedParts = useMemo(() => {
         if (!description) return null;
         const segments = buildDescriptionSegments(
             courseId,
             description,
             (subject, code) => courseMap.get(`${subject}|${code}`),
+            undefined,
+            id => courseIds.has(id),
         );
         return segments.map((seg, i) =>
             seg.courseId
@@ -115,7 +131,7 @@ export function CourseDescription({ courseId, description, className }: CourseDe
                 )
                 : seg.text
         );
-    }, [courseId, description, courseMap]);
+    }, [courseId, description, courseMap, courseIds]);
 
     if (!renderedParts) return null;
 
