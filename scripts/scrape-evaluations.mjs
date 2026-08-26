@@ -8,6 +8,11 @@
  *   node --env-file=.env.local scripts/scrape-evaluations.mjs
  *   node --env-file=.env.local scripts/scrape-evaluations.mjs --terms W26,Sp26,Su26
  *   node --env-file=.env.local scripts/scrape-evaluations.mjs --course CS106B --dry-run
+ *   node --env-file=.env.local scripts/scrape-evaluations.mjs --metrics-only
+ *
+ * --metrics-only recomputes courses.quality / quality_n / quality_pct /
+ * rating_breakdown / cross_list_with from the evaluations already stored, with no
+ * scrape and no SSO login. Use it after changing the rating maths.
  */
 
 import { chromium } from '@playwright/test'
@@ -28,10 +33,11 @@ const TERM_LABELS = {
 
 function parseArgs() {
     const args = process.argv.slice(2)
-    const opts = { dryRun: false, concurrency: 20, terms: DEFAULT_TERMS, course: null, metrics: true, force: false, repairEmpty: false }
+    const opts = { dryRun: false, concurrency: 20, terms: DEFAULT_TERMS, course: null, metrics: true, metricsOnly: false, force: false, repairEmpty: false }
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--dry-run') opts.dryRun = true
         if (args[i] === '--no-metrics') opts.metrics = false
+        if (args[i] === '--metrics-only') opts.metricsOnly = true
         if (args[i] === '--force') opts.force = true
         if (args[i] === '--repair-empty') opts.repairEmpty = true
         if (args[i] === '--course' && args[i + 1]) opts.course = args[++i].replace(/\s+/g, '').toUpperCase()
@@ -297,7 +303,7 @@ async function refreshMetrics(supabase) {
     console.log('Recomputing course metrics...')
     const [evaluations, courses] = await Promise.all([
         loadAll(supabase, 'evaluations', 'course_id,course_code,term,instructor,questions'),
-        loadAll(supabase, 'courses', 'course_id,title,units'),
+        loadAll(supabase, 'courses', 'course_id,title,units,quality,quality_n,quality_pct,rating_breakdown'),
     ])
     const courseUnits = new Map(courses.map(course => [course.course_id, units(course.units)]))
 
@@ -433,6 +439,25 @@ async function refreshMetrics(supabase) {
         if (pairs && pairs.length > 0) update.cross_list_with = pairs
         if (Object.keys(update).length > 1) updates.push(update)
     }
+
+    // Clear ratings that no longer have anything behind them. Earlier scraper versions
+    // wrote quality = 0 for courses whose evaluations carry no usable 1-5 response
+    // (6 rows as of 2026-08-26, e.g. AMSTUD 261W), and 0 renders as the worst possible
+    // score on a 1-5 scale. This write has to be authoritative, not additive.
+    const written = new Set(updates.filter(update => update.quality != null).map(update => update.course_id))
+    let cleared = 0
+    for (const course of courses) {
+        if (written.has(course.course_id)) continue
+        const hasStale = course.quality != null || course.quality_n != null
+            || course.quality_pct != null || course.rating_breakdown != null
+        if (!hasStale) continue
+        cleared++
+        const existing = updates.find(update => update.course_id === course.course_id)
+        const nulls = { quality: null, quality_n: null, quality_pct: null, rating_breakdown: null }
+        if (existing) Object.assign(existing, nulls)
+        else updates.push({ course_id: course.course_id, ...nulls })
+    }
+    if (cleared) console.log(`  clearing ${cleared} stale rating(s) with no supporting responses`)
     console.log(`  writing ${updates.length} course rows`)
 
     for (let i = 0; i < updates.length; i += 100) {
@@ -453,6 +478,13 @@ async function main() {
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!url || !key) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
     const supabase = createClient(url, key, { auth: { persistSession: false } })
+
+    // Recompute from what is already stored: no scrape, no browser, no SSO.
+    if (opts.metricsOnly) {
+        await refreshMetrics(supabase)
+        return
+    }
+
     const [courses, existing] = await Promise.all([
         loadAll(supabase, 'courses', 'course_id'),
         loadAll(supabase, 'evaluations', 'course_id,term,instructor'),

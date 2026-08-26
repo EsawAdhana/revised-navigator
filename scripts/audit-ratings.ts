@@ -34,6 +34,19 @@ function check(name: string, violations: string[], detail?: string) {
   if (violations.length > 6) out.push(`          ... and ${violations.length - 6} more`)
 }
 const info = (msg: string) => out.push(`  info  ${msg}`)
+
+/**
+ * Key-order-independent JSON comparison. Postgres normalises jsonb key order (shortest
+ * key first, then alphabetical), so a stored breakdown round-trips as {n, pct, score}
+ * while the freshly computed one is {score, n, pct}. Comparing the raw strings reported
+ * all 5,214 rated rows as differing when every value was identical.
+ */
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`
+}
 const section = (t: string) => { out.push(''); out.push(t) }
 
 // ---------------------------------------------------------------- load
@@ -407,7 +420,7 @@ const groupMembers = (id: string) => groups.get(groupOfCourse.get(id) ?? id) ?? 
     const shown = new Set(members.map(id => {
       const c = courseById.get(id)!
       const r = resolveCrossListRating(members.map(m => courseById.get(m)!).filter(Boolean))
-      return `${r.quality}|${r.qualityPct}|${r.qualityN}|${JSON.stringify(r.ratingBreakdown)}`
+      return `${r.quality}|${r.qualityPct}|${r.qualityN}|${stableJson(r.ratingBreakdown)}`
     }))
     if (shown.size > 1) bad.push(`${canonical}: ${shown.size} different ratings across ${members.length} listings`)
   }
@@ -418,7 +431,7 @@ const groupMembers = (id: string) => groups.get(groupOfCourse.get(id) ?? id) ?? 
   const bad: string[] = []
   for (const [canonical, members] of groups) {
     const prints = new Set(members.filter(id => courseById.get(id)?.quality != null)
-      .map(id => JSON.stringify(courseById.get(id)!.ratingBreakdown)))
+      .map(id => stableJson(courseById.get(id)!.ratingBreakdown)))
     if (prints.size > 1) bad.push(`${canonical}: ${prints.size} different breakdowns`)
   }
   check('all rated listings within a group hold identical breakdowns', bad)
@@ -587,7 +600,7 @@ section('5. Prebuilt catalog dump')
       if (Number(row.quality) !== wantQ) bad.push(`${id} dump quality=${row.quality} want ${wantQ}`)
       if (Number(row.quality_n) !== overallN.get(canonical)) bad.push(`${id} dump quality_n=${row.quality_n} want ${overallN.get(canonical)}`)
       if (Number(row.quality_pct) !== overallPct.get(canonical)) bad.push(`${id} dump quality_pct=${row.quality_pct} want ${overallPct.get(canonical)}`)
-      if (JSON.stringify(row.rating_breakdown) !== JSON.stringify(breakdown.get(canonical))) bad.push(`${id} dump breakdown differs`)
+      if (stableJson(row.rating_breakdown) !== stableJson(breakdown.get(canonical))) bad.push(`${id} dump breakdown differs`)
     }
   } catch (e) {
     bad.push(`could not read dump: ${(e as Error).message}`)
