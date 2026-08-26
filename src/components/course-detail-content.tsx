@@ -410,7 +410,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                 forcedTab="overview"
                                 isNew={isNewCourse}
                                 quality={rating.quality ?? null}
-                                qualityN={rating.qualityN ?? null}
                                 qualityPct={rating.qualityPct ?? null}
                                 ratingBreakdown={rating.ratingBreakdown ?? null}
                             />

@@ -161,8 +161,18 @@ export function round3(value) {
  * @param {number | null | undefined} pct
  */
 export function rankLabel(pct) {
+    const share = rankShare(pct)
+    return share == null ? null : `Ranks higher than ${share}% of courses`
+}
+
+/**
+ * Just the percentage, for callers that style it separately from the sentence.
+ * @param {number | null | undefined} pct
+ * @returns {number | null}
+ */
+export function rankShare(pct) {
     if (pct == null || !Number.isFinite(pct)) return null
-    return `Ranks higher than ${Math.min(99, Math.max(1, Math.round(pct)))}% of courses`
+    return Math.min(99, Math.max(1, Math.round(pct)))
 }
 
 /**
