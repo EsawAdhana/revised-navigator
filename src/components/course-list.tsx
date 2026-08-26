@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VList, VListHandle } from 'virtua';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { setPreferredTerms } from '@/lib/preferred-term';
 import { useFilteredCourses } from '@/hooks/use-filtered-courses';
 import { useInstructorSearch } from '@/hooks/use-instructor-search';
 import { useCourseStore } from '@/lib/store';
@@ -58,8 +59,9 @@ export function CourseList() {
   }, [letterToIndex])
 
   const searchParams = useSearchParams();
-  const queryString = searchParams.toString();
   const resetFilters = useResetFilters();
+
+  const selectedTermParam = searchParams.get('terms');
 
   const searchQuery = searchParams.get('q') ?? '';
   const hasSearchQuery = searchQuery.trim().length > 0;
@@ -87,6 +89,14 @@ export function CourseList() {
       }
     }
   }, []);
+
+  // Hand the browsed term to the course page out-of-band so the Sections panel opens on
+  // it without the term appearing in the course URL. Stable identity: CourseCard is
+  // memoized and an inline closure would re-render every card on each keystroke.
+  const openCourse = useCallback((e: React.MouseEvent) => {
+    setPreferredTerms(selectedTermParam ? selectedTermParam.split(',') : null);
+    saveScrollOnClick(e);
+  }, [selectedTermParam, saveScrollOnClick]);
 
   // Restore scroll position when returning via back navigation
   useEffect(() => {
@@ -271,10 +281,15 @@ export function CourseList() {
                   <div key={course.id} className="w-full">
                   <CourseCard
                     course={course}
-                    href={`/courses/${encodeURIComponent(course.id)}${queryString ? `?${queryString}` : ''}`}
+                    // A course URL is just the course: /courses/CS106A. The browse filters used to
+                    // ride along, which left shareable links like ?q=mark&hideConflicts=false.
+                    // Nothing on the detail page needs them -- `terms` only pre-selected the
+                    // Sections tab, which now falls back to getDefaultTerm -- and Back still
+                    // returns to the filtered browse view, because that URL is in history.
+                    href={`/courses/${encodeURIComponent(course.id)}`}
                     sortDisplayValue={getSortDisplayValue(course)}
                     rating={getRatingForCourse(course)}
-                    onClick={saveScrollOnClick}
+                    onClick={openCourse}
                     onHoverPrefetch={prefetchCourseDetail}
                   />
                   </div>

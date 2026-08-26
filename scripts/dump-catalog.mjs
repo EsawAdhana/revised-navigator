@@ -20,6 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
+import { buildCrossListGroups, normalizeCourseId } from '../src/lib/cross-list.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_OUT_DIR = join(__dirname, '..', 'public', 'catalog')
@@ -307,10 +308,15 @@ async function fetchRecentlyTaught(supabase, minYearStart) {
   return taught
 }
 
+
 /**
- * Cross-list siblings named in a title parenthetical: "Origami Engineering
- * (ME 255)" -> ["ME255"]. Same extraction scrape-sections.mjs used to build
- * prior-offerings.json, so the two sides compare like for like.
+ * Course codes a title names, whether or not they are still in the catalog.
+ *
+ * Distinct from buildCrossListGroups, which unions only codes that exist today because a
+ * missing code cannot be a navigation target. Here the codes are looked up in teaching
+ * HISTORY, so a sibling Stanford has since retired is exactly the evidence that matters:
+ * ENGLISH 168B names ENGLISH 268A, which no longer ships but was taught, and dropping it
+ * flagged a long-running course as new.
  */
 function extractCrossListedIds(title) {
   const ids = []
@@ -330,13 +336,33 @@ function extractCrossListedIds(title) {
  * low-enrollment sections) never collect evaluations, but anything that DID
  * collect one in the window was clearly taught and is not new.
  */
-async function markNewCourses(supabase, rows) {
+async function markNewCourses(supabase, rows, catalog) {
   const prior = readPriorOfferings()
   if (!prior) {
     console.warn(`  ⚠ ${PRIOR_OFFERINGS_PATH} missing or short of ${MIN_PRIOR_YEARS} years — no isNew flags. Run: scrape-sections.mjs --prior-years`)
     return
   }
   const taught = await fetchRecentlyTaught(supabase, prior.earliestYearStart)
+
+  // Titles declare siblings pairwise and inconsistently, so reading only this row's
+  // title misses a class whose OTHER codes name it: MATSCI 402A's own title says nothing
+  // while EE 402A, EASTASN 402A and EALC 402A all list it, and it was flagged a brand-new
+  // course despite the class having run since 2023 -- next to a rating inherited from its
+  // siblings. Group by connected component over the whole catalog, the same grouping
+  // refreshMetrics and the course page use, so "new" and the rating cannot disagree.
+  const groups = buildCrossListGroups(
+    (catalog || rows).map(course => ({
+      id: course.course_id,
+      title: course.title || '',
+      crossListWith: course.cross_list_with || [],
+    })),
+  )
+  const groupOf = new Map()
+  for (const members of groups.values()) {
+    const ids = members.map(normalizeCourseId)
+    for (const member of members) groupOf.set(normalizeCourseId(member), ids)
+  }
+
   let isNew = 0
   let existing = 0
   for (const row of rows) {
@@ -349,8 +375,12 @@ async function markNewCourses(supabase, rows) {
     // Judge the whole cross-list group, not just this row's code: a course keeps
     // running while gaining a new code (CS 140M on the long-running EE 186), and
     // which sibling carries the sections moves between years.
-    const codes = [row.course_id, ...extractCrossListedIds(row.title)]
-    if (codes.some((id) => prior.ids.has(id) || taught.has(id))) {
+    // Two sources, because they answer different questions. The group covers siblings
+    // whose titles name this row but not the reverse; the raw title codes cover siblings
+    // that have left the catalog and so are absent from the group.
+    const self = normalizeCourseId(row.course_id)
+    const codes = new Set([self, ...(groupOf.get(self) || []), ...extractCrossListedIds(row.title)])
+    if ([...codes].some((id) => prior.ids.has(id) || taught.has(id))) {
       row.isNew = false
       existing++
       continue
@@ -385,7 +415,7 @@ async function main() {
   const all = allRaw.filter((c) => (c.sections || []).length > 0)
   if (dropped) console.log(`  dropped ${dropped} zero-section rows from dump`)
 
-  await markNewCourses(supabase, all)
+  await markNewCourses(supabase, all, source)
   dropNonPositiveMetrics(all)
 
   const fullJson = JSON.stringify(all)

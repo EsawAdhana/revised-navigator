@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { buildCrossListGroups, deriveEvalPairings, normalizeCourseId } from '../src/lib/utils'
 import { addRatingCounts, pooledMean, percentileRanks, adjustAndRank, round3, headlineSampleSize } from '../src/lib/quality-score.mjs'
+import { categorizeQuestion, courseLevelSignature } from '../src/lib/eval-reports.mjs'
 
 const env = Object.fromEntries(readFileSync('.env.local', 'utf8').split('\n').filter(l => l.includes('=')).map(l => {
   const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]
@@ -25,12 +26,8 @@ async function loadAll<T>(t: string, c: string): Promise<T[]> {
 const RATING_CATEGORIES = ['quality', 'learning', 'organization'] as const
 type Cat = typeof RATING_CATEGORIES[number]
 const category = (t: unknown): Cat | 'hours' | null => {
-  const v = String(t || '').toLowerCase()
-  if (v.includes('quality') || v.includes('overall')) return 'quality'
-  if (v.includes('how much did you learn')) return 'learning'
-  if (v.includes('organized')) return 'organization'
-  if (v.includes('hours per week') || (v.includes('hours') && v.includes('week'))) return 'hours'
-  return null
+  const c = categorizeQuestion(String(t ?? ''))
+  return c === 'quality' || c === 'learning' || c === 'organization' || c === 'hours' ? c : null
 }
 const median = (values: number[]) => {
   if (!values.length) return null
@@ -64,7 +61,7 @@ const questionsByGroup = new Map<string, any[]>()
 const seen = new Set<string>(); let dupes = 0
 for (const r of evalRows) {
   const canonical = groupOf.get(r.course_id) ?? r.course_id
-  const key = `${canonical}||${r.course_code}||${r.term}||${r.instructor}`
+  const key = `${canonical}||${r.course_code}||${r.term}||${courseLevelSignature(r)}`
   if (seen.has(key)) { dupes++; continue }
   seen.add(key)
   if (!questionsByGroup.has(canonical)) questionsByGroup.set(canonical, [])

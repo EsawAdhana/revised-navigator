@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { aggregateCrossListMetrics, decodeHtmlEntities, hoursPerUnit, parseUnitsOptions } from '@/lib/utils'
 import { rowToCourse } from '@/lib/course-mapper'
 import { buildDescriptionSegments } from '@/components/course-description'
+import { buildCrossListGroups } from '@/lib/utils'
 import { normalizeCatalogDescription } from '@/lib/utils'
 
 /**
@@ -386,6 +387,39 @@ describe('courses as the app renders them', () => {
         expect(pooled.quality).toBe(4)
         expect(pooled.hours).toBe(10)
         expect(pooled.hrsPerUnit).toBe(2)
+    })
+})
+
+describe('the new-course flag agrees with the ratings', () => {
+    /**
+     * A course cannot be new to Stanford and already carry student evaluations. Both
+     * facts are derived per cross-list group, so a disagreement means the two groupings
+     * diverged -- which is exactly what happened: markNewCourses read siblings out of
+     * one row's own title, so MATSCI 402A was flagged brand-new while showing the 4.3 it
+     * inherited from EE 402A, a class taught since 2023.
+     */
+    it('never flags a course as new while it carries a rating', () => {
+        const bad = light.filter(c => (c as { isNew?: unknown }).isNew === true && c.quality != null)
+        expect(show(bad.map(c => `${c.course_id}: isNew with quality ${String(c.quality)}`))).toEqual([])
+    })
+
+    it('agrees with itself across every listing of one class', () => {
+        // Same class, so the same answer whichever code you open. Groups are built in one
+        // pass; calling getCrossListGroupIds per course is O(n^2) over 8,600 rows.
+        const groups: Map<string, string[]> = buildCrossListGroups(light.map(c => ({
+            id: c.course_id,
+            title: c.title,
+            crossListWith: (c as { cross_list_with?: string[] }).cross_list_with || [],
+        })))
+        const byId = new Map(light.map(c => [c.course_id, c as { isNew?: unknown }]))
+        const bad: string[] = []
+        for (const members of groups.values()) {
+            if (members.length < 2) continue
+            // undefined abstains, so only compare the listings that were judged.
+            const answers = new Set(members.map(id => byId.get(id)?.isNew).filter(v => v !== undefined))
+            if (answers.size > 1) bad.push(`${members.sort().join(',')}: isNew is ${[...answers].join(' and ')}`)
+        }
+        expect(show(bad)).toEqual([])
     })
 })
 

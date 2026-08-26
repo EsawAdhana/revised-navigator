@@ -72,7 +72,7 @@ export function InstructorList({
               {linkToProfile ? (
                 <Link
                   href={instructorProfilePath(name, courseId, courseLinks)}
-                  className="hover:text-foreground hover:underline underline-offset-2 transition-colors"
+                  className="underline underline-offset-2 decoration-muted-foreground/40 hover:text-foreground hover:decoration-current transition-colors"
                 >
                   {decodeHtmlEntities(name)}
                 </Link>

@@ -16,6 +16,7 @@ import { isDevEvalsUnlocked } from '@/lib/dev-flags'
 import { compareTerms } from '@/lib/terms'
 import type { Course, CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
 import { addRatingCounts, pooledMean, rankShare } from '@/lib/quality-score.mjs'
+import { categorizeQuestion, dedupeCourseLevelReports } from '@/lib/eval-reports.mjs'
 
 // --- Color helpers (green=good, yellow/orange=mid, red=bad) ---
 
@@ -74,18 +75,7 @@ export function barFill(score: number): string {
 
 export type QuestionCategory = 'quality' | 'learning' | 'organization' | 'goals' | 'hours' | 'attendance_in_person' | 'attendance_online' | 'unknown'
 
-export function categorizeQuestion(text: string): QuestionCategory {
-  const t = (text || '').toLowerCase()
-  if (t.includes('quality') || t.includes('overall')) return 'quality'
-  if (t.includes('how much did you learn')) return 'learning'
-  if (t.includes('organized')) return 'organization'
-  if (t.includes('learning goals')) return 'goals'
-  // Hours: "hours per week", "how many hours...week", or "hours" + "week" (Stanford: "How many hours per week on average did you spend...")
-  if (t.includes('hours per week') || (t.includes('hours') && t.includes('week'))) return 'hours'
-  if (t.includes('percent') && t.includes('in person')) return 'attendance_in_person'
-  if (t.includes('percent') && t.includes('online')) return 'attendance_online'
-  return 'unknown'
-}
+export { categorizeQuestion }
 
 export const CATEGORY_LABELS: Record<QuestionCategory, string> = {
   quality: 'Instruction Quality',
@@ -332,7 +322,7 @@ function InstructorRow({ instructor, ratingCats, isExpanded, onToggle, evals }: 
           <Link
             href={`/instructors/${instructorSlug(instructor.name)}`}
             onClick={e => e.stopPropagation()}
-            className="text-sm font-medium text-foreground truncate block hover:underline underline-offset-2"
+            className="text-sm font-medium text-foreground truncate block underline underline-offset-2 decoration-muted-foreground/40 hover:decoration-current"
           >
             {formatInstructorName(instructor.name)}
           </Link>
@@ -585,7 +575,7 @@ function AggregatedRatingBreakdown({ questions, aggregateScore }: { questions: E
 }
 
 /** Median score per category with an expandable response breakdown for each. */
-export function EvaluationOverview({ evaluations, quality, qualityPct, breakdown }: {
+export function EvaluationOverview({ evaluations: rawEvaluations, quality, qualityPct, breakdown }: {
   evaluations: CourseEvaluation[]
   /**
    * courses.quality / quality_pct / rating_breakdown -- precomputed over the course's
@@ -597,6 +587,11 @@ export function EvaluationOverview({ evaluations, quality, qualityPct, breakdown
   qualityPct?: number | null
   breakdown?: Course['ratingBreakdown'] | null
 }) {
+  // A co-taught section files the same course-level answers once per instructor, so the
+  // charts counted those students once per instructor too -- the same duplication the
+  // headline rating de-duplicates server-side. Both must use the same rule or the bars
+  // add up to more responses than the rating claims.
+  const evaluations = useMemo(() => dedupeCourseLevelReports(rawEvaluations), [rawEvaluations])
   const metrics = useMemo(() => aggregateMetrics(evaluations), [evaluations])
 
   const questionsByCategory = useMemo(() => {
@@ -769,6 +764,10 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, 
     return terms
   }, [evaluations])
 
+  // The pill counts are reports, so they must not count a co-taught section once per
+  // instructor -- that is why every term read "(2)" on a class with two listed teachers.
+  const distinctReports = useMemo(() => dedupeCourseLevelReports(evaluations), [evaluations])
+
   const filteredEvals = useMemo(() => {
     if (activeTermFilter === 'all') return evaluations
     return evaluations.filter(e => e.term === activeTermFilter)
@@ -895,10 +894,10 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, 
                 : 'bg-secondary/50 hover:bg-secondary text-muted-foreground'
             )}
           >
-            All ({evaluations.length})
+            All ({distinctReports.length})
           </button>
           {evalTerms.map(term => {
-            const count = evaluations.filter(e => e.term === term).length
+            const count = distinctReports.filter(e => e.term === term).length
             return (
               <button
                 key={term}
