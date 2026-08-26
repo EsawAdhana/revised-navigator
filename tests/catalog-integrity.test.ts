@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { aggregateCrossListMetrics, decodeHtmlEntities, hoursPerUnit, parseUnitsOptions } from '@/lib/utils'
 import { rowToCourse } from '@/lib/course-mapper'
+import { buildDescriptionSegments } from '@/components/course-description'
 import { normalizeCatalogDescription } from '@/lib/utils'
 
 /**
@@ -389,24 +390,64 @@ describe('courses as the app renders them', () => {
 })
 
 describe('reviewed course links point somewhere real', () => {
-    it('targets courses that exist, on spans that are still numbers', () => {
+    /**
+     * A reviewed link's SPAN must still land on a course number. If an offset drifts, the
+     * frozen data is genuinely corrupt and would mislabel arbitrary prose.
+     *
+     * A reviewed link's TARGET no longer has to be in the catalog. Stanford unschedules
+     * courses every term, and buildDescriptionSegments now drops a bare link whose target
+     * has left, exactly as it already drops a subject-qualified one. Failing here instead
+     * would only flag the churn once a day, and the honest fix -- deleting the entry --
+     * throws away a human review that becomes correct again when the course returns.
+     */
+    it('sits on spans that are still course numbers', () => {
         const frozen: Record<string, Array<[number, number, string]>> = JSON.parse(
             fs.readFileSync('src/lib/course-bare-links.json', 'utf8'),
         )
-        const ids = new Set(full.map(c => c.course_id))
         const byId = new Map(full.map(c => [c.course_id, c]))
         const bad: string[] = []
         for (const [key, links] of Object.entries(frozen)) {
             const courseId = key.slice(0, key.lastIndexOf(':'))
             const course = byId.get(courseId)
-            if (!course) { bad.push(`${key}: course missing from dump`); continue }
+            // The described course itself left the catalog: nothing renders this entry.
+            if (!course) continue
             const text = decodeHtmlEntities(normalizeCatalogDescription(course.description || ''))
-            for (const [offset, length, target] of links) {
-                if (!ids.has(target)) bad.push(`${courseId}: target ${target} not in catalog`)
+            for (const [offset, length] of links) {
                 const span = text.slice(offset, offset + length)
                 if (!/^\d{2,3}[A-Z]?$/.test(span)) bad.push(`${courseId}: span at ${offset} is ${JSON.stringify(span)}`)
             }
         }
         expect(show(bad)).toEqual([])
+    })
+
+    it('never links a bare number to a course that is not in the catalog', () => {
+        // The guard that replaces the old target assertion, checked against the real
+        // frozen data and the real dump rather than a fixture.
+        const frozen: Record<string, Array<[number, number, string]>> = JSON.parse(
+            fs.readFileSync('src/lib/course-bare-links.json', 'utf8'),
+        )
+        const ids = new Set(full.map(c => c.course_id))
+        const byId = new Map(full.map(c => [c.course_id, c]))
+        const linked: string[] = []
+        for (const [key, links] of Object.entries(frozen)) {
+            const courseId = key.slice(0, key.lastIndexOf(':'))
+            const course = byId.get(courseId)
+            if (!course) continue
+            const source = course.description || ''
+            const bare = new Map<number, [number, string]>(
+                links.map(([offset, length, target]) => [offset, [length, target]]),
+            )
+            const segments = buildDescriptionSegments(
+                courseId,
+                source,
+                () => undefined,
+                bare,
+                id => ids.has(id),
+            )
+            for (const seg of segments) {
+                if (seg.courseId && !ids.has(seg.courseId)) linked.push(`${courseId} -> ${seg.courseId}`)
+            }
+        }
+        expect(show(linked)).toEqual([])
     })
 })
