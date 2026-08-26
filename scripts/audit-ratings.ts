@@ -16,6 +16,7 @@ import { resolveCrossListRating, normalizeCourseId, buildCrossListGroups, derive
 import { useEvaluationStore } from '../src/lib/evaluation-store'
 import { toCourseEvaluation, type EvaluationRow } from '../src/lib/evaluation-row'
 import { addRatingCounts, pooledMean, percentileRanks, adjustAndRank, round3, headlineSampleSize } from '../src/lib/quality-score.mjs'
+import { categorizeQuestion, courseLevelSignature, dedupeCourseLevelReports } from '../src/lib/eval-reports.mjs'
 import type { Course, CourseEvaluation } from '../src/types/course'
 
 let failures = 0
@@ -82,17 +83,23 @@ console.log(`  ${evalRows.length} evaluation rows, ${courseRows.length} course r
 const RATING_CATEGORIES = ['quality', 'learning', 'organization'] as const
 type Cat = typeof RATING_CATEGORIES[number]
 const category = (t: unknown): Cat | 'hours' | null => {
-  const v = String(t || '').toLowerCase()
-  if (v.includes('quality') || v.includes('overall')) return 'quality'
-  if (v.includes('how much did you learn')) return 'learning'
-  if (v.includes('organized')) return 'organization'
-  if (v.includes('hours per week') || (v.includes('hours') && v.includes('week'))) return 'hours'
-  return null
+  const c = categorizeQuestion(String(t ?? ''))
+  return c === 'quality' || c === 'learning' || c === 'organization' || c === 'hours' ? c : null
 }
 const isRating = (q: any) => {
   const c = category(q?.text)
   return c !== null && c !== 'hours'
 }
+
+/**
+ * Answers a question's own responseRate accounts for that are NOT a 1-5 rating: Law
+ * offers "Not applicable/Have no basis to answer" at weight 0, and someone picking it
+ * counts as having responded while contributing no rating.
+ */
+const notApplicableCount = (q: any) =>
+  (q?.options || [])
+    .filter((o: any) => typeof o?.weight === 'number' && (o.weight < 1 || o.weight > 5))
+    .reduce((sum: number, o: any) => sum + (Number(o?.count) || 0), 0)
 
 // ================================================================
 section('1. Evaluation rows (source data)')
@@ -194,6 +201,79 @@ section('1. Evaluation rows (source data)')
   check('every evaluation is filed under a code its course_code lists', bad)
 }
 
+{
+  // Our count of a question's answers must equal what Stanford says answered it. Each
+  // question carries its own responseRate ("15/16 (93.75%)"), which is the authoritative
+  // figure: the per-report "N of M responded" header sometimes disagrees with it
+  // (LAWGEN 117Q reports "10 of 16" on a question whose own rate is 15/16, and 15 is
+  // what the option counts sum to).
+  //
+  // This is the check that would have caught the co-instructor duplication immediately:
+  // pooling a section's identical copies produced two to thirteen times the answers any
+  // single question reported.
+  const bad: string[] = []
+  let compared = 0
+  let noRate = 0
+  for (const r of evalRows) {
+    for (const q of r.questions || []) {
+      const cat = category(q?.text)
+      if (!cat || cat === 'hours') continue
+      const counted = pooledMean(addRatingCounts(new Map(), q))?.n ?? 0
+      if (counted === 0) continue
+      const m = String((q as { responseRate?: unknown }).responseRate ?? '').match(/^\s*(\d+)\s*\/\s*(\d+)/)
+      if (!m) { noRate++; continue }
+      compared++
+      const expected = Number(m[1]) - notApplicableCount(q)
+      if (counted !== expected) {
+        bad.push(`${r.course_id} ${String(r.term).slice(0, 14)} ${cat}: counted ${counted}, expected ${expected} (rate ${m[1]}, ${notApplicableCount(q)} n/a)`)
+      }
+    }
+  }
+  check("each question's option counts match its own reported response rate", bad,
+    `${compared} questions compared, ${noRate} without a parseable rate`)
+}
+
+{
+  // And after de-duplication, a section must not pool more answers than its questions
+  // individually reported -- the aggregate form of the check above.
+  const bad: string[] = []
+  let compared = 0
+  const bySection = new Map<string, Row[]>()
+  for (const r of evalRows) {
+    const key = `${r.course_id}||${r.course_code}||${r.term}`
+    if (!bySection.has(key)) bySection.set(key, [])
+    bySection.get(key)!.push(r)
+  }
+  for (const [key, reports] of bySection) {
+    const seen = new Set<string>()
+    const kept: Row[] = []
+    for (const r of reports) {
+      const sig = courseLevelSignature(r)
+      if (seen.has(sig)) continue
+      seen.add(sig)
+      kept.push(r)
+    }
+    for (const cat of RATING_CATEGORIES) {
+      const counts = new Map<number, number>()
+      let reported = 0
+      let sawRate = false
+      for (const r of kept) {
+        for (const q of r.questions || []) {
+          if (category(q?.text) !== cat) continue
+          addRatingCounts(counts, q)
+          const m = String((q as { responseRate?: unknown }).responseRate ?? '').match(/^\s*(\d+)\s*\/\s*(\d+)/)
+          if (m) { reported += Number(m[1]) - notApplicableCount(q); sawRate = true }
+        }
+      }
+      const n = pooledMean(counts)?.n ?? 0
+      if (n === 0 || !sawRate) continue
+      compared++
+      if (n !== reported) bad.push(`${key.slice(0, 56)}.${cat}: pooled ${n}, questions reported ${reported}`)
+    }
+  }
+  check('a de-duplicated section pools exactly what its questions reported', bad, `${compared} section-questions`)
+}
+
 // ================================================================
 section('2. Metrics, computed exactly as refreshMetrics does')
 
@@ -215,7 +295,7 @@ const seenReports = new Set<string>()
 let duplicateRows = 0
 for (const r of evalRows) {
   const canonical = groupOfCourse.get(r.course_id) ?? r.course_id
-  const key = `${canonical}||${r.course_code}||${r.term}||${r.instructor}`
+  const key = `${canonical}||${r.course_code}||${r.term}||${courseLevelSignature(r)}`
   if (seenReports.has(key)) { duplicateRows++; continue }
   seenReports.add(key)
   if (!questionsByGroup.has(canonical)) questionsByGroup.set(canonical, [])
@@ -495,7 +575,17 @@ for (const r of evalRows) {
   evalsByCourse.get(r.course_id)!.push(ev)
 }
 useEvaluationStore.setState({ evaluations: Object.fromEntries(evalsByCourse) })
-const mergeFor = (ids: string[]) => useEvaluationStore.getState().getMergedEvaluations(ids)
+/**
+ * What the charts actually see. The store's merge keeps one row per instructor, because
+ * the Instructors tab needs that; EvaluationOverview then collapses co-instructor copies
+ * for the course-level charts. Mirror both steps or this compares against something the
+ * UI never renders.
+ */
+const mergeFor = (ids: string[]) =>
+  dedupeCourseLevelReports(useEvaluationStore.getState().getMergedEvaluations(ids)) as CourseEvaluation[]
+
+/** The store's merge alone, for checks about report identity rather than chart totals. */
+const mergeRawFor = (ids: string[]) => useEvaluationStore.getState().getMergedEvaluations(ids)
 
 {
   // THE headline check: what the charts add up must equal the n behind the score.
@@ -531,7 +621,7 @@ const mergeFor = (ids: string[]) => useEvaluationStore.getState().getMergedEvalu
     const all = members.flatMap(id => evalsByCourse.get(id) || [])
     if (all.length === 0) continue
     const distinct = new Set(all.map(ev => `${ev.courseCode}|${ev.term}|${ev.instructor}`))
-    const merged = mergeFor(members)
+    const merged = mergeRawFor(members)
     if (merged.length !== distinct.size) bad.push(`${canonical}: merged ${merged.length}, ${distinct.size} distinct reports`)
   }
   check('merge keeps exactly one copy of every distinct report', bad)

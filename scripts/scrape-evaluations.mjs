@@ -19,6 +19,7 @@ import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import { addRatingCounts, pooledMean, percentileRanks, adjustAndRank, round3, headlineSampleSize } from '../src/lib/quality-score.mjs'
 import { buildCrossListGroups, deriveEvalPairings, normalizeCourseId } from '../src/lib/cross-list.mjs'
+import { courseLevelSignature } from '../src/lib/eval-reports.mjs'
 
 const BASE_URL = 'https://stanford.evaluationkit.com'
 const SEARCH_URL = `${BASE_URL}/Report/Public/Results`
@@ -331,15 +332,20 @@ async function refreshMetrics(supabase) {
         for (const memberId of memberIds) groupOfCourse.set(memberId, canonical)
     }
 
-    // De-duplicate by report, not by row: one report is filed verbatim under every code
-    // it lists, and 6 are stored twice under a single course_id. Distinct sections keep
-    // distinct course_codes, so they survive.
+    // De-duplicate by what the students actually answered, not by row.
+    //
+    // One report is filed verbatim under every code it cross-lists, 6 are stored twice
+    // under a single course_id, AND a co-taught section is filed once per instructor with
+    // the same course-level answers -- that last one counted the same students up to
+    // thirteen times. Keying on the answer signature collapses all three while keeping
+    // genuinely distinct reports: separate sections carry separate course_codes, and the
+    // Law School sections that really do rate each instructor differ in the signature.
     const questionsByGroup = new Map()
     const seenReports = new Set()
     let duplicates = 0
     for (const evaluation of evaluations) {
         const canonical = groupOfCourse.get(evaluation.course_id) ?? evaluation.course_id
-        const reportKey = `${canonical}||${evaluation.course_code}||${evaluation.term}||${evaluation.instructor}`
+        const reportKey = `${canonical}||${evaluation.course_code}||${evaluation.term}||${courseLevelSignature(evaluation)}`
         if (seenReports.has(reportKey)) { duplicates++; continue }
         seenReports.add(reportKey)
         if (!questionsByGroup.has(canonical)) questionsByGroup.set(canonical, [])

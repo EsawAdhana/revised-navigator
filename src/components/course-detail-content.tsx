@@ -19,8 +19,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Course } from '@/types/course';
 import { CourseDescription } from './course-description';
 import { useEvaluationStore } from '@/lib/evaluation-store';
-import { useMemo } from 'react';
-import { useQueryState, parseAsArrayOf, parseAsString } from 'nuqs';
+import { useMemo, useRef } from 'react';
+import { takePreferredTerms } from '@/lib/preferred-term';
 import { CalendarPreviewModal } from './calendar-preview-modal';
 import { unpickedComponents, stripSeconds } from '@/lib/schedule-utils';
 import { isWimCourse } from '@/lib/wim-courses';
@@ -99,21 +99,16 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     // Term(s) carried over from the browse filter (?terms=). When the user arrived
     // having filtered to a specific quarter, open that quarter's tab if this course
     // offers it, instead of defaulting to the latest offered term.
-    const [urlTerms] = useQueryState('terms', parseAsArrayOf(parseAsString));
-    const incomingPreferredTerm = useMemo(() => {
-        if (!urlTerms || urlTerms.length === 0) return null;
-        const offered = urlTerms.filter(t => terms.includes(t)).sort(compareTerms);
-        return offered[0] ?? null;
-    }, [urlTerms, terms]);
-
     // State for active tab
     const [activeTerm, setActiveTerm] = useState<string>(() => {
         if (cartItem?.selectedTerm && terms.includes(cartItem.selectedTerm)) {
             return cartItem.selectedTerm;
         }
-        if (incomingPreferredTerm) return incomingPreferredTerm;
         return getDefaultTerm(terms);
     });
+
+    // Consumed once by the term effect below.
+    const preferredTermApplied = useRef(false);
 
     // Live enrollment for the term on screen. The catalog dump is refreshed once
     // a day (refresh-courses.yml), which is hours stale during enrollment week —
@@ -211,13 +206,30 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         ? getSyllabusUrl(course.subject, course.code, syllabusClassId, activeTerm, syllabusSectionNumber)
         : null
 
-    // Update active term if course changes or terms load
+    // Which term the Sections panel shows, in priority order: the section the student
+    // actually picked, then the term they were browsing when they clicked through, then
+    // the default. One effect rather than two, because two writing the same state on the
+    // same `terms` change race -- the second reads the pre-update value and clobbers it.
+    //
+    // The browsed term arrives via sessionStorage (src/lib/preferred-term.ts), not the
+    // URL, so a course link stays /courses/CS106A. Read in an effect because this view is
+    // server-rendered and a render-time read would desync hydration, and consumed once so
+    // a later direct visit gets the default instead of a stale term.
     useEffect(() => {
         if (cartItem?.selectedTerm && terms.includes(cartItem.selectedTerm)) {
             setActiveTerm(cartItem.selectedTerm);
-        } else if (terms.length > 0 && !terms.includes(activeTerm)) {
-            setActiveTerm(incomingPreferredTerm ?? getDefaultTerm(terms));
+            return;
         }
+        if (terms.length === 0) return;
+        if (!preferredTermApplied.current) {
+            preferredTermApplied.current = true;
+            const browsed = takePreferredTerms().filter(t => terms.includes(t)).sort(compareTerms);
+            if (browsed[0]) {
+                setActiveTerm(browsed[0]);
+                return;
+            }
+        }
+        if (!terms.includes(activeTerm)) setActiveTerm(getDefaultTerm(terms));
     }, [course.id, cartItem?.selectedTerm, terms.length]); // eslint-disable-line react-hooks/exhaustive-deps -- activeTerm omitted to avoid loop; setActiveTerm is stable
 
     const isFutureTerm = isTermInFuture(activeTerm)
