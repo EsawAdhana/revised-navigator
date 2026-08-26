@@ -42,6 +42,35 @@ export function decodeHtmlEntities(text: string): string {
 }
 
 /**
+ * Tidy a catalog title for display, sorting and <title>.
+ *
+ * Upstream ships 10 titles with leading or trailing spaces (" The Spring Film
+ * II") and ~68 with doubled inner spaces. Both survive into sort keys and search
+ * matching, where whitespace is significant even though HTML collapses it.
+ */
+export function normalizeCatalogTitle(title: string | null | undefined): string {
+  if (!title || typeof title !== 'string') return ''
+  return title.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Tidy a catalog description for display.
+ *
+ * A handful of upstream descriptions carry stray markup — "<e>The Italian",
+ * "<i>...</i>", "<link>" — which React renders literally as text. Tag-shaped
+ * tokens are dropped; angle-bracketed URLs ("<https://...>") keep the URL and
+ * lose only the brackets. Inner whitespace is left alone so the reviewed
+ * course-link offsets stay anchored.
+ */
+export function normalizeCatalogDescription(description: string | null | undefined): string {
+  if (!description || typeof description !== 'string') return ''
+  return description
+    .replace(/<((?:https?:\/\/|www\.)[^>\s]+)>/gi, '$1')
+    .replace(/<\/?[a-z][^>]*>/gi, '')
+    .trim()
+}
+
+/**
  * Extract alternate course codes from a title's trailing parenthetical, e.g. "(CS 137A, EE 160A)".
  * Returns normalized ids (no space, uppercase) for comparison, or empty array if none.
  */
@@ -63,26 +92,82 @@ export function normalizeCourseId(id: string): string {
 }
 
 /**
- * Map from normalized alternate id -> normalized primary id.
- * Used to redirect /courses/CS137A to /courses/AA174A when they're the same course.
- * Note: When courses mutually list each other (A lists B, B lists A), both end up in the map.
- * Use resolveToCanonicalPrimary to get the single canonical id and avoid redirect loops.
+ * Map from normalized member id -> the canonical id of its cross-list class.
+ *
+ * Titles declare siblings ("Principles of Robot Autonomy I (AA 274A, CS 237A,
+ * EE 260A)"), but they declare them pairwise and inconsistently: AA 274A's title
+ * may name three siblings while CS 237A's names three different ones. Following
+ * those links one hop at a time made a four-code class resolve to three
+ * different canonical ids depending on which code you entered from, so the same
+ * class showed different pooled evaluations per URL.
+ *
+ * So group by connected component (union-find) and pick one canonical member —
+ * the alphabetically first id that exists in the catalog. Only non-canonical
+ * members are keyed, which makes resolution a single hop and idempotent.
+ *
+ * Cached per `courses` array identity: /browse mounts FilterSidebar and
+ * CourseList, which each built their own copy, and getCrossListGroupIds rebuilt
+ * one per call — ~6 ms each over 8,648 courses, repeated on every catalog change.
  */
+const primaryMapCache = new WeakMap<object, Map<string, string>>()
+
 export function getCrossListPrimaryMap(courses: { id: string; title: string }[]): Map<string, string> {
-  const map = new Map<string, string>()
+  const cached = primaryMapCache.get(courses)
+  if (cached) return cached
+  const built = buildCrossListPrimaryMap(courses)
+  primaryMapCache.set(courses, built)
+  return built
+}
+
+function buildCrossListPrimaryMap(courses: { id: string; title: string }[]): Map<string, string> {
+  const parent = new Map<string, string>()
+  const find = (x: string): string => {
+    let root = x
+    while (parent.get(root) !== root) root = parent.get(root)!
+    // Path-compress so repeated lookups over the whole catalog stay cheap.
+    let cur = x
+    while (parent.get(cur) !== root) {
+      const next = parent.get(cur)!
+      parent.set(cur, root)
+      cur = next
+    }
+    return root
+  }
+  const add = (x: string) => { if (!parent.has(x)) parent.set(x, x) }
+  const union = (a: string, b: string) => {
+    const ra = find(a)
+    const rb = find(b)
+    if (ra === rb) return
+    // Keep the alphabetically smaller id as the root so the canonical choice
+    // does not depend on iteration order.
+    if (ra < rb) parent.set(rb, ra)
+    else parent.set(ra, rb)
+  }
+
+  const real = new Set(courses.map(c => normalizeCourseId(c.id)))
   for (const c of courses) {
-    const primary = normalizeCourseId(c.id)
-    const alts = getAlternateCourseCodesFromTitle(c.title)
-    alts.forEach(a => {
-      if (a !== primary) map.set(a, primary)
-    })
+    const self = normalizeCourseId(c.id)
+    add(self)
+    for (const alt of getAlternateCourseCodesFromTitle(c.title)) {
+      // Ignore codes that are not in the catalog: they cannot be a destination.
+      if (!real.has(alt)) continue
+      add(alt)
+      union(self, alt)
+    }
+  }
+
+  const map = new Map<string, string>()
+  for (const id of parent.keys()) {
+    const canonical = find(id)
+    if (canonical !== id) map.set(id, canonical)
   }
   return map
 }
 
 /**
  * Resolve a normalized course id to its canonical primary (for redirects).
- * Handles cycles: when A and B list each other, returns the alphabetically first as canonical.
+ * One hop with the component map above; the visited guard is kept so a
+ * hand-built or legacy map cannot spin.
  */
 export function resolveToCanonicalPrimary(norm: string, primaryMap: Map<string, string>): string {
   const visited = new Set<string>()
@@ -292,6 +377,50 @@ export function parseUnitsOptions(units: string | number): number[] {
   if (plusMatch) return [parseInt(plusMatch[1], 10)]
   const single = parseFloat(s)
   return isNaN(single) ? [] : [single]
+}
+
+/**
+ * Workload per unit, the figure shown as "N hrs/unit".
+ *
+ * Derived here rather than read from the stored `difficulty` column: that column
+ * was computed against whatever unit count the course carried when its
+ * evaluations were scraped, so 41 courses that have since been re-unitised
+ * disagreed with the unit count displayed beside them. Zero-unit courses get
+ * nothing instead of their raw hour count.
+ *
+ * Ranges divide by the largest option, which is the convention the stored
+ * column used in all 1,249 range cases.
+ */
+export function hoursPerUnit(hours: number | null | undefined, units: string | number | null | undefined): number | undefined {
+  if (hours == null || !Number.isFinite(hours)) return undefined
+  const options = parseUnitsOptions((units ?? '') as string).filter(u => u > 0)
+  if (!options.length) return undefined
+  return hours / Math.max(...options)
+}
+
+/**
+ * Pool evaluation figures across every code a class is listed under, so the
+ * rating does not depend on which listing you opened. Each figure is the mean
+ * over the members that have one; a member with no evaluations is skipped
+ * rather than counted as zero.
+ */
+export function aggregateCrossListMetrics(
+  members: Array<{ hours?: number | null; quality?: number | null; units?: string | number | null }>,
+): { hours?: number; quality?: number; hrsPerUnit?: number } {
+  const mean = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : undefined)
+  const hours = mean(members.map(m => m.hours).filter((h): h is number => h != null && Number.isFinite(h)))
+  const quality = mean(members.map(m => m.quality).filter((q): q is number => q != null && Number.isFinite(q)))
+  // Per-member hrs/unit, because members can carry different unit counts.
+  const hrsPerUnit = mean(
+    members
+      .map(m => hoursPerUnit(m.hours, m.units))
+      .filter((v): v is number => v != null && Number.isFinite(v)),
+  )
+  return {
+    ...(hours != null && { hours }),
+    ...(quality != null && { quality }),
+    ...(hrsPerUnit != null && { hrsPerUnit }),
+  }
 }
 
 /** Use "unit" only when value is exactly 1; otherwise "units". Ranges (e.g. "1-3") and "1+" always use "units". */

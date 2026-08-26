@@ -104,7 +104,8 @@ describe('instructors', () => {
     const course = build([hit()], new Map([['1272|1801', [relatedClass()]]]))[0]
     expect(course.instructors).toEqual(['Liang, Percy'])
     const dis = course.sections.find((s: { component: string }) => s.component === 'DIS')
-    expect(dis.meetings[0].instructors).toEqual([])
+    // Empty values are omitted from the dump, not written as [] — see withoutEmptyKeys.
+    expect(dis.meetings[0].instructors).toBeUndefined()
   })
 
   it('applies the SUNet override, which exists because some records hold an initial', () => {
@@ -162,7 +163,6 @@ describe('course rows', () => {
       status: 'Open',
       enrolled: 120,
       capacity: 500,
-      openSeats: 380,
       waitlist: 2,
       waitlistMax: 10,
       instructionalMode: 'In Person',
@@ -172,9 +172,12 @@ describe('course rows', () => {
     })
   })
 
-  it('never reports negative open seats when a class is over-enrolled', () => {
+  it('reports an over-enrolled class as-is and publishes no derived seat count', () => {
+    // openSeats used to be stored (and clamped at 0). It is derived at display
+    // time now, so the dump must carry the raw counts and nothing else.
     const [course] = build([hit({ enrlCap: 10, enrlTot: 14 })])
-    expect(course.sections[0].openSeats).toBe(0)
+    expect(course.sections[0]).toMatchObject({ capacity: 10, enrolled: 14 })
+    expect('openSeats' in course.sections[0]).toBe(false)
   })
 
   it('groups terms under one course and dedupes a class returned twice', () => {
@@ -241,13 +244,13 @@ describe('placeholder meeting times', () => {
         }],
       }),
     ])
-    expect(course.sections[0].meetings[0].time).toBe('')
+    expect(course.sections[0].meetings[0].time).toBeUndefined()
     expect(course.instructors).toEqual(['Rubinstein, Aviad'])
   })
 
   it('drops a half-populated time rather than emitting a one-ended range', () => {
     const [course] = build([hit({ meetings: [{ ...hit().meetings[0], endTime: '' }] })])
-    expect(course.sections[0].meetings[0].time).toBe('')
+    expect(course.sections[0].meetings[0].time).toBeUndefined()
   })
 
   it('keeps a real related-class time and strips its leading zero', () => {
@@ -457,6 +460,6 @@ describe('instructor names are decoded', () => {
       }],
     })] as never)
 
-    expect(course.sections[0].meetings[0].instructors).toEqual([])
+    expect(course.sections[0].meetings[0].instructors).toBeUndefined()
   })
 })

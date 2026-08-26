@@ -25,11 +25,17 @@ function formatCardTerms(terms: string[]): string {
   }).join(', ');
 }
 
+/**
+ * Same bands as scoreColor()/barFill() in course-evaluations, so a 4.0 is green
+ * on the card and green in the charts. The card carries dark-mode variants that
+ * the charts do not, which is why the thresholds are repeated rather than shared.
+ */
 function getRatingColor(rating: number): string {
   if (rating >= 4.5) return 'text-emerald-600 dark:text-emerald-400';
-  if (rating >= 3.5) return 'text-amber-600 dark:text-amber-400';
-  if (rating >= 2.5) return 'text-orange-500 dark:text-orange-400';
-  return 'text-red-500 dark:text-red-400';
+  if (rating >= 4.0) return 'text-green-600 dark:text-green-400';
+  if (rating >= 3.5) return 'text-yellow-600 dark:text-yellow-400';
+  if (rating >= 3.0) return 'text-orange-600 dark:text-orange-400';
+  return 'text-red-600 dark:text-red-400';
 }
 
 interface CourseCardProps {

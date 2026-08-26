@@ -112,7 +112,7 @@ export function SiteHeader() {
                     <div className="flex items-center gap-1.5 ml-1">
                         <Popover>
                             <PopoverTrigger asChild>
-                                <button className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full transition-transform active:scale-95">
+                                <button aria-label="Account menu" className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full transition-transform active:scale-95">
                                     {user.user_metadata?.avatar_url ? (
                                         <img
                                             src={user.user_metadata.avatar_url}

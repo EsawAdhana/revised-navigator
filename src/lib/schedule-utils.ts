@@ -344,8 +344,8 @@ export function parseMeetingTimes(course: Course, term?: string): ParsedMeeting[
 
   for (const section of pickSectionsForTerm(course, term)) {
     for (const m of section.meetings || []) {
-      const days = parseDays(m.days)
-      const range = parseTimeRange(m.time)
+      const days = parseDays(m.days || '')
+      const range = parseTimeRange(m.time || '')
       if (!range?.startTime) continue
 
       parsed.push({

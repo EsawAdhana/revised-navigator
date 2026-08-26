@@ -5,21 +5,22 @@ export interface Section {
   component: string;
   units: number | string;
   grading: string;
-  classLevel: string;
+  /** Omitted when upstream sends nothing (currently always). Callers infer the level from the course code. */
+  classLevel?: string;
   instructionalMode: string;
   status: string;
   enrolled: number;
   capacity: number;
   waitlist: number;
   waitlistMax: number;
-  openSeats: number;
   startDate: string;
   endDate: string;
   meetings: {
-    days: string;
-    time: string;
-    location: string;
-    instructors: string[];
+    /** Meeting fields are omitted rather than sent empty: 83% of sections are unscheduled (TBA). */
+    days?: string;
+    time?: string;
+    location?: string;
+    instructors?: string[];
   }[];
   finalExam?: {
     date: string;
@@ -48,8 +49,6 @@ export interface Course {
   hours?: number;
   /** Precomputed from evaluations (1-5 rating) */
   quality?: number;
-  /** Precomputed: hours / units */
-  difficulty?: number;
   /** Precomputed: not scheduled in any of the three prior catalogs, and no evaluations from those years */
   isNew?: boolean;
 }

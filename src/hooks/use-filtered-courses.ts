@@ -2,7 +2,7 @@ import React, { useMemo, useCallback } from 'react';
 import { useCourseStore } from '@/lib/store';
 import { useCartStore } from '@/lib/cart-store';
 import { useQueryState, parseAsArrayOf, parseAsString, parseAsBoolean, parseAsInteger } from 'nuqs';
-import { compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary, parseUnitsOptions } from '@/lib/utils';
+import { aggregateCrossListMetrics, compareCourseCodes, getCrossListPrimaryMap, normalizeCourseId, resolveToCanonicalPrimary, parseUnitsOptions } from '@/lib/utils';
 import type { Course } from '@/types/course';
 import { searchCourses } from '@/lib/search-utils';
 import { filterCourses } from '@/lib/course-filter';
@@ -86,9 +86,11 @@ export function useFilteredCourses() {
         return result;
     }, [courses, primaryMap, query, selectedDepts, selectedTerms, selectedFormats, selectedLevels, selectedGers, selectedSchools, unitMin, unitMax, timeMin, timeMax, hideConflicts, hideUnavailable, hideStudyAbroad, newOnly, cartItems, excludedWords]);
 
-    // Precompute difficulty/hours/rating per course (with cross-list lookup) — O(n) total, not O(n²)
+    // Precompute hrs/unit, hrs/week and rating per course. Figures are pooled
+    // across every code a cross-listed class is listed under (mean, not
+    // last-one-wins), so all four listings of one class show the same numbers.
     const metricsByCourseId = useMemo(() => {
-        const map = new Map<string, { difficulty?: number; hours?: number; quality?: number }>();
+        const map = new Map<string, { hrsPerUnit?: number; hours?: number; quality?: number }>();
         const coursesById = new Map(courses.map(c => [c.id, c]));
 
         // Build canonical -> courseIds in group (one pass)
@@ -99,25 +101,21 @@ export function useFilteredCourses() {
             canonicalToIds.get(canonical)!.push(c.id);
         }
 
-        // For each course, get best metrics from its group (O(1) group lookup)
+        // One aggregate per group, shared by all its members.
+        const byCanonical = new Map<string, ReturnType<typeof aggregateCrossListMetrics>>();
+        for (const [canonical, groupIds] of canonicalToIds) {
+            const members = groupIds
+                .map(id => coursesById.get(id))
+                .filter((c): c is Course => c != null)
+                .map(c => ({ hours: c.hours, quality: c.quality, units: c.units }));
+            byCanonical.set(canonical, aggregateCrossListMetrics(members));
+        }
+
         for (const course of courses) {
             const canonical = resolveToCanonicalPrimary(normalizeCourseId(course.id), primaryMap);
-            const groupIds = canonicalToIds.get(canonical) ?? [course.id];
-            let difficulty: number | undefined;
-            let hours: number | undefined;
-            let quality: number | undefined;
-            for (const id of groupIds) {
-                const c = coursesById.get(id);
-                if (c?.difficulty != null) difficulty = c.difficulty;
-                if (c?.hours != null) hours = c.hours;
-                if (c?.quality != null) quality = c.quality;
-            }
-            if (difficulty != null || hours != null || quality != null) {
-                map.set(course.id, {
-                    ...(difficulty != null && { difficulty }),
-                    ...(hours != null && { hours }),
-                    ...(quality != null && { quality }),
-                });
+            const metrics = byCanonical.get(canonical);
+            if (metrics && (metrics.hrsPerUnit != null || metrics.hours != null || metrics.quality != null)) {
+                map.set(course.id, metrics);
             }
         }
         return map;
@@ -166,8 +164,8 @@ export function useFilteredCourses() {
             if (effectiveSort === 'hrsPerUnit') {
                 const mA = metricsByCourseId.get(a.id);
                 const mB = metricsByCourseId.get(b.id);
-                const diffA = mA?.difficulty;
-                const diffB = mB?.difficulty;
+                const diffA = mA?.hrsPerUnit;
+                const diffB = mB?.hrsPerUnit;
                 const hasA = diffA != null;
                 const hasB = diffB != null;
                 if (!hasA && !hasB) return tiebreak;
@@ -197,9 +195,9 @@ export function useFilteredCourses() {
         const m = metricsByCourseId.get(course.id);
         const effectiveSort = ['units', 'hrsPerWeek', 'hrsPerUnit', 'rating'].includes(sortBy) ? sortBy : 'az';
         if (effectiveSort === 'hrsPerWeek' && m?.hours != null) return `${m.hours.toFixed(1)} hrs/wk`;
-        if (effectiveSort === 'hrsPerUnit' && m?.difficulty != null) return `${m.difficulty.toFixed(1)} hrs/unit`;
+        if (effectiveSort === 'hrsPerUnit' && m?.hrsPerUnit != null) return `${m.hrsPerUnit.toFixed(1)} hrs/unit`;
         if (effectiveSort === 'rating') return null; // rating already shown on card
-        if (effectiveSort === 'az' && m?.difficulty != null) return `${m.difficulty.toFixed(1)} hrs/unit`;
+        if (effectiveSort === 'az' && m?.hrsPerUnit != null) return `${m.hrsPerUnit.toFixed(1)} hrs/unit`;
         return null;
     }, [metricsByCourseId, sortBy]);
 

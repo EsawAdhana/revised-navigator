@@ -252,7 +252,7 @@ export function CalendarPreviewModal({
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <Clock size={14} strokeWidth={2.5} className="text-foreground shrink-0" />
-                                    <span>{stripSeconds(section.meetings[0].time)}</span>
+                                    <span>{section.meetings[0].time ? stripSeconds(section.meetings[0].time) : 'TBA'}</span>
                                 </div>
                                 {section.meetings[0].location && section.meetings[0].location !== 'TBA' && (
                                     <div className="flex items-center gap-1.5">

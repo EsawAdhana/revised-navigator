@@ -13,7 +13,7 @@
  * ship unreviewed guesses.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { decodeHtmlEntities } from '../src/lib/utils'
+import { decodeHtmlEntities, normalizeCatalogDescription } from '../src/lib/utils'
 import { hashDescription } from '../src/lib/course-bare-links'
 import { VERDICTS, parseWhere } from './course-link-verdicts'
 
@@ -52,7 +52,9 @@ let dropped = 0
 
 for (const course of courses) {
     if (!course.description) continue
-    const text = decodeHtmlEntities(course.description)
+    // Must match what the renderer sees: rowToCourse normalises, then the
+    // component decodes entities.
+    const text = decodeHtmlEntities(normalizeCatalogDescription(course.description))
     const links: Array<[number, number, string]> = []
     RENDER_RE.lastIndex = 0
     let m: RegExpExecArray | null

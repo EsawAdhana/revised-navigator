@@ -335,8 +335,20 @@ function meetingTime(start, end) {
     return `${start} – ${end}`
 }
 
+/**
+ * Drop keys the app never reads or that carry no information. Every visitor
+ * downloads full.json, so an empty string on 65k sections is 65k wasted keys.
+ * Kept in sync with scripts/prune-catalog-dump.mjs.
+ */
+function withoutEmptyKeys(obj) {
+    for (const [key, value] of Object.entries(obj)) {
+        if (value === '' || value == null || (Array.isArray(value) && value.length === 0)) delete obj[key]
+    }
+    return obj
+}
+
 function primaryMeetings(hit, overrides) {
-    return (hit.meetings || []).map(meeting => ({
+    return (hit.meetings || []).map(meeting => withoutEmptyKeys({
         days: (meeting.daysOfWeekList || []).join(', ') || meeting.daysOfWeek || '',
         time: meetingTime(meeting.startTime, meeting.endTime),
         location: meeting.facilityDescr || meeting.room || '',
@@ -357,7 +369,7 @@ const RELATED_DAY_KEYS = [
 ]
 
 function relatedMeetings(related, overrides) {
-    return (related.relatedClassMeetings || []).map(meeting => ({
+    return (related.relatedClassMeetings || []).map(meeting => withoutEmptyKeys({
         days: RELATED_DAY_KEYS.filter(([key]) => meeting[key] === 'Y').map(([, name]) => name).join(', '),
         time: meetingTime(
             (meeting.relatedClassStartTime || '').replace(/^0/, ''),
@@ -380,18 +392,16 @@ function primarySection(hit, overrides) {
         component: hit.componentPrimary || '',
         units: unitsLabel(hit.units),
         grading: hit.gradingBasisDescr || '',
-        classLevel: '',
         instructionalMode: hit.instructionModeDescr || '',
         status: hit.enrlStatDescr || hit.classStatDescr || '',
         enrolled,
         capacity,
         waitlist: parseInt(hit.waitTot, 10) || 0,
         waitlistMax: parseInt(hit.waitCap, 10) || 0,
-        openSeats: Math.max(0, capacity - enrolled),
         startDate: hit.startDt || '',
         endDate: hit.endDt || '',
         meetings: primaryMeetings(hit, overrides),
-        gers: gerCodes(hit.geRequirements),
+        ...(gerCodes(hit.geRequirements).length ? { gers: gerCodes(hit.geRequirements) } : {}),
     }
 }
 
@@ -406,18 +416,16 @@ function relatedSection(hit, related, overrides) {
         // Non-primary sections carry no units of their own, matching ExploreCourses.
         units: '',
         grading: hit.gradingBasisDescr || '',
-        classLevel: '',
         instructionalMode: hit.instructionModeDescr || '',
         status: related.relatedClassEnrollmentStatusDescr || related.relatedClassStatusDescr || '',
         enrolled,
         capacity,
         waitlist: parseInt(related.relatedClassTotalWaitlist, 10) || 0,
         waitlistMax: parseInt(related.relatedClassCapacityWaitlist, 10) || 0,
-        openSeats: Math.max(0, capacity - enrolled),
         startDate: hit.startDt || '',
         endDate: hit.endDt || '',
         meetings: relatedMeetings(related, overrides),
-        gers: gerCodes(hit.geRequirements),
+        ...(gerCodes(hit.geRequirements).length ? { gers: gerCodes(hit.geRequirements) } : {}),
     }
 }
 
@@ -526,7 +534,8 @@ export function buildCourses(hits, relatedByClass = new Map(), { instructorOverr
             description: decodeEntities(newest('courseDescr') || ''),
             units: unitsLabel(...courseHits.map(hit => hit.units)),
             grading: newest('gradingBasisDescr') || '',
-            instructors: Array.from(new Set(sections.flatMap(s => s.meetings.flatMap(m => m.instructors)))),
+            // `m.instructors` is omitted when a meeting has none, so default before flattening.
+            instructors: Array.from(new Set(sections.flatMap(s => s.meetings.flatMap(m => m.instructors || [])))),
             sections,
             terms: sortTerms(Array.from(new Set(sections.map(s => s.term).filter(Boolean)))),
         })

@@ -415,14 +415,14 @@ END:VEVENT
           let bestSectionId = realCourse.sections?.[0]?.classId // Default to first section
 
           if (importedMeeting && realCourse.sections) {
-            const impDays = parseDays(importedMeeting.days).join(',')
+            const impDays = parseDays(importedMeeting.days || '').join(',')
             const impTimeParts = (importedMeeting.time || '').split(/\s*[-–]\s*/)
             const impStart = timeToMinutes(impTimeParts[0] || '')
             const impEnd = timeToMinutes(impTimeParts[1] || '')
 
             const match = realCourse.sections.find(sec => {
               return sec.meetings?.some(m => {
-                const catDays = parseDays(m.days).join(',')
+                const catDays = parseDays(m.days || '').join(',')
                 if (catDays !== impDays) return false
                 const catTimeParts = (m.time || '').split(/\s*[-–]\s*/)
                 const catStart = timeToMinutes(catTimeParts[0] || '')
@@ -548,7 +548,7 @@ END:VEVENT
             {user && (
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full transition-transform active:scale-95">
+                  <button aria-label="Account menu" className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full transition-transform active:scale-95">
                     {user.user_metadata?.avatar_url ? (
                       <img
                         src={user.user_metadata.avatar_url}

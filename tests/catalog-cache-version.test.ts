@@ -8,9 +8,12 @@ import { rowToCourse } from '@/lib/course-mapper'
 // only" shipped that way once and matched zero courses for every returning
 // visitor. This pairs the cached shape with the version, so growing one without
 // the other fails here instead of in production.
-const CACHED_COURSE_FIELDS_AT_V14 = [
+// v15 dropped `difficulty` (hrs/unit is derived from hours + units now) and
+// started normalising title/description in rowToCourse, so a v14 cache holds
+// both a dead field and untidied text.
+const CACHED_COURSE_FIELDS_AT_V15 = [
   'id', 'subject', 'code', 'title', 'description', 'units', 'grading',
-  'instructors', 'terms', 'sections', 'hours', 'quality', 'difficulty', 'isNew',
+  'instructors', 'terms', 'sections', 'hours', 'quality', 'isNew',
 ].sort()
 
 describe('catalog cache version', () => {
@@ -25,7 +28,7 @@ describe('catalog cache version', () => {
       shape,
       `Course gained or lost a field. Bump CACHE_VERSION (currently ${CACHE_VERSION}) ` +
       'and update this list, or returning visitors keep a catalog without it.',
-    ).toEqual(CACHED_COURSE_FIELDS_AT_V14)
-    expect(CACHE_VERSION).toBeGreaterThanOrEqual(14)
+    ).toEqual(CACHED_COURSE_FIELDS_AT_V15)
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(15)
   })
 })

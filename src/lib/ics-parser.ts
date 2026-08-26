@@ -219,7 +219,6 @@ export function parseICS(icsContent: string): Course[] {
             capacity: 0,
             waitlist: 0,
             waitlistMax: 0,
-            openSeats: 0,
             startDate: '',
             endDate: '',
             meetings,

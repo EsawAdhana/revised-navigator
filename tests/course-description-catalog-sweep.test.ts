@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildDescriptionSegments } from '@/components/course-description'
-import { decodeHtmlEntities } from '@/lib/utils'
+import { decodeHtmlEntities, normalizeCatalogDescription } from '@/lib/utils'
 
 /**
  * The whole catalog, not a handful of hand-picked strings: rendering a
@@ -23,10 +23,11 @@ describe('every catalog description round-trips unchanged', () => {
         const broken: string[] = []
         for (const c of courses) {
             if (!c.description) continue
-            const rendered = buildDescriptionSegments(c.course_id, c.description, resolve)
+            const source = normalizeCatalogDescription(c.description)
+            const rendered = buildDescriptionSegments(c.course_id, source, resolve)
                 .map(s => s.text)
                 .join('')
-            if (rendered !== decodeHtmlEntities(c.description)) broken.push(c.course_id)
+            if (rendered !== decodeHtmlEntities(source)) broken.push(c.course_id)
         }
         expect(broken).toEqual([])
     })

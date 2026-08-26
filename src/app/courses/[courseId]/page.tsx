@@ -253,7 +253,9 @@ export default async function CoursePage({
             {course && (
                 <script
                     type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(courseJsonLd(course)) }}
+                    // Escape < so a title or description containing "</script>"
+                    // cannot close this tag. No catalog row does today.
+                    dangerouslySetInnerHTML={{ __html: JSON.stringify(courseJsonLd(course)).replace(/</g, '\\u003c') }}
                 />
             )}
             <CoursePageClient initialCourse={course} />

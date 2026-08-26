@@ -483,6 +483,7 @@ export function CalendarView({ currentTerm, onPrevTerm, onNextTerm, canPrevTerm 
                         </div>
                         <Button
                           variant="ghost" size="icon"
+                          aria-label={`Remove ${course.subject} ${course.code} from schedule`}
                           className="h-7 w-7 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                           onClick={(e) => { e.stopPropagation(); removeItem(course.id); }}
                         >

@@ -1,6 +1,7 @@
 import type { Course } from '@/types/course'
 import { isWimCourse } from '@/lib/wim-courses'
 import { isLanguageCourse } from '@/lib/language-courses'
+import { normalizeCatalogDescription, normalizeCatalogTitle } from '@/lib/utils'
 
 /**
  * Map a raw Supabase course row (merged via mergeCourseRows) to a Course,
@@ -35,8 +36,8 @@ export function rowToCourse(row: any): Course {
     id: row.course_id,
     subject: row.subject,
     code: row.code,
-    title: row.title,
-    description: row.description || '',
+    title: normalizeCatalogTitle(row.title),
+    description: normalizeCatalogDescription(row.description),
     units: row.units,
     grading: row.grading || '',
     instructors: row.instructors || [],
@@ -44,7 +45,6 @@ export function rowToCourse(row: any): Course {
     sections: sections,
     hours: row.hours != null ? Number(row.hours) : undefined,
     quality: row.quality != null ? Number(row.quality) : undefined,
-    difficulty: row.difficulty != null ? Number(row.difficulty) : undefined,
     isNew: typeof row.isNew === 'boolean' ? row.isNew : undefined,
   }
 }
