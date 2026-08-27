@@ -24,7 +24,7 @@ export default function FaqPage() {
             </h2>
             <p>
               Carta was the only place to get performance review data, and that feature has since been
-              removed as of 2020; you can read The Stanford Daily&apos;s coverage{' '}
+              removed as of 2020 (you can read The Stanford Daily&apos;s coverage{' '}
               <a
                 href="https://stanforddaily.com/2020/05/04/carta-removes-performance-feature-following-grading-policy-changes/"
                 target="_blank"
@@ -33,8 +33,8 @@ export default function FaqPage() {
               >
                 here
               </a>
-              . So technically, grade data is still available through 2019, but it is so stale that
-              it was decided against adding it.
+              ). So technically speaking, grade data is still available through 2019, but it is so
+              stale that it was decided not to be worth including.
             </p>
           </section>
 
@@ -43,9 +43,25 @@ export default function FaqPage() {
               Where does the course information come from?
             </h2>
             <p>
-              Course information comes from Stanford&apos;s official course catalog and is refreshed once
-              per day. Details can change, so verify enrollment status, prerequisites, meeting times,
-              and deadlines in official Stanford systems before making academic decisions.
+              Everything comes from Stanford, but not all of it at the same speed. Titles, descriptions,
+              units, instructors, and meeting times are copied from the official course catalog once a
+              day. Seat counts are asked for the moment you open a course, so they are current to within
+              a minute. Evaluations show up whenever Stanford publishes them, which is after a term
+              ends. Verify enrollment status, prerequisites, meeting times, and deadlines in official
+              Stanford systems before making academic decisions.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">
+              Where does a course&apos;s rating come from, and why doesn&apos;t it match the charts?
+            </h2>
+            <p>
+              Ratings are built from the student responses in Stanford&apos;s published course
+              evaluations. A course with only a handful of responses is nudged toward the Stanford
+              average, so a 5.00 from three students does not outrank a strong rating from four hundred.
+              That is why the rating shown can sit a little below what the response charts further down
+              would suggest on their own.
             </p>
           </section>
 
