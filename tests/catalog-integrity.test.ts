@@ -5,6 +5,7 @@ import { rowToCourse } from '@/lib/course-mapper'
 import { buildDescriptionSegments } from '@/components/course-description'
 import { buildCrossListGroups } from '@/lib/utils'
 import { normalizeCatalogDescription } from '@/lib/utils'
+import { hashDescription } from '@/lib/course-bare-links'
 
 /**
  * Whole-catalog invariants. These run over every course in the committed dump,
@@ -425,8 +426,19 @@ describe('the new-course flag agrees with the ratings', () => {
 
 describe('reviewed course links point somewhere real', () => {
     /**
-     * A reviewed link's SPAN must still land on a course number. If an offset drifts, the
-     * frozen data is genuinely corrupt and would mislabel arbitrary prose.
+     * Only the entries the renderer can actually reach are checked.
+     *
+     * bareLinksFor keys on course id AND a hash of the decoded description, so an entry
+     * whose description has since been edited is never looked up and renders nothing --
+     * that is the module's designed fallback, not a fault. Checking those anyway made
+     * this suite fail for a non-bug: the nightly refresh in a28bae6 rewrote MUSIC 72A's
+     * description, its dead offset 90 landed on "uch" instead of "12C", and main went
+     * red while the site rendered correct plain text throughout. 22 entries are dead
+     * right now and one wrong nightly edit away from doing it again.
+     *
+     * For a LIVE entry the check is exact rather than advisory: the hash pins the text
+     * the offsets were computed against, so a span that is not a course number means the
+     * frozen data really is corrupt and would mislabel arbitrary prose.
      *
      * A reviewed link's TARGET no longer has to be in the catalog. Stanford unschedules
      * courses every term, and buildDescriptionSegments now drops a bare link whose target
@@ -446,6 +458,9 @@ describe('reviewed course links point somewhere real', () => {
             // The described course itself left the catalog: nothing renders this entry.
             if (!course) continue
             const text = decodeHtmlEntities(normalizeCatalogDescription(course.description || ''))
+            // The description was edited after the review: bareLinksFor cannot find this
+            // entry, so its offsets describe text that no longer exists anywhere.
+            if (key.slice(key.lastIndexOf(':') + 1) !== hashDescription(text)) continue
             for (const [offset, length] of links) {
                 const span = text.slice(offset, offset + length)
                 if (!/^\d{2,3}[A-Z]?$/.test(span)) bad.push(`${courseId}: span at ${offset} is ${JSON.stringify(span)}`)
@@ -468,6 +483,9 @@ describe('reviewed course links point somewhere real', () => {
             const course = byId.get(courseId)
             if (!course) continue
             const source = course.description || ''
+            // Same reachability rule as above: an entry the renderer cannot look up
+            // cannot link anything, so feeding its dead offsets in proves nothing.
+            if (key.slice(key.lastIndexOf(':') + 1) !== hashDescription(decodeHtmlEntities(normalizeCatalogDescription(source)))) continue
             const bare = new Map<number, [number, string]>(
                 links.map(([offset, length, target]) => [offset, [length, target]]),
             )
