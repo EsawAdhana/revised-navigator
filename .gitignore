@@ -45,3 +45,4 @@ public/google*.html
 public/robots.txt
 .vercel
 .env*
+.eval-search-cache/

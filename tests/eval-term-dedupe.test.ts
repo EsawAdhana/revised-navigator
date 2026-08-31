@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { dedupeCourseLevelReports, normalizeTerm } from '@/lib/eval-reports.mjs'
+import { dedupeCourseLevelReports, normalizeTerm, reportIdentity } from '@/lib/eval-reports.mjs'
 
 const rating = (counts: number[]) => ({
   text: 'Overall, how would you describe the quality of the instruction in this course?',
@@ -53,5 +53,43 @@ describe('term-shape collisions in de-duplication', () => {
     expect(normalizeTerm('Interim')).toBe('Interim')
     expect(normalizeTerm(undefined as unknown as string)).toBe('')
     expect(dedupeCourseLevelReports([report({ term: 'Interim A' }), report({ term: 'Interim B' })])).toHaveLength(2)
+  })
+})
+
+// The scraper compares a freshly scraped report against what is already stored. If
+// those two shapes key differently, an incremental scrape re-fetches the entire
+// corpus (2,465 reports for one term) or, worse, inserts a second copy.
+describe('reportIdentity', () => {
+  const stored = { course_id: 'CHEM281', course_code: 'W25-CHEM-281-01', term: 'Winter 2025Chemistry', instructor: 'Kool, Eric' }
+  const scraped = { course_id: 'CHEM281', course_code: 'W25-CHEM-281-01', term: 'Winter 2025', instructor: 'Kool, Eric' }
+
+  it('matches a stored row against the same report freshly scraped', () => {
+    expect(reportIdentity(stored)).toBe(reportIdentity(scraped))
+  })
+
+  it('separates two sections one instructor taught in one quarter', () => {
+    // The shortfall this key caused: PHYSWELL 28 Summer 2024 filed -01 and -02
+    // under one instructor, and only the first was ever stored.
+    const a = { course_id: 'PHYSWELL28', course_code: 'Su24-PHYSWELL-28-01', term: 'Summer 2024', instructor: 'Thornton, Matthew' }
+    const b = { ...a, course_code: 'Su24-PHYSWELL-28-02' }
+    expect(reportIdentity(a)).not.toBe(reportIdentity(b))
+  })
+
+  it('keeps the slash-joined cross-list code intact on both sides', () => {
+    const code = 'F25-STATS-117-02/F25-STATS-117-01'
+    expect(reportIdentity({ ...stored, course_code: code, term: 'Fall 2025Statistics' }))
+      .toBe(reportIdentity({ ...scraped, course_code: code, term: 'Fall 2025' }))
+  })
+
+  it('separates the same section in two different quarters', () => {
+    expect(reportIdentity({ ...stored, course_code: 'W24-CHEM-281-01', term: 'Winter 2024' }))
+      .not.toBe(reportIdentity({ ...stored, course_code: 'W25-CHEM-281-01', term: 'Winter 2025' }))
+  })
+
+  // Omitting course_code is what silently turned an incremental scrape into a full
+  // re-fetch: the key matched nothing stored, so every report looked new.
+  it('refuses to build a key without the section', () => {
+    expect(() => reportIdentity({ course_id: 'CHEM281', term: 'Winter 2025', instructor: 'Kool, Eric' })).toThrow(/course_code/)
+    expect(() => reportIdentity({ ...stored, course_code: '' })).toThrow(/course_code/)
   })
 })

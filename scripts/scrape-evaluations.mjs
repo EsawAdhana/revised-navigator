@@ -15,16 +15,18 @@
  * scrape and no SSO login. Use it after changing the rating maths.
  */
 
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import { addRatingCounts, pooledMean, percentileRanks, adjustAndRank, round3, headlineSampleSize } from '../src/lib/quality-score.mjs'
 import { buildCrossListGroups, deriveEvalPairings, normalizeCourseId } from '../src/lib/cross-list.mjs'
-import { courseLevelSignature, normalizeTerm } from '../src/lib/eval-reports.mjs'
+import { courseLevelSignature, normalizeTerm, reportIdentity } from '../src/lib/eval-reports.mjs'
 
 const BASE_URL = 'https://stanford.evaluationkit.com'
 const SEARCH_URL = `${BASE_URL}/Report/Public/Results`
 const REPORT_URL = `${BASE_URL}/Reports/StudentReport.aspx`
 const PROFILE_DIR = '.evaluationkit-profile'
+const SEARCH_CACHE_DIR = '.eval-search-cache'
 const DEFAULT_TERMS = ['W26', 'Sp26', 'Su26']
 
 // Every term the stored corpus covers, not just the current year's three.
@@ -54,13 +56,14 @@ const ALL_TERMS = Object.keys(TERM_LABELS)
 
 function parseArgs() {
     const args = process.argv.slice(2)
-    const opts = { dryRun: false, concurrency: 20, terms: DEFAULT_TERMS, course: null, metrics: true, metricsOnly: false, force: false, repairEmpty: false }
+    const opts = { dryRun: false, concurrency: 20, terms: DEFAULT_TERMS, course: null, metrics: true, metricsOnly: false, force: false, repairEmpty: false, refreshSearch: false }
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--dry-run') opts.dryRun = true
         if (args[i] === '--no-metrics') opts.metrics = false
         if (args[i] === '--metrics-only') opts.metricsOnly = true
         if (args[i] === '--force') opts.force = true
         if (args[i] === '--repair-empty') opts.repairEmpty = true
+        if (args[i] === '--refresh-search') opts.refreshSearch = true
         if (args[i] === '--course' && args[i + 1]) opts.course = args[++i].replace(/\s+/g, '').toUpperCase()
         if (args[i] === '--concurrency' && args[i + 1]) opts.concurrency = Math.max(1, Math.min(30, Number(args[++i]) || 20))
         if (args[i] === '--terms' && args[i + 1]) {
@@ -191,10 +194,49 @@ async function fetchSearchPage(termCode, page, cookie) {
     }
 }
 
-async function searchTerm(termCode, cookie) {
+/**
+ * The list of reports EvaluationKit published for a term, cached on disk.
+ *
+ * Paging it is the dominant cost of a run and it happens before a single report is
+ * fetched: Fall 2023 lists 2,986 reports six pages at a time, ~2 min, and a
+ * twelve-term pass spent roughly 33 of 58 minutes rediscovering lists it already
+ * had. For a term that is over, that list cannot change.
+ *
+ * Staleness is the operator's call, not this function's: a term still collecting
+ * evaluations needs --refresh-search. Nothing here infers which terms those are,
+ * because inferring it wrong drops reports with no sign that it happened, which is
+ * the whole failure this scraper already had once.
+ */
+function readSearchCache(termCode) {
+    try {
+        const cached = JSON.parse(readFileSync(`${SEARCH_CACHE_DIR}/${termCode}.json`, 'utf8'))
+        return Array.isArray(cached?.reports) && cached.reports.length > 0 ? cached : null
+    } catch {
+        return null
+    }
+}
+
+function writeSearchCache(termCode, reports) {
+    mkdirSync(SEARCH_CACHE_DIR, { recursive: true })
+    writeFileSync(
+        `${SEARCH_CACHE_DIR}/${termCode}.json`,
+        JSON.stringify({ termCode, fetchedAt: new Date().toISOString(), reports })
+    )
+}
+
+async function searchTerm(termCode, cookie, useCache = true) {
+    if (useCache) {
+        const cached = readSearchCache(termCode)
+        if (cached) {
+            console.log(`  search index from cache (${cached.fetchedAt.slice(0, 10)}); --refresh-search to re-page`)
+            return cached.reports
+        }
+    }
     const params = new URLSearchParams({ Course: termCode, Instructor: '', Search: 'true' })
     const first = await authenticatedFetch(`${SEARCH_URL}?${params}`, cookie)
     const reports = parseSearchResults(await first.text())
+    // An empty first page is indistinguishable from a term that has not published
+    // yet, so it is never cached -- caching it would pin the term at zero reports.
     if (reports.length === 0) return reports
 
     for (let start = 2; ; start += 6) {
@@ -204,7 +246,9 @@ async function searchTerm(termCode, cookie) {
         for (const page of pages) reports.push(...page.reports)
         if (pages.some(page => !page.hasMore) || pages.every(page => page.reports.length === 0)) break
     }
-    return Array.from(new Map(reports.map(report => [report.reportUrl, report])).values())
+    const unique = Array.from(new Map(reports.map(report => [report.reportUrl, report])).values())
+    writeSearchCache(termCode, unique)
+    return unique
 }
 
 function parseReportData(rawQuestions, metadata) {
@@ -275,7 +319,7 @@ async function loadEmptyEvaluations(supabase, terms) {
     for (let from = 0; ; from += 1000) {
         const { data, error } = await supabase
             .from('evaluations')
-            .select('course_id,term,instructor')
+            .select('course_id,course_code,term,instructor')
             .in('term', terms)
             .eq('questions', '[]')
             .eq('comments', '[]')
@@ -284,13 +328,6 @@ async function loadEmptyEvaluations(supabase, terms) {
         rows.push(...data)
         if (data.length < 1000) return rows
     }
-}
-
-// Terms are compared normalized: the Feb-2026 scrape stored the term with the
-// department glued on ("Winter 2024Chemistry"), so a raw comparison reads an
-// already-stored report as new and inserts a second copy of it.
-function evaluationKey(row) {
-    return `${row.course_id}\0${normalizeTerm(row.term)}\0${row.instructor}`.toLowerCase()
 }
 
 async function login() {
@@ -527,17 +564,17 @@ async function main() {
 
     const [courses, existing] = await Promise.all([
         loadAll(supabase, 'courses', 'course_id'),
-        loadAll(supabase, 'evaluations', 'course_id,term,instructor'),
+        loadAll(supabase, 'evaluations', 'course_id,course_code,term,instructor'),
     ])
     const knownCourseIds = new Set(courses.map(course => course.course_id))
-    const existingKeys = new Set(existing.map(evaluationKey))
+    const existingKeys = new Set(existing.map(reportIdentity))
     // --force and --repair-empty update by matching course_id/term/instructor, but the
     // stored term is usually the glued Feb-2026 shape ("Winter 2024Chemistry") while the
     // term computed here is the clean label. Matching on the clean one updates zero rows
     // and reports success, so match on what the row actually holds.
-    const storedTerms = new Map(existing.map(row => [evaluationKey(row), row.term]))
+    const storedTerms = new Map(existing.map(row => [reportIdentity(row), row.term]))
     const emptyKeys = new Set(opts.repairEmpty
-        ? (await loadEmptyEvaluations(supabase, opts.terms.map(term => TERM_LABELS[term]))).map(evaluationKey)
+        ? (await loadEmptyEvaluations(supabase, opts.terms.map(term => TERM_LABELS[term]))).map(reportIdentity)
         : [])
     const runKeys = new Set()
     const { context, cookie } = await login()
@@ -552,7 +589,7 @@ async function main() {
         for (const termCode of opts.terms) {
             const term = TERM_LABELS[termCode]
             console.log(`Searching ${term}...`)
-            let reports = await searchTerm(termCode, cookie)
+            let reports = await searchTerm(termCode, cookie, !opts.refreshSearch)
             if (opts.course) {
                 reports = reports.filter(report => courseIdsForReport(report.courseCode, termCode, knownCourseIds).includes(opts.course))
             }
@@ -570,8 +607,8 @@ async function main() {
                 const pendingIds = courseIds.filter(course_id =>
                     opts.force
                     || (opts.repairEmpty
-                        ? emptyKeys.has(evaluationKey({ course_id, term, instructor: report.instructor }))
-                        : !existingKeys.has(evaluationKey({ course_id, term, instructor: report.instructor })))
+                        ? emptyKeys.has(reportIdentity({ course_id, course_code: report.courseCode, term, instructor: report.instructor }))
+                        : !existingKeys.has(reportIdentity({ course_id, course_code: report.courseCode, term, instructor: report.instructor })))
                 )
                 duplicates += courseIds.length - pendingIds.length
                 if (pendingIds.length > 0) candidates.push({ ...report, courseIds: pendingIds })
@@ -598,7 +635,7 @@ async function main() {
                     }
                     for (const course_id of report.courseIds) {
                         const row = { course_id, ...evaluation }
-                        const rowKey = evaluationKey(row)
+                        const rowKey = reportIdentity(row)
                         if (runKeys.has(rowKey) || (!opts.force && !opts.repairEmpty && existingKeys.has(rowKey))) {
                             duplicates++
                             continue
@@ -614,7 +651,8 @@ async function main() {
                         const results = await Promise.all(rows.map(({ course_id, term, instructor, ...fields }) =>
                             supabase.from('evaluations').update(fields).match({
                                 course_id,
-                                term: storedTerms.get(evaluationKey({ course_id, term, instructor })) ?? term,
+                                course_code: fields.course_code,
+                                term: storedTerms.get(reportIdentity({ course_id, course_code: fields.course_code, term, instructor })) ?? term,
                                 instructor,
                             })
                         ))

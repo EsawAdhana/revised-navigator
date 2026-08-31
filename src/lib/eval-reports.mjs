@@ -68,6 +68,37 @@ export function normalizeTerm(raw) {
 }
 
 /**
+ * The identity of one evaluation report: section, term, instructor.
+ *
+ * Every de-duplication in the scraper keys on this, so it has to be built the same
+ * way from a stored row and from a freshly scraped report or already-stored reports
+ * read as new. Two bugs came from getting that wrong:
+ *
+ *   - Without course_code, one instructor teaching two sections of a course in one
+ *     quarter produced ONE key for both reports and the second was dropped as a
+ *     duplicate. PHYSWELL 28 Summer 2024 filed -01 and -02 under Thornton, Matthew
+ *     with different students in each.
+ *   - Comparing the term raw: the Feb-2026 scrape stored it with the department
+ *     glued on ("Winter 2024Chemistry"), so an already-stored report read as new
+ *     and a second copy went in, counting every student in it twice.
+ *
+ * course_code is required rather than defaulted. A call site that omitted it built
+ * keys that matched nothing, which silently turned an incremental scrape into a
+ * full re-fetch of 2,465 reports -- correct output, absurd cost. Throwing makes
+ * that a crash on the first report instead.
+ *
+ * @param {{ course_id?: unknown, course_code?: unknown, term?: unknown, instructor?: unknown }} row
+ * @returns {string}
+ */
+export function reportIdentity(row) {
+    const code = row?.course_code
+    if (code === undefined || code === null || code === '') {
+        throw new Error(`reportIdentity needs course_code (course_id=${row?.course_id}, term=${row?.term})`)
+    }
+    return [row.course_id, code, normalizeTerm(row.term), row.instructor].join('\0').toLowerCase()
+}
+
+/**
  * @param {string} text
  * @returns {QuestionCategory}
  */
