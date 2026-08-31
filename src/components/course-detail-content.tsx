@@ -14,7 +14,6 @@ import { isDevEvalsUnlocked } from '@/lib/dev-flags';
 import { InstructorList } from './instructor-list';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CourseEvaluations } from './course-evaluations';
-import { SyllabusVoting } from './syllabus-voting';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Course } from '@/types/course';
 import { CourseDescription } from './course-description';
@@ -24,7 +23,7 @@ import { takePreferredTerms } from '@/lib/preferred-term';
 import { CalendarPreviewModal } from './calendar-preview-modal';
 import { unpickedComponents, stripSeconds } from '@/lib/schedule-utils';
 import { isWimCourse } from '@/lib/wim-courses';
-import { compareTerms, getDefaultTerm, isFutureTerm as isTermInFuture } from '@/lib/terms';
+import { compareTerms, getDefaultTerm } from '@/lib/terms';
 import { useLiveSeats } from '@/hooks/use-seats';
 
 interface CourseDetailContentProps {
@@ -232,8 +231,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
         if (!terms.includes(activeTerm)) setActiveTerm(getDefaultTerm(terms));
     }, [course.id, cartItem?.selectedTerm, terms.length]); // eslint-disable-line react-hooks/exhaustive-deps -- activeTerm omitted to avoid loop; setActiveTerm is stable
 
-    const isFutureTerm = isTermInFuture(activeTerm)
-
     // GER (General Education Requirements / WAYS) from sections — dedupe by display abbreviation
     // so e.g. "Writing in the Major (WIM)" (injected in store) and "WIM" do not both show as WIM.
     const gers = useMemo(() => {
@@ -399,9 +396,6 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                                         <ExternalLink size={14} className="opacity-60" />
                                                     </a>
                                                 </Button>
-                                                {!isFutureTerm && (
-                                                    <SyllabusVoting courseId={course.id} term={activeTerm} />
-                                                )}
                                             </>
                                         ) : (
                                             <div className="text-sm text-muted-foreground">
