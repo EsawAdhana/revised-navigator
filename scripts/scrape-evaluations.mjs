@@ -27,8 +27,6 @@ const SEARCH_URL = `${BASE_URL}/Report/Public/Results`
 const REPORT_URL = `${BASE_URL}/Reports/StudentReport.aspx`
 const PROFILE_DIR = '.evaluationkit-profile'
 const SEARCH_CACHE_DIR = '.eval-search-cache'
-const DEFAULT_TERMS = ['W26', 'Sp26', 'Su26']
-
 // Every term the stored corpus covers, not just the current year's three.
 //
 // A report is only kept if its course code is in the catalog at scrape time
@@ -53,6 +51,16 @@ const TERM_LABELS = {
     Su26: 'Summer 2026',
 }
 const ALL_TERMS = Object.keys(TERM_LABELS)
+
+// Default to every term, not the current year's three.
+//
+// The three-term default is what let the hole open in the first place: a course
+// absent from the catalog when its term was last scraped never gets another look,
+// and the catalog drops courses every year. A full pass used to cost an hour, which
+// is why the default was narrow; with the search index cached it is 13s when there
+// is nothing new, so there is no longer a reason to skip the older terms. Pass
+// --refresh-search for a term that is still publishing evaluations.
+const DEFAULT_TERMS = ALL_TERMS
 
 function parseArgs() {
     const args = process.argv.slice(2)
