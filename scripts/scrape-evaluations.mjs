@@ -19,18 +19,38 @@ import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import { addRatingCounts, pooledMean, percentileRanks, adjustAndRank, round3, headlineSampleSize } from '../src/lib/quality-score.mjs'
 import { buildCrossListGroups, deriveEvalPairings, normalizeCourseId } from '../src/lib/cross-list.mjs'
-import { courseLevelSignature } from '../src/lib/eval-reports.mjs'
+import { courseLevelSignature, normalizeTerm } from '../src/lib/eval-reports.mjs'
 
 const BASE_URL = 'https://stanford.evaluationkit.com'
 const SEARCH_URL = `${BASE_URL}/Report/Public/Results`
 const REPORT_URL = `${BASE_URL}/Reports/StudentReport.aspx`
 const PROFILE_DIR = '.evaluationkit-profile'
 const DEFAULT_TERMS = ['W26', 'Sp26', 'Su26']
+
+// Every term the stored corpus covers, not just the current year's three.
+//
+// A report is only kept if its course code is in the catalog at scrape time
+// (see courseIdsForReport), so a course on hiatus loses the terms it WAS taught:
+// CHEM 281 ran Winter 2024 and Winter 2025, was not offered in 2025-26, and so
+// was absent from the catalog when the older terms were scraped in Feb 2026 --
+// its reports were discarded, and the site showed it unrated once the 2026-27
+// catalog brought it back. Re-running an older term against today's catalog is
+// what recovers those, so the older codes have to stay addressable.
 const TERM_LABELS = {
+    F23: 'Fall 2023',
+    W24: 'Winter 2024',
+    Sp24: 'Spring 2024',
+    Su24: 'Summer 2024',
+    F24: 'Fall 2024',
+    W25: 'Winter 2025',
+    Sp25: 'Spring 2025',
+    Su25: 'Summer 2025',
+    F25: 'Fall 2025',
     W26: 'Winter 2026',
     Sp26: 'Spring 2026',
     Su26: 'Summer 2026',
 }
+const ALL_TERMS = Object.keys(TERM_LABELS)
 
 function parseArgs() {
     const args = process.argv.slice(2)
@@ -43,7 +63,12 @@ function parseArgs() {
         if (args[i] === '--repair-empty') opts.repairEmpty = true
         if (args[i] === '--course' && args[i + 1]) opts.course = args[++i].replace(/\s+/g, '').toUpperCase()
         if (args[i] === '--concurrency' && args[i + 1]) opts.concurrency = Math.max(1, Math.min(30, Number(args[++i]) || 20))
-        if (args[i] === '--terms' && args[i + 1]) opts.terms = args[++i].split(',').map(term => term.trim()).filter(Boolean)
+        if (args[i] === '--terms' && args[i + 1]) {
+            const value = args[++i]
+            opts.terms = value.trim().toLowerCase() === 'all'
+                ? ALL_TERMS
+                : value.split(',').map(term => term.trim()).filter(Boolean)
+        }
     }
     for (const term of opts.terms) {
         if (!TERM_LABELS[term]) throw new Error(`Unsupported term ${term}. Supported: ${Object.keys(TERM_LABELS).join(', ')}`)
@@ -113,14 +138,20 @@ function requestHeaders(cookie) {
     }
 }
 
+// Retries have to outlast a slow patch, not just a dropped packet. A 12-term run
+// at concurrency 20 pushed EvaluationKit into 30s+ responses: 60 Fall 2024 reports
+// were skipped, then three consecutive 30s timeouts on ONE search page threw out of
+// searchTerm and killed the whole run partway through Winter 2025. Longer timeout,
+// more attempts, slower backoff -- and keep failing loudly at the end rather than
+// continuing past a search page, which would silently drop the courses on it.
 async function authenticatedFetch(url, cookie, extraHeaders = {}) {
     let lastError
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= 5; attempt++) {
         try {
             const response = await fetch(url, {
                 headers: { ...requestHeaders(cookie), ...extraHeaders },
                 redirect: 'follow',
-                signal: AbortSignal.timeout(30000),
+                signal: AbortSignal.timeout(90000),
             })
             if (response.url.includes('login.stanford.edu') || response.status === 401 || response.status === 403) {
                 throw new Error('EvaluationKit session expired. Rerun and sign in again.')
@@ -132,7 +163,7 @@ async function authenticatedFetch(url, cookie, extraHeaders = {}) {
             lastError = error
             if (String(error?.message).includes('session expired')) throw error
         }
-        await sleep(attempt * 1000)
+        await sleep(attempt * 3000)
     }
     throw lastError
 }
@@ -255,8 +286,11 @@ async function loadEmptyEvaluations(supabase, terms) {
     }
 }
 
+// Terms are compared normalized: the Feb-2026 scrape stored the term with the
+// department glued on ("Winter 2024Chemistry"), so a raw comparison reads an
+// already-stored report as new and inserts a second copy of it.
 function evaluationKey(row) {
-    return `${row.course_id}\0${row.term}\0${row.instructor}`.toLowerCase()
+    return `${row.course_id}\0${normalizeTerm(row.term)}\0${row.instructor}`.toLowerCase()
 }
 
 async function login() {
@@ -345,7 +379,7 @@ async function refreshMetrics(supabase) {
     let duplicates = 0
     for (const evaluation of evaluations) {
         const canonical = groupOfCourse.get(evaluation.course_id) ?? evaluation.course_id
-        const reportKey = `${canonical}||${evaluation.course_code}||${evaluation.term}||${courseLevelSignature(evaluation)}`
+        const reportKey = `${canonical}||${evaluation.course_code}||${normalizeTerm(evaluation.term)}||${courseLevelSignature(evaluation)}`
         if (seenReports.has(reportKey)) { duplicates++; continue }
         seenReports.add(reportKey)
         if (!questionsByGroup.has(canonical)) questionsByGroup.set(canonical, [])
@@ -497,6 +531,11 @@ async function main() {
     ])
     const knownCourseIds = new Set(courses.map(course => course.course_id))
     const existingKeys = new Set(existing.map(evaluationKey))
+    // --force and --repair-empty update by matching course_id/term/instructor, but the
+    // stored term is usually the glued Feb-2026 shape ("Winter 2024Chemistry") while the
+    // term computed here is the clean label. Matching on the clean one updates zero rows
+    // and reports success, so match on what the row actually holds.
+    const storedTerms = new Map(existing.map(row => [evaluationKey(row), row.term]))
     const emptyKeys = new Set(opts.repairEmpty
         ? (await loadEmptyEvaluations(supabase, opts.terms.map(term => TERM_LABELS[term]))).map(evaluationKey)
         : [])
@@ -573,7 +612,11 @@ async function main() {
                 if (!opts.dryRun && rows.length > 0) {
                     if (opts.force || opts.repairEmpty) {
                         const results = await Promise.all(rows.map(({ course_id, term, instructor, ...fields }) =>
-                            supabase.from('evaluations').update(fields).match({ course_id, term, instructor })
+                            supabase.from('evaluations').update(fields).match({
+                                course_id,
+                                term: storedTerms.get(evaluationKey({ course_id, term, instructor })) ?? term,
+                                instructor,
+                            })
                         ))
                         const error = results.find(result => result.error)?.error
                         if (error) throw error
