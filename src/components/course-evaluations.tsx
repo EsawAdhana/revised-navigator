@@ -632,7 +632,7 @@ function AggregatedRatingBreakdown({ questions, aggregateScore }: { questions: E
 }
 
 /** Median score per category with an expandable response breakdown for each. */
-export function EvaluationOverview({ evaluations: rawEvaluations, quality, qualityPct, breakdown, classYears }: {
+export function EvaluationOverview({ evaluations: rawEvaluations, quality, qualityPct, breakdown, classYears, termFiltered }: {
   evaluations: CourseEvaluation[]
   /**
    * courses.quality / quality_pct / rating_breakdown -- precomputed over the course's
@@ -649,6 +649,13 @@ export function EvaluationOverview({ evaluations: rawEvaluations, quality, quali
    * term filter is active -- same rule as `breakdown` above.
    */
   classYears?: ClassYearBreakdown | null
+  /**
+   * A single quarter is selected. The whole-history numbers are withheld upstream, so
+   * there is no overall rating, no percentile and no class breakdown -- which leaves
+   * four things to show, and they read better as a 2x2 of panels than as a table with
+   * three rows and an empty rank column.
+   */
+  termFiltered?: boolean
 }) {
   // A co-taught section files the same course-level answers once per instructor, so the
   // charts counted those students once per instructor too -- the same duplication the
@@ -682,16 +689,48 @@ export function EvaluationOverview({ evaluations: rawEvaluations, quality, quali
   const hasRanks = qualityPct != null
     || RATING_CATEGORIES.some(cat => breakdown?.[cat as 'quality' | 'learning' | 'organization']?.pct != null)
 
-  // One shape in every state: the ratings table full width, then a two-column row with
-  // enrollment on the left and hours on the right. Selecting a term used to switch the
-  // whole tab to a narrower side-by-side variant, so it rearranged itself under you.
+  const hoursPanel = metrics.hours === undefined ? null : (() => {
+    const stats = optionStats(hoursQuestions.flatMap(q => q.options))
+    return (
+      <PanelSection
+        label="Hours per week"
+        value={`${metrics.hours!.toFixed(1)} hrs/wk`}
+        note={stats ? `median ${stats.median} · mean ${stats.mean.toFixed(1)} · SD ${stats.sd.toFixed(1)}` : undefined}
+      >
+        <div className="px-4 py-3">
+          <HoursHistogram options={hoursQuestions.flatMap(q => q.options)} />
+        </div>
+      </PanelSection>
+    )
+  })()
+
+  // A single quarter: one panel per category in a 2x2 -- instruction quality, learning,
+  // organization, hours -- each showing its own response breakdown, so nothing needs
+  // opening. A quarter has no overall rating, no percentile and no class breakdown (the
+  // whole-history numbers are withheld upstream), which is what leaves room for four.
+  if (termFiltered) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        {(['quality', 'learning', 'organization'] as QuestionCategory[]).map(cat => {
+          if (metrics[cat] === undefined) return null
+          const score = metrics[cat]!
+          return (
+            <PanelSection key={cat} label={CATEGORY_LABELS[cat]} value={score.toFixed(1)}>
+              <div className="px-4 py-3">
+                <AggregatedRatingBreakdown questions={questionsByCategory[cat]} aggregateScore={score} />
+              </div>
+            </PanelSection>
+          )
+        })}
+        {hoursPanel}
+      </div>
+    )
+  }
+
+  // The all view, unchanged from before: three full-width bands stacked -- the ratings
+  // table with its rank column, the class breakdown, then hours.
   return (
     <div className="space-y-4">
-      {/* One panel, hairline dividers, sections stacked. Three earlier attempts paired
-          cards side by side, and because the number of sections varies per course (four
-          data states) every arrangement left an orphan or a gap in at least one of them.
-          Stacked, a course with two sections and one with four both read as deliberate,
-          and a row can expand in place without unbalancing anything beside it. */}
       <PanelSection label="Student ratings">
         {quality != null && (
           <ScoreRow label="Overall rating" score={quality} percentile={qualityPct} emphasis showRank={hasRanks} />
@@ -722,34 +761,18 @@ export function EvaluationOverview({ evaluations: rawEvaluations, quality, quali
         })}
       </PanelSection>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-        {metrics.hours !== undefined && (() => {
-          const stats = optionStats(hoursQuestions.flatMap(q => q.options))
-          return (
-            <PanelSection
-              // Bottom right, with or without the enrollment chart to its left.
-              className="md:col-start-2"
-              label="Hours per week"
-              value={`${metrics.hours.toFixed(1)} hrs/wk`}
-              // No response count: it was the part that truncated at this width, and the
-              // bars below already show how many answered each bucket.
-              note={stats ? `median ${stats.median} · mean ${stats.mean.toFixed(1)} · SD ${stats.sd.toFixed(1)}` : undefined}
-            >
-              <div className="px-4 py-3">
-                <HoursHistogram options={hoursQuestions.flatMap(q => q.options)} />
-              </div>
-            </PanelSection>
-          )
-        })()}
-
-        {hasEnrollment && classYears && (
-          <PanelSection className="md:col-start-1 md:row-start-1" label="Enrollment by year" value={`${classYears.total} students`}>
+      {/* Paired when both exist, and hours takes the full width when it is alone -- a
+          lone half-width histogram left a gap beside it. */}
+      {hasEnrollment && classYears ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+          <PanelSection label="Enrollment by year" value={`${classYears.total} students`}>
             <div className="px-4 py-3">
               <ClassYearChart breakdown={classYears} />
             </div>
           </PanelSection>
-        )}
-      </div>
+          {hoursPanel}
+        </div>
+      ) : hoursPanel}
     </div>
   )
 }
@@ -1173,6 +1196,7 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, 
             qualityPct={activeTermFilter === 'all' ? qualityPct : null}
             breakdown={activeTermFilter === 'all' ? ratingBreakdown : null}
             classYears={activeTermFilter === 'all' ? classYears : null}
+            termFiltered={activeTermFilter !== 'all'}
           />
         )}
 
