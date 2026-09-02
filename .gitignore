@@ -46,3 +46,12 @@ public/robots.txt
 .vercel
 .env*
 .eval-search-cache/
+
+# Agent and audit scratch: screenshots, one-off scripts, SDK install reports and
+# Supabase CLI state (which holds a pooler connection string). None of it is part
+# of the app, and the CLI state should never be committed.
+.audit-ui/
+tmp/
+supabase/.temp/
+humanbehavior-install-report.md
+.claude/
