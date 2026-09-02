@@ -677,28 +677,22 @@ export function EvaluationOverview({ evaluations: rawEvaluations, quality, quali
 
   const hoursQuestions = questionsByCategory.hours
   const hasEnrollment = Boolean(hasClassYears && classYears)
-  // A term filter withholds every percentile, which frees ~208px per row -- so in that
-  // state the ratings table fits beside the histogram, where with ranks it would not.
+  // A term filter withholds every percentile, so the rank column collapses rather than
+  // sitting empty -- but the layout no longer changes with it.
   const hasRanks = qualityPct != null
     || RATING_CATEGORIES.some(cat => breakdown?.[cat as 'quality' | 'learning' | 'organization']?.pct != null)
-  const ratingsBesideHours = !hasEnrollment && !hasRanks
 
+  // One shape in every state: the ratings table full width, then a two-column row with
+  // enrollment on the left and hours on the right. Selecting a term used to switch the
+  // whole tab to a narrower side-by-side variant, so it rearranged itself under you.
   return (
-    <div className={cn(
-      ratingsBesideHours
-        // Always start-aligned, with a shared minimum height instead of stretching.
-        // Stretching made them equal at rest but had to be switched off on expand, and
-        // the switch itself was the jump: the ratings box snapped from its stretched
-        // height back to its natural one before the breakdown pushed it open again.
-        ? 'grid grid-cols-1 md:grid-cols-2 gap-4 items-start'
-        : 'space-y-4',
-    )}>
+    <div className="space-y-4">
       {/* One panel, hairline dividers, sections stacked. Three earlier attempts paired
           cards side by side, and because the number of sections varies per course (four
           data states) every arrangement left an orphan or a gap in at least one of them.
           Stacked, a course with two sections and one with four both read as deliberate,
           and a row can expand in place without unbalancing anything beside it. */}
-      <PanelSection label="Student ratings" className={cn(ratingsBesideHours && SIDE_BY_SIDE_MIN_H)}>
+      <PanelSection label="Student ratings">
         {quality != null && (
           <ScoreRow label="Overall rating" score={quality} percentile={qualityPct} emphasis showRank={hasRanks} />
         )}
@@ -728,29 +722,20 @@ export function EvaluationOverview({ evaluations: rawEvaluations, quality, quali
         })}
       </PanelSection>
 
-      {/* Side by side, because the panel is now ~1,430px rather than the ~1,000px it had
-          while the Sections rail was up. Two 700px sections keep the whole tab above the
-          fold; stacked they pushed the enrollment chart off screen. */}
-      <ChartsRow paired={hasEnrollment}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
         {metrics.hours !== undefined && (() => {
           const stats = optionStats(hoursQuestions.flatMap(q => q.options))
           return (
             <PanelSection
-              className={cn(
-                !hasEnrollment && !ratingsBesideHours && 'md:col-span-2',
-                ratingsBesideHours && SIDE_BY_SIDE_MIN_H,
-              )}
+              // Bottom right, with or without the enrollment chart to its left.
+              className="md:col-start-2"
               label="Hours per week"
               value={`${metrics.hours.toFixed(1)} hrs/wk`}
               // No response count: it was the part that truncated at this width, and the
               // bars below already show how many answered each bucket.
               note={stats ? `median ${stats.median} · mean ${stats.mean.toFixed(1)} · SD ${stats.sd.toFixed(1)}` : undefined}
             >
-              {/* Capped: alone it spans both columns, and a 1,430px-wide histogram of
-                  seven buckets is mostly empty space. */}
-              {/* Centred: spanning both columns with a capped width left the chart
-                  pinned to the left with a wide gap beside it. */}
-              <div className={cn('px-4 py-3', hasEnrollment ? '' : 'max-w-3xl mx-auto w-full')}>
+              <div className="px-4 py-3">
                 <HoursHistogram options={hoursQuestions.flatMap(q => q.options)} />
               </div>
             </PanelSection>
@@ -758,34 +743,16 @@ export function EvaluationOverview({ evaluations: rawEvaluations, quality, quali
         })()}
 
         {hasEnrollment && classYears && (
-          <PanelSection label="Enrollment by year" value={`${classYears.total} students`}>
+          <PanelSection className="md:col-start-1 md:row-start-1" label="Enrollment by year" value={`${classYears.total} students`}>
             <div className="px-4 py-3">
               <ClassYearChart breakdown={classYears} />
             </div>
           </PanelSection>
         )}
-      </ChartsRow>
+      </div>
     </div>
   )
 }
-
-/**
- * Wraps the chart sections in a two-column grid only when there are two to pair. On its
- * own a chart is already full width, and wrapping it in a grid it does not need was what
- * produced the half-width card beside a gap.
- */
-function ChartsRow({ paired, children }: { paired: boolean, children: React.ReactNode }) {
-  if (!paired) return <>{children}</>
-  return <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">{children}</div>
-}
-
-/**
- * Both boxes in the side-by-side layout carry this, so they match at rest without the
- * grid stretching them. It is the histogram box's own height: a 2.5rem header, 6rem of
- * bars, the axis labels and the padding around them, and it does not vary by course
- * because the bar area is a fixed height.
- */
-const SIDE_BY_SIDE_MIN_H = 'md:min-h-[183px]'
 
 /**
  * One band of the panel: a quiet header strip, then its content. Sections carry their own
