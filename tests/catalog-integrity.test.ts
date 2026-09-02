@@ -58,8 +58,8 @@ let light: Array<Omit<Course, 'description' | 'sections'>>
 const show = (xs: string[], n = 8) => (xs.length > n ? [...xs.slice(0, n), `…+${xs.length - n} more`] : xs)
 
 beforeAll(() => {
-    full = JSON.parse(fs.readFileSync('public/catalog/full.json', 'utf8'))
-    light = JSON.parse(fs.readFileSync('public/catalog/light.json', 'utf8'))
+    full = JSON.parse(fs.readFileSync('data/catalog/full.json', 'utf8'))
+    light = JSON.parse(fs.readFileSync('data/catalog/light.json', 'utf8'))
 })
 
 describe('identity and keys', () => {

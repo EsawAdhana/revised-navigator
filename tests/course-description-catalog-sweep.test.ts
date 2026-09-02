@@ -10,7 +10,7 @@ import { decodeHtmlEntities, normalizeCatalogDescription } from '@/lib/utils'
  * that would have caught "for CEE 80 minutes" on any of 8k+ courses.
  */
 describe('every catalog description round-trips unchanged', () => {
-    const file = path.join(process.cwd(), 'public/catalog/full.json')
+    const file = path.join(process.cwd(), 'data/catalog/full.json')
 
     it('emits the source text verbatim for all courses', () => {
         const courses: Array<{ course_id: string; subject: string; code: string; description?: string }> =

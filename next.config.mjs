@@ -6,6 +6,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: { unoptimized: true },
+  // data/catalog/{full,light}.json are read with fs at request time but live
+  // outside public/, so Next.js's file tracing cannot infer them — every route
+  // that reads a dump has to name it here or the file is absent from the
+  // deployed bundle. Missing it is not fatal (each reader falls back to
+  // Supabase) but it is much slower, so keep this list in step with the
+  // importers of @/lib/catalog-dump, @/lib/departments and @/lib/catalog-paths.
+  outputFileTracingIncludes: {
+    '/api/courses': ['./data/catalog/full.json', './data/catalog/light.json'],
+    '/api/courses/[courseId]': ['./data/catalog/full.json'],
+    '/api/instructors/[slug]': ['./data/catalog/full.json', './data/catalog/light.json'],
+    '/browse/[subject]': ['./data/catalog/full.json', './data/catalog/light.json'],
+    '/browse/departments': ['./data/catalog/light.json'],
+    '/courses/[courseId]': ['./data/catalog/full.json', './data/catalog/light.json'],
+    '/instructors/[slug]': ['./data/catalog/full.json', './data/catalog/light.json'],
+    '/sitemap.xml': ['./data/catalog/light.json'],
+  },
   turbopack: {
     root: path.resolve(__dirname)
   },

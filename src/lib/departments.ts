@@ -1,8 +1,8 @@
 import { cache } from 'react'
 import { readFile } from 'fs/promises'
-import { join } from 'path'
 import { getPublicClient } from '@/lib/supabase-admin'
 import { compareCourseCodes } from '@/lib/utils'
+import { serverCatalogPath } from '@/lib/catalog-paths'
 
 const PAGE_SIZE = 250
 
@@ -98,7 +98,7 @@ export const getDepartments = cache(async (): Promise<{ subject: string }[]> => 
 /** The committed light catalog, or null when it is not on disk (dev, cold clone). */
 async function readCatalogDump(): Promise<{ subject?: string }[] | null> {
   try {
-    const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'light.json'), 'utf8')
+    const raw = await readFile(serverCatalogPath('light.json'), 'utf8')
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed : null
   } catch {

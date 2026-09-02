@@ -1,5 +1,5 @@
 /**
- * LOCAL PREVIEW ONLY. Recomputes the rating columns into public/catalog/*.json exactly
+ * LOCAL PREVIEW ONLY. Recomputes the rating columns into data/catalog/*.json exactly
  * as refreshMetrics() would, so the app can be run before the migration is applied.
  * `npm run dump:catalog` supersedes this once courses.rating_breakdown exists.
  */
@@ -120,7 +120,7 @@ const ranks = percentileRanks(scored.map(v => v.quality))
 scored.forEach((v, i) => { v.quality_pct = ranks[i] })
 
 for (const file of ['light.json', 'full.json']) {
-  const path = `public/catalog/${file}`
+  const path = `data/catalog/${file}`
   const rows = JSON.parse(readFileSync(path, 'utf8')) as any[]
   let rated = 0
   for (const row of rows) {

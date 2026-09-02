@@ -21,7 +21,7 @@ const RENDER_RE = /\b(?:([A-Z]{2,4})\s*(\d{1,3}[A-Z]?)|(\d{2,3}[A-Z]?))\b/g
 /** Any "Word 123" pair, so we can see which subject the sentence actually named. */
 const NAMED_RE = /\b([A-Z][A-Za-z&]{1,13})\s*(\d{1,3}[A-Z]?)\b/g
 
-const courses = JSON.parse(readFileSync('public/catalog/full.json', 'utf8'))
+const courses = JSON.parse(readFileSync('data/catalog/full.json', 'utf8'))
 const ids = new Map(courses.map(c => [`${c.subject}|${c.code}`, c.course_id]))
 const subjects = new Set(courses.map(c => c.subject))
 

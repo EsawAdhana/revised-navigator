@@ -1,5 +1,4 @@
 import { readFile } from 'fs/promises'
-import { join } from 'path'
 import type { Course } from '@/types/course'
 import { rowToCourse } from '@/lib/course-mapper'
 import { mergeCourseRows } from '@/lib/supabase-admin'
@@ -13,6 +12,7 @@ import {
   type InstructorDirectory,
   type InstructorDump,
 } from '@/lib/instructors'
+import { serverCatalogPath, publicCatalogPath } from '@/lib/catalog-paths'
 
 type DumpRow = Record<string, unknown> & { course_id?: string; id?: string; subject?: string }
 
@@ -29,7 +29,7 @@ async function loadFullById(): Promise<Map<string, Course>> {
   if (fullById) return fullById
   if (!fullLoad) {
     fullLoad = (async () => {
-      const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'full.json'), 'utf8')
+      const raw = await readFile(serverCatalogPath('full.json'), 'utf8')
       const rows = JSON.parse(raw) as DumpRow[]
       const map = new Map<string, Course>()
       for (const row of mergeCourseRows(rows)) {
@@ -47,7 +47,7 @@ async function loadLightRows(): Promise<DumpRow[]> {
   if (lightRows) return lightRows
   if (!lightLoad) {
     lightLoad = (async () => {
-      const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'light.json'), 'utf8')
+      const raw = await readFile(serverCatalogPath('light.json'), 'utf8')
       lightRows = JSON.parse(raw) as DumpRow[]
       return lightRows
     })().finally(() => { lightLoad = null })
@@ -85,7 +85,7 @@ async function loadInstructorDump(): Promise<InstructorDump> {
   if (!instructorDumpLoad) {
     instructorDumpLoad = (async () => {
       try {
-        const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'instructors.json'), 'utf8')
+        const raw = await readFile(publicCatalogPath('instructors.json'), 'utf8')
         instructorDump = parseInstructorDump(JSON.parse(raw))
       } catch {
         instructorDump = { names: [], courseLinks: {} }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { readFile } from 'fs/promises'
-import { join } from 'path'
 import { getPublicClient, mergeCourseRows, FULL_COURSE_COLUMNS } from '@/lib/supabase-admin'
+import { serverCatalogPath } from '@/lib/catalog-paths'
 
 let dumpById: Map<string, unknown> | null = null
 let dumpLoad: Promise<Map<string, unknown>> | null = null
@@ -11,7 +11,7 @@ async function getFromDump(courseId: string): Promise<unknown | null> {
     if (!dumpById) {
       if (!dumpLoad) {
         dumpLoad = (async () => {
-          const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'full.json'), 'utf8')
+          const raw = await readFile(serverCatalogPath('full.json'), 'utf8')
           const rows = JSON.parse(raw) as Array<{ course_id?: string }>
           const map = new Map<string, unknown>()
           for (const row of rows) {

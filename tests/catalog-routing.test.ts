@@ -16,7 +16,7 @@ let primaryMap: Map<string, string>
 const show = (xs: string[], n = 8) => (xs.length > n ? [...xs.slice(0, n), `…+${xs.length - n} more`] : xs)
 
 beforeAll(() => {
-    const raw: Course[] = JSON.parse(fs.readFileSync('public/catalog/full.json', 'utf8'))
+    const raw: Course[] = JSON.parse(fs.readFileSync('data/catalog/full.json', 'utf8'))
     courses = raw.map(c => ({ id: c.course_id, title: c.title }))
     ids = new Set(courses.map(c => normalizeCourseId(c.id)))
     primaryMap = getCrossListPrimaryMap(courses)

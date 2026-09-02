@@ -3,6 +3,8 @@
 import Script from "next/script";
 import { useCallback } from "react";
 
+import { registerHumanBehaviorTracker } from "@/lib/humanbehavior";
+
 /**
  * Human Behavior recording, loaded from the CDN rather than bundled from npm.
  *
@@ -53,9 +55,13 @@ export function HumanBehaviorInit() {
 
     // Deliberately no `version` — omitting it is what keeps this app on the
     // channel's current recorder instead of pinning it again.
-    tracker.init(apiKey, {
-      ingestionUrl: process.env.NEXT_PUBLIC_HUMANBEHAVIOR_INGESTION_URL,
-    });
+    // Keep the handle: it is the only way to tell Human Behavior who the
+    // signed-in visitor is, and auth may have resolved before this ran.
+    registerHumanBehaviorTracker(
+      tracker.init(apiKey, {
+        ingestionUrl: process.env.NEXT_PUBLIC_HUMANBEHAVIOR_INGESTION_URL,
+      }),
+    );
   }, [apiKey]);
 
   // No key configured (local checkouts, CI): render nothing rather than

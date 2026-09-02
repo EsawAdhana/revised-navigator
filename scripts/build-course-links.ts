@@ -24,7 +24,7 @@ const RENDER_RE = /\b(?:([A-Z]{2,4})\s*(\d{1,3}[A-Z]?)|(\d{2,3}[A-Z]?))\b/g
 
 type Course = { course_id: string; subject: string; code: string; description?: string }
 
-const courses: Course[] = JSON.parse(readFileSync('public/catalog/full.json', 'utf8'))
+const courses: Course[] = JSON.parse(readFileSync('data/catalog/full.json', 'utf8'))
 const ids = new Map(courses.map(c => [`${c.subject}|${c.code}`, c.course_id]))
 
 const parsed = VERDICTS.map(v => ({ verdict: v, ...parseWhere(v.where) }))

@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next'
 import { readFile } from 'fs/promises'
-import { join } from 'path'
 import { SITE_URL } from '@/lib/site'
+import { serverCatalogPath } from '@/lib/catalog-paths'
 
 // Rebuild the sitemap at most once a day rather than per request.
 export const revalidate = 86400
@@ -9,7 +9,7 @@ export const revalidate = 86400
 /** Prefer the prebuilt light dump so builds don't hang on a sick Supabase. */
 async function getCatalog(): Promise<{ ids: string[]; subjects: string[] }> {
   try {
-    const raw = await readFile(join(process.cwd(), 'public', 'catalog', 'light.json'), 'utf8')
+    const raw = await readFile(serverCatalogPath('light.json'), 'utf8')
     const rows = JSON.parse(raw) as Array<{
       course_id?: string
       id?: string

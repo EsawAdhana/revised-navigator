@@ -24,7 +24,7 @@ tsconfig.tsbuildinfo
 public/data/evals/
 
 # Checkpoint only — light.json / full.json are committed so prod can serve them
-public/catalog/full.partial.json
+data/catalog/full.partial.json
 
 # Academic deliverables (proposal is internal-only)
 PROPOSAL.md

@@ -190,7 +190,7 @@ describe('parseDays — weekend meetings', () => {
   })
 
   it('handles the real ExploreCourses whitespace shape', () => {
-    // BIOS215 Autumn 2026, verbatim from public/catalog/full.json.
+    // BIOS215 Autumn 2026, verbatim from data/catalog/full.json.
     expect(parseDays('Sunday\n\t\t\t\n\t\t\tSaturday')).toEqual(['Sat', 'Sun'])
   })
 

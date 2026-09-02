@@ -65,7 +65,7 @@ export default function TermsPage() {
               <li>Attempt to gain unauthorized access to the Service or its related systems.</li>
               <li>Scrape, crawl, or otherwise extract data from the Service in an automated manner without permission.</li>
               <li>Misrepresent your identity or affiliation with Stanford University.</li>
-              <li>Submit false, misleading, or abusive content (including syllabus votes, reviews, or feedback).</li>
+              <li>Submit false, misleading, or abusive content (including reviews or feedback).</li>
             </ul>
           </section>
 

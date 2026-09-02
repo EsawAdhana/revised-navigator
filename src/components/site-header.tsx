@@ -2,16 +2,15 @@
 
 import React, { useMemo } from 'react';
 import { SearchBar } from '@/components/search-bar';
-import { FilterSidebar } from '@/components/filter-sidebar';
+import { MobileFilterMenu } from '@/components/mobile-filter-menu';
 import { Logo } from '@/components/logo';
 import { useAuthStore } from '@/lib/auth-store';
 import { StanfordLoginButton } from '@/components/stanford-login-button';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import Link from 'next/link';
-import { CalendarDays, LogOut, Menu } from 'lucide-react';
+import { CalendarDays, LogOut } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader, SheetDescription } from '@/components/ui/sheet';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 export function SiteHeader() {
@@ -45,24 +44,7 @@ export function SiteHeader() {
         <header className="flex-none h-14 sm:h-16 md:h-16 border-b border-border/50 flex items-center gap-2 md:gap-4 bg-background/90 backdrop-blur-xl sticky top-0 z-30 transition-all duration-300 justify-between px-2 sm:px-0">
             {/* Left: Logo + Filters (sheet) */}
             <div className="flex items-center gap-2 md:gap-4 shrink-0 md:w-[270px] pl-2 sm:pl-4 md:pl-0 md:justify-center">
-                {isCatalog && (
-                    <Sheet>
-                        <SheetTrigger asChild>
-                            <Button variant="ghost" size="icon" className="md:hidden -ml-2" aria-label="Open menu">
-                                <Menu className="h-5 w-5" />
-                            </Button>
-                        </SheetTrigger>
-                        <SheetContent side="left" className="p-0 w-[300px] sm:max-w-[320px]">
-                            <SheetHeader>
-                                <SheetTitle className="sr-only">Filters</SheetTitle>
-                                <SheetDescription className="sr-only">
-                                    Filter courses by department, term, and other criteria.
-                                </SheetDescription>
-                            </SheetHeader>
-                            <FilterSidebar />
-                        </SheetContent>
-                    </Sheet>
-                )}
+                {isCatalog && <MobileFilterMenu />}
 
                 <Link href={homeHref} className="flex items-center gap-2.5 md:min-w-[120px] group py-1 px-1 sm:px-2 -ml-1 sm:-ml-2 rounded-lg hover:bg-secondary/50 transition-colors">
                     <Logo className="h-9 w-9 sm:h-10 sm:w-10 shrink-0" />

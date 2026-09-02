@@ -56,7 +56,7 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-semibold text-foreground mb-2">How We Use Your Information</h2>
             <ul className="list-disc pl-5 space-y-1">
               <li>To authenticate your identity and restrict access to Stanford students.</li>
-              <li>To associate your course schedule, preferences, and votes with your account.</li>
+              <li>To associate your course schedule and preferences with your account.</li>
             </ul>
           </section>
 
@@ -72,11 +72,9 @@ export default function PrivacyPage() {
           <section className="prose prose-neutral dark:prose-invert max-w-none">
             <h2 className="text-lg font-semibold text-foreground mb-2">Data Sharing</h2>
             <p>
-              We do not sell or rent your personal information. Aggregated, anonymized data
-              (such as total votes on a syllabus) may be visible to other authenticated users
-              of the Service. We share usage and interaction data with our analytics provider,
-              Human Behavior, solely to help us understand and improve how the Service is used
-              (see &quot;Usage Analytics&quot; below).
+              We do not sell or rent your personal information. We share usage and interaction
+              data with our analytics provider, Human Behavior, solely to help us understand and
+              improve how the Service is used (see &quot;Usage Analytics&quot; below).
             </p>
           </section>
 

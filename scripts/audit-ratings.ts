@@ -677,7 +677,7 @@ section('5. Prebuilt catalog dump')
   const bad: string[] = []
   let checked = 0
   try {
-    const light = JSON.parse(readFileSync('public/catalog/light.json', 'utf8')) as any[]
+    const light = JSON.parse(readFileSync('data/catalog/light.json', 'utf8')) as any[]
     for (const row of light) {
       const id = String(row.course_id)
       const canonical = groupOfCourse.get(id) ?? id
@@ -701,7 +701,7 @@ section('5. Prebuilt catalog dump')
 {
   const bad: string[] = []
   try {
-    const light = JSON.parse(readFileSync('public/catalog/light.json', 'utf8')) as any[]
+    const light = JSON.parse(readFileSync('data/catalog/light.json', 'utf8')) as any[]
     for (const row of light) {
       if (row.quality != null && !(row.quality > 0)) bad.push(`${row.course_id} quality=${row.quality}`)
       if (row.quality != null && row.quality_n == null) bad.push(`${row.course_id} quality without quality_n`)

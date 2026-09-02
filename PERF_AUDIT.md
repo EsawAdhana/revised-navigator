@@ -28,7 +28,7 @@ the problem: CLS ~0, INP p75 80ms desktop / 108ms mobile, LCP p75 1.6s.
   path other than `/`, and the matcher excludes `api/`, so the Supabase `getUser()`
   round trip happens on the landing page only.
 - **Finding 19** — `/api/courses` caches the pre-serialized string (`cachedFull`) and
-  prefers the prebuilt `public/catalog/*.json` dump, so it no longer re-stringifies
+  prefers the prebuilt `data/catalog/*.json` dump, so it no longer re-stringifies
   per request.
 
 ## New since this audit (2026-08-25)

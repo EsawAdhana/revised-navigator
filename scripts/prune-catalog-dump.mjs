@@ -21,7 +21,7 @@ import { readFileSync, writeFileSync, statSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
 
 const write = process.argv.includes('--write')
-const FILES = ['public/catalog/full.json', 'public/catalog/light.json']
+const FILES = ['data/catalog/full.json', 'data/catalog/light.json']
 
 const isEmpty = v => v === '' || v == null || (Array.isArray(v) && v.length === 0)
 

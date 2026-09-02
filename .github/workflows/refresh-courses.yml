@@ -1,7 +1,8 @@
 # Required repo secrets (Settings → Secrets and variables → Actions):
 #   NEXT_PUBLIC_SUPABASE_URL
 #   SUPABASE_SERVICE_ROLE_KEY
-# The site serves the catalog from committed public/catalog/*.json, not from a
+# The site serves the catalog from committed data/catalog/*.json (server-only)
+# plus public/catalog/instructors.json (browser-fetched), not from a
 # live DB scan, so scraping alone does not change what users see. This workflow
 # scrapes, rebuilds those dumps, and commits them; the commit is what deploys.
 # If schedules stop after repo inactivity: Actions → ... → enable workflows; run once via workflow_dispatch.
@@ -47,7 +48,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add public/catalog/light.json public/catalog/full.json public/catalog/instructors.json scripts/prior-offerings.json
+          git add data/catalog/light.json data/catalog/full.json public/catalog/instructors.json scripts/prior-offerings.json
           if git diff --cached --quiet; then
             echo "Catalog unchanged; nothing to deploy."
           else

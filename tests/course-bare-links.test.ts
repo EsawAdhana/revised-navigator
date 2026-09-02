@@ -12,7 +12,7 @@ describe('reviewed bare-number links, against the real catalog', () => {
     let resolve: (subject: string, code: string) => string | undefined
 
     beforeAll(() => {
-        const courses = JSON.parse(fs.readFileSync('public/catalog/full.json', 'utf8'))
+        const courses = JSON.parse(fs.readFileSync('data/catalog/full.json', 'utf8'))
         byId = new Map(courses.map((c: any) => [c.course_id, c]))
         const ids = new Map<string, string>(courses.map((c: any) => [`${c.subject}|${c.code}`, c.course_id]))
         resolve = (subject, code) => ids.get(`${subject}|${code}`)

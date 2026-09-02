@@ -5,8 +5,12 @@
  *   node --env-file=.env.local scripts/dump-catalog.mjs
  *   node --env-file=.env.local scripts/dump-catalog.mjs --courses rows.json --out-dir ./local-catalog
  *
- * Writes public/catalog/{light,full,instructors}.json, which /api/courses and
- * the SSR course/department/instructor pages read instead of scanning the DB.
+ * Writes data/catalog/{light,full}.json and public/catalog/instructors.json,
+ * which the SSR course/department/instructor pages read instead of scanning the
+ * DB. full.json and light.json are deliberately NOT under public/: anything
+ * there is served as a static asset, which published the whole catalog at
+ * /catalog/full.json. instructors.json stays public because the browser fetches
+ * it directly. See src/lib/catalog-paths.ts.
  * The files are committed, so refresh-courses.yml re-runs this and commits the
  * result.
  *
@@ -23,18 +27,20 @@ import { fileURLToPath } from 'url'
 import { buildCrossListGroups, normalizeCourseId } from '../src/lib/cross-list.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const DEFAULT_OUT_DIR = join(__dirname, '..', 'public', 'catalog')
+// full.json / light.json are server-only; instructors.json is browser-fetched.
+const DEFAULT_SERVER_OUT_DIR = join(__dirname, '..', 'data', 'catalog')
+const DEFAULT_PUBLIC_OUT_DIR = join(__dirname, '..', 'public', 'catalog')
 
 /**
  * --courses reads catalog rows from a file (scrape-sections.mjs --out) instead
- * of Supabase, and --out-dir writes the dumps somewhere other than
- * public/catalog. Together they build a full local catalog without touching the
+ * of Supabase, and --out-dir writes all three dumps into one directory instead
+ * of the split defaults. Together they build a full local catalog without touching the
  * shared database or the committed dumps. Evaluations are still read from
  * Supabase, read-only, because isNew needs the teaching history.
  */
 function parseArgs() {
   const args = process.argv.slice(2)
-  const opts = { courses: null, outDir: DEFAULT_OUT_DIR }
+  const opts = { courses: null, outDir: null }
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--courses' && args[i + 1]) opts.courses = args[i + 1]
     if (args[i] === '--out-dir' && args[i + 1]) opts.outDir = args[i + 1]
@@ -401,7 +407,10 @@ async function main() {
 
   const opts = parseArgs()
   const supabase = createClient(url, key, { auth: { persistSession: false } })
-  mkdirSync(opts.outDir, { recursive: true })
+  const serverOutDir = opts.outDir ?? DEFAULT_SERVER_OUT_DIR
+  const publicOutDir = opts.outDir ?? DEFAULT_PUBLIC_OUT_DIR
+  mkdirSync(serverOutDir, { recursive: true })
+  mkdirSync(publicOutDir, { recursive: true })
 
   console.log(opts.courses ? `Dumping catalog from ${opts.courses}…` : 'Dumping catalog…')
   const t0 = Date.now()
@@ -419,14 +428,14 @@ async function main() {
   dropNonPositiveMetrics(all)
 
   const fullJson = JSON.stringify(all)
-  writeFileSync(join(opts.outDir, 'full.json'), fullJson)
+  writeFileSync(join(serverOutDir, 'full.json'), fullJson)
 
   const light = all.map((row) => Object.fromEntries(LIGHT_KEYS.map((k) => [k, row[k]])))
   const lightJson = JSON.stringify(light)
-  writeFileSync(join(opts.outDir, 'light.json'), lightJson)
+  writeFileSync(join(serverOutDir, 'light.json'), lightJson)
 
   const instructors = await fetchInstructorDump(supabase, all)
-  writeFileSync(join(opts.outDir, 'instructors.json'), JSON.stringify(instructors))
+  writeFileSync(join(publicOutDir, 'instructors.json'), JSON.stringify(instructors))
   const linkCount = Object.values(instructors.courseLinks).reduce((n, m) => n + Object.keys(m).length, 0)
   console.log(`  ${instructors.names.length} instructor names, ${linkCount} course-scoped links`)
 

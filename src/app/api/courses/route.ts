@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { readFile } from 'fs/promises'
-import { join } from 'path'
 import { getPublicClient, mergeCourseRows, FULL_COURSE_COLUMNS, LIGHT_COURSE_COLUMNS } from '@/lib/supabase-admin'
+import { serverCatalogPath } from '@/lib/catalog-paths'
 
 // Keyset pages beat OFFSET ranges under load. Full (sections) stays small so
 // a sick DB can finish; light can be a bit larger.
@@ -41,10 +41,15 @@ async function sleep(ms: number) {
 async function readPrebuiltDump(full: boolean): Promise<string | null> {
   const name = full ? 'full.json' : 'light.json'
   try {
-    return await readFile(join(process.cwd(), 'public', 'catalog', name), 'utf8')
+    return await readFile(serverCatalogPath(name), 'utf8')
   } catch {
     // fall through to Supabase Storage
   }
+  // NOTE: this is a *public* Supabase Storage bucket. It is empty today (the
+  // path 400s), and it must stay that way — populating it would republish the
+  // full catalog at a world-readable URL, which is exactly what moving these
+  // dumps out of public/ was meant to stop. Use a private bucket + signed URL
+  // if this fallback is ever needed.
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL
   if (!base) return null
   try {
@@ -93,9 +98,27 @@ async function fetchAllRows(columns: string, pageSize: number) {
   return rows.filter(r => r.grading && r.grading.trim() !== '' && r.grading !== 'TBD')
 }
 
-// s-maxage matches the daily data refresh; the post-scrape redeploy busts the
-// CDN cache sooner, and stale-while-revalidate keeps expiry hits fast.
-const CACHE_HEADERS = { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=86400' }
+// This route returns the whole catalog — 8,614 courses with every rating — in a
+// single response. Nothing in the app calls it (the browser uses
+// /api/courses/[courseId] and /api/courses/batch); it exists for local tooling.
+// Left open it is the cheapest possible way to take the entire corpus, so it is
+// Deliberately not gated and not rate limited.
+//
+// The endpoint serves a public page: /browse is a client component and
+// src/lib/store.ts fetches this route from the browser for both dumps -- light for
+// the list, then full for sections and descriptions. A browser cannot hold a shared
+// secret, so an x-catalog-key check took /browse to 0 classes (verified against
+// origin/main on the same machine: 3,108 classes there, 0 with the gate on).
+//
+// A per-IP limit is the obvious next thought and is worse than nothing here: most
+// Stanford traffic arrives from a handful of campus NAT addresses, so any limit low
+// enough to slow a scraper is low enough to break browse for everyone behind it. A
+// 30/min limit throttled a single developer refreshing the page.
+//
+// What moving the dumps out of public/ still buys, and what this keeps: the catalog
+// is no longer a permanently addressable, CDN-cached file at a guessable URL. It is
+// served per-request with no-store, so it is not a static artifact a scraper can
+// bookmark or a CDN can hand out.
 
 async function getFull(): Promise<string> {
   if (cachedFull && Date.now() - fullTimestamp < CACHE_TTL) return cachedFull
@@ -136,13 +159,16 @@ async function getLight(): Promise<string> {
 }
 
 export async function GET(request: Request) {
+
   const { searchParams } = new URL(request.url)
   const full = searchParams.get('full') === '1'
 
   try {
     const json = full ? await getFull() : await getLight()
+    // No shared-cache headers here: a CDN entry keyed only on the URL would let
+    // an unauthenticated request collect a previously authorized body.
     return new NextResponse(json, {
-      headers: { ...CACHE_HEADERS, 'Content-Type': 'application/json' },
+      headers: { 'Cache-Control': 'private, no-store', 'Content-Type': 'application/json' },
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to fetch courses'
