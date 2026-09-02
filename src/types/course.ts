@@ -106,3 +106,15 @@ export interface CourseEvaluation {
   /** Median % of class sessions attended in person (from eval survey) */
   inPersonAttendancePct?: number;
 }
+
+/**
+ * Carta's class-level enrollment breakdown for one course, pooled over every term
+ * Carta holds. `levels` is keyed by Carta's own labels; the display order and the
+ * short names live in CLASS_YEAR_LEVELS so an unrecognised label is dropped from the
+ * chart rather than rendered raw.
+ */
+export interface ClassYearBreakdown {
+  levels: Record<string, number>;
+  /** Sum of levels, and the denominator every percentage on the chart uses. */
+  total: number;
+}

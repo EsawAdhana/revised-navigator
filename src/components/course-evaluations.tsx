@@ -8,13 +8,14 @@ import { track } from '@/lib/analytics'
 import { StanfordLoginButton } from '@/components/stanford-login-button'
 import {
   Loader2, ChevronDown, ChevronUp, MessageSquare,
-  ExternalLink, Clock, Search, X, Lock
+  ExternalLink, Clock, Search, X, Lock, Users
 } from 'lucide-react'
 import { cn, decodeHtmlEntities } from '@/lib/utils'
 import { formatInstructorName, instructorSlug } from '@/lib/instructors'
 import { isDevEvalsUnlocked } from '@/lib/dev-flags'
 import { compareTerms } from '@/lib/terms'
-import type { Course, CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
+import { CLASS_YEAR_BUCKETS, optionStats } from '@/lib/class-years'
+import type { ClassYearBreakdown, Course, CourseEvaluation, EvalQuestion, EvalOption } from '@/types/course'
 import { addRatingCounts, pooledMean, rankShare } from '@/lib/quality-score.mjs'
 import { categorizeQuestion, dedupeCourseLevelReports } from '@/lib/eval-reports.mjs'
 
@@ -253,8 +254,15 @@ function HoursHistogram({ options }: { options: EvalOption[] }) {
   const totalCount = buckets.reduce((sum, b) => sum + b.count, 0)
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-end gap-1 h-20">
+    <div className="flex flex-col gap-1.5">
+      {/* Definite height, not flex-1: each bar sets its own height as a percentage, and a
+          flex-basis parent gives percentages nothing to resolve against -- the bars
+          rendered at zero height. The card still stretches; the slack sits below. */}
+      {/* 160px, not 112: paired with a six or seven row enrollment chart the card gets
+          stretched, and a short histogram left a slab of dead space around it. Definite
+          height rather than flex-1 -- each bar's height is a percentage, which resolves
+          to zero against a flex-basis parent. */}
+      <div className="flex items-end gap-1 h-24">
         {buckets.map((bucket, i) => {
           const height = maxCount > 0 ? (bucket.count / maxCount) * 100 : 0
           const pct = totalCount > 0 ? ((bucket.count / totalCount) * 100).toFixed(0) : '0'
@@ -282,7 +290,59 @@ function HoursHistogram({ options }: { options: EvalOption[] }) {
           </div>
         ))}
       </div>
-      <div className="text-center text-[9px] text-muted-foreground/60">hours per week</div>
+    </div>
+  )
+}
+
+/**
+ * Who actually takes the course, by class level. Same row shape as the rating
+ * breakdowns above it -- label / bar / count -- because it is the same kind of thing:
+ * one distribution over named buckets.
+ *
+ * Levels with no students are dropped rather than drawn as empty rows: most courses
+ * touch three or four of the eleven, and eight flat bars read as missing data.
+ */
+function ClassYearChart({ breakdown }: { breakdown: ClassYearBreakdown }) {
+  const rows = useMemo(() => {
+    // A bucket that rounds to 0% is dropped, not drawn: one professional student in a
+    // 894-person lecture rendered as "Professional 1 (0%)", a full row of chrome for a
+    // number the chart cannot even express. 625 courses had at least one such row.
+    const present = CLASS_YEAR_BUCKETS
+      .map(bucket => ({
+        label: bucket.label,
+        count: bucket.keys.reduce((sum, key) => sum + (breakdown.levels[key] || 0), 0),
+      }))
+      .filter(bucket => bucket.count > 0
+        && Math.round((bucket.count / Math.max(breakdown.total, 1)) * 100) > 0)
+    const max = Math.max(...present.map(bucket => bucket.count), 1)
+    return { present, max }
+  }, [breakdown])
+
+  return (
+    <div className="space-y-1">
+      {rows.present.map(bucket => {
+        const pct = breakdown.total > 0 ? (bucket.count / breakdown.total) * 100 : 0
+        const barWidth = (bucket.count / rows.max) * 100
+        return (
+          <div key={bucket.label} className="flex items-center gap-2 text-sm group">
+            <span className="w-24 text-right text-muted-foreground shrink-0 text-[11px] leading-tight">{bucket.label}</span>
+            <div className="flex-1 h-4 bg-secondary/40 rounded overflow-hidden relative">
+              {/* Floored at 4%, the same way HoursHistogram floors its bars: one dominant
+                  bucket (165 of 233 professional) scaled every other row to two or three
+                  pixels, so six of seven rows read as empty when they are not. The floor
+                  overstates the smallest values, which is why the count and percentage
+                  sit beside every bar. */}
+              <div
+                className="h-full rounded bg-primary transition-all duration-500 group-hover:brightness-110"
+                style={{ width: `${Math.max(barWidth, 4)}%` }}
+              />
+            </div>
+            <span className="w-20 text-right text-[11px] text-muted-foreground shrink-0 tabular-nums whitespace-nowrap transition-colors group-hover:text-foreground">
+              {bucket.count} <span className="text-muted-foreground/50 group-hover:text-muted-foreground">({pct.toFixed(0)}%)</span>
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -553,29 +613,26 @@ function AggregatedRatingBreakdown({ questions, aggregateScore }: { questions: E
           const barWidth = maxCount > 0 ? (opt.count / maxCount) * 100 : 0
           return (
             <div key={i} className="flex items-center gap-2 text-sm group">
-              <span className="w-24 text-right text-muted-foreground shrink-0 text-[11px] leading-tight">{decodeHtmlEntities(opt.text)}</span>
+              <span className="w-32 text-right text-muted-foreground shrink-0 text-[11px] leading-tight">{decodeHtmlEntities(opt.text)}</span>
               <div className="flex-1 h-4 bg-secondary/40 rounded overflow-hidden relative">
                 <div
                   className={cn('h-full rounded transition-all duration-500', barFill(aggregateScore))}
                   style={{ width: `${barWidth}%` }}
                 />
               </div>
-              <span className="w-14 text-right text-[11px] text-muted-foreground shrink-0 tabular-nums">
+              <span className="w-20 text-right text-[11px] text-muted-foreground shrink-0 tabular-nums whitespace-nowrap transition-colors group-hover:text-foreground">
                 {opt.count} <span className="text-muted-foreground/50">({pct.toFixed(0)}%)</span>
               </span>
             </div>
           )
         })}
       </div>
-      <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-        <span>{totalCount} total responses across {questions.length} evals</span>
-      </div>
     </div>
   )
 }
 
 /** Median score per category with an expandable response breakdown for each. */
-export function EvaluationOverview({ evaluations: rawEvaluations, quality, qualityPct, breakdown }: {
+export function EvaluationOverview({ evaluations: rawEvaluations, quality, qualityPct, breakdown, classYears }: {
   evaluations: CourseEvaluation[]
   /**
    * courses.quality / quality_pct / rating_breakdown -- precomputed over the course's
@@ -586,6 +643,12 @@ export function EvaluationOverview({ evaluations: rawEvaluations, quality, quali
   quality?: number | null
   qualityPct?: number | null
   breakdown?: Course['ratingBreakdown'] | null
+  /**
+   * Carta's class-level breakdown, summed across the cross-list group. Pooled over
+   * Carta's whole record with no way to slice it by term, so callers pass null when a
+   * term filter is active -- same rule as `breakdown` above.
+   */
+  classYears?: ClassYearBreakdown | null
 }) {
   // A co-taught section files the same course-level answers once per instructor, so the
   // charts counted those students once per instructor too -- the same duplication the
@@ -607,76 +670,235 @@ export function EvaluationOverview({ evaluations: rawEvaluations, quality, quali
     return map
   }, [evaluations])
 
+  // Nothing preselected: the workload histogram is always visible in its own section
+  // now, so there is no empty column to fill on arrival.
+  const [openCat, setOpenCat] = useState<QuestionCategory | null>(null)
+  const hasClassYears = Boolean(classYears && classYears.total > 0)
+
+  const hoursQuestions = questionsByCategory.hours
+  const hasEnrollment = Boolean(hasClassYears && classYears)
+  // A term filter withholds every percentile, which frees ~208px per row -- so in that
+  // state the ratings table fits beside the histogram, where with ranks it would not.
+  const hasRanks = qualityPct != null
+    || RATING_CATEGORIES.some(cat => breakdown?.[cat as 'quality' | 'learning' | 'organization']?.pct != null)
+  const ratingsBesideHours = !hasEnrollment && !hasRanks
+
   return (
-    <div className="space-y-4">
-      {quality != null && <QualityRank score={quality} percentile={qualityPct} />}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {RATING_CATEGORIES.map(cat => {
-        if (metrics[cat] === undefined) return null
-        const questions = questionsByCategory[cat]
-
-        if (cat === 'hours') {
+    <div className={cn(
+      ratingsBesideHours
+        // Always start-aligned, with a shared minimum height instead of stretching.
+        // Stretching made them equal at rest but had to be switched off on expand, and
+        // the switch itself was the jump: the ratings box snapped from its stretched
+        // height back to its natural one before the breakdown pushed it open again.
+        ? 'grid grid-cols-1 md:grid-cols-2 gap-4 items-start'
+        : 'space-y-4',
+    )}>
+      {/* One panel, hairline dividers, sections stacked. Three earlier attempts paired
+          cards side by side, and because the number of sections varies per course (four
+          data states) every arrangement left an orphan or a gap in at least one of them.
+          Stacked, a course with two sections and one with four both read as deliberate,
+          and a row can expand in place without unbalancing anything beside it. */}
+      <PanelSection label="Student ratings" className={cn(ratingsBesideHours && SIDE_BY_SIDE_MIN_H)}>
+        {quality != null && (
+          <ScoreRow label="Overall rating" score={quality} percentile={qualityPct} emphasis showRank={hasRanks} />
+        )}
+        {RATING_CATEGORIES.filter(cat => cat !== 'hours').map(cat => {
+          if (metrics[cat] === undefined) return null
+          const stat = breakdown?.[cat as 'quality' | 'learning' | 'organization']
+          const score = stat?.score ?? metrics[cat]!
+          const isOpen = openCat === cat
           return (
             <div key={cat}>
-              <div className="w-full flex items-center gap-3 px-4 py-3 bg-secondary/5 rounded-t-lg border-b border-border/30">
-                <Clock size={16} className="text-muted-foreground shrink-0" />
-                <span className="text-sm text-foreground font-medium flex-1 text-left">
-                  Hours / Week
-                </span>
-                <span className="text-sm font-bold text-foreground tabular-nums">
-                  {metrics.hours!.toFixed(1)} hrs/wk
-                </span>
-              </div>
-
-              <div className="px-5 pb-4 pt-4 bg-secondary/5 border border-border/20 rounded-b-lg">
-                <HoursHistogram options={questions.flatMap(q => q.options)} />
-                {questions[0] && (
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-2 pt-1 border-t border-border/30">
-                    <span>{questions[0].responseRate}</span>
-                    <span className="tabular-nums">med {metrics.hours!.toFixed(1)} hrs/wk</span>
-                  </div>
-                )}
-              </div>
+              <ScoreRow
+                label={CATEGORY_LABELS[cat]}
+                score={score}
+                percentile={stat?.pct}
+                questions={questionsByCategory[cat]}
+                isOpen={isOpen}
+                onToggle={() => setOpenCat(isOpen ? null : cat)}
+                showRank={hasRanks}
+              />
+              {isOpen && (
+                <div className="px-4 pb-4 pt-1 bg-secondary/[0.06]">
+                  <AggregatedRatingBreakdown questions={questionsByCategory[cat]} aggregateScore={score} />
+                </div>
+              )}
             </div>
           )
-        }
+        })}
+      </PanelSection>
 
-        // Prefer the precomputed adjusted score so the number matches the rank beside
-        // it; fall back to the on-screen mean when a term filter is active.
-        const stat = breakdown?.[cat as 'quality' | 'learning' | 'organization']
-        const score = stat?.score ?? metrics[cat]!
-
-        return (
-          <div key={cat}>
-            <div className="w-full flex items-center gap-3 px-4 py-3 bg-secondary/5 rounded-t-lg border-b border-border/30">
-              <span className="text-sm text-foreground font-medium flex-1 text-left">
-                {CATEGORY_LABELS[cat]}
-              </span>
-              <div className="w-20 h-1.5 bg-secondary/60 rounded-full overflow-hidden">
-                <div
-                  className={cn('h-full rounded-full', barFill(score))}
-                  style={{ width: `${(score / 5) * 100}%` }}
-                />
-              </div>
-              <ScoreBadge score={score} size="sm" />
-            </div>
-
-            <div className="px-5 pb-4 pt-4 bg-secondary/5 border border-border/20 rounded-b-lg space-y-4">
-              {/* Each category is ranked against its own corpus -- the questions have
-                  different response spreads and different averages. */}
-              {stat && (
-                <RankLine percentile={stat.pct} className="-mt-1" />
+      {/* Side by side, because the panel is now ~1,430px rather than the ~1,000px it had
+          while the Sections rail was up. Two 700px sections keep the whole tab above the
+          fold; stacked they pushed the enrollment chart off screen. */}
+      <ChartsRow paired={hasEnrollment}>
+        {metrics.hours !== undefined && (() => {
+          const stats = optionStats(hoursQuestions.flatMap(q => q.options))
+          return (
+            <PanelSection
+              className={cn(
+                !hasEnrollment && !ratingsBesideHours && 'md:col-span-2',
+                ratingsBesideHours && SIDE_BY_SIDE_MIN_H,
               )}
-              <AggregatedRatingBreakdown questions={questions} aggregateScore={score} />
+              label="Hours per week"
+              value={`${metrics.hours.toFixed(1)} hrs/wk`}
+              // No response count: it was the part that truncated at this width, and the
+              // bars below already show how many answered each bucket.
+              note={stats ? `median ${stats.median} · mean ${stats.mean.toFixed(1)} · SD ${stats.sd.toFixed(1)}` : undefined}
+            >
+              {/* Capped: alone it spans both columns, and a 1,430px-wide histogram of
+                  seven buckets is mostly empty space. */}
+              {/* Centred: spanning both columns with a capped width left the chart
+                  pinned to the left with a wide gap beside it. */}
+              <div className={cn('px-4 py-3', hasEnrollment ? '' : 'max-w-3xl mx-auto w-full')}>
+                <HoursHistogram options={hoursQuestions.flatMap(q => q.options)} />
+              </div>
+            </PanelSection>
+          )
+        })()}
+
+        {hasEnrollment && classYears && (
+          <PanelSection label="Enrollment by year" value={`${classYears.total} students`}>
+            <div className="px-4 py-3">
+              <ClassYearChart breakdown={classYears} />
             </div>
-          </div>
-        )
-      })}
-      </div>
+          </PanelSection>
+        )}
+      </ChartsRow>
     </div>
   )
 }
+
+/**
+ * Wraps the chart sections in a two-column grid only when there are two to pair. On its
+ * own a chart is already full width, and wrapping it in a grid it does not need was what
+ * produced the half-width card beside a gap.
+ */
+function ChartsRow({ paired, children }: { paired: boolean, children: React.ReactNode }) {
+  if (!paired) return <>{children}</>
+  return <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">{children}</div>
+}
+
+/**
+ * Both boxes in the side-by-side layout carry this, so they match at rest without the
+ * grid stretching them. It is the histogram box's own height: a 2.5rem header, 6rem of
+ * bars, the axis labels and the padding around them, and it does not vary by course
+ * because the bar area is a fixed height.
+ */
+const SIDE_BY_SIDE_MIN_H = 'md:min-h-[183px]'
+
+/**
+ * One band of the panel: a quiet header strip, then its content. Sections carry their own
+ * headline on the right, which is what lets the panel be read at a glance without opening
+ * anything.
+ */
+function PanelSection({ label, value, note, children, className }: {
+  label: string
+  value?: string
+  note?: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <section className={cn('border border-border/40 rounded-xl overflow-hidden flex flex-col', className)}>
+      <header className="flex items-baseline gap-3 px-4 py-2.5 bg-secondary/[0.07] border-b border-border/30">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
+        {note && <span className="flex-1 text-[11px] text-muted-foreground tabular-nums truncate">{note}</span>}
+        {!note && <span className="flex-1" />}
+        {value && <span className="text-sm font-bold text-foreground tabular-nums shrink-0">{value}</span>}
+      </header>
+      {/* Top-aligned, not centred: with a shared minimum height the slack has to go
+          somewhere, and centring it split the gap above the first row so the header's
+          border stopped sitting flush against it. */}
+      <div className="flex-1 flex flex-col">{children}</div>
+    </section>
+  )
+}
+
+/**
+ * One row of the score table. The three rating categories are the same shape of thing
+ * measured three times, so they read as rows of one table rather than as three cards --
+ * which is also what frees the full width for the two charts below.
+ */
+function ScoreRow({ label, score, percentile, valueLabel, questions, isOpen, onToggle, emphasis, showRank = true }: {
+  label: string
+  /** Drives the bar and the badge. Omitted for rows that are not on the 1-5 scale. */
+  score?: number
+  percentile?: number | null
+  /** Replaces the score badge, e.g. "10.0 hrs/wk". */
+  valueLabel?: string
+  questions?: EvalQuestion[]
+  isOpen?: boolean
+  onToggle?: () => void
+  emphasis?: boolean
+  /** False when no row in the table has a percentile, so the column is not reserved. */
+  showRank?: boolean
+}) {
+  const expandable = Boolean(onToggle && questions && questions.length > 0)
+
+  const row = (
+    <>
+      <span className={cn('flex-1 text-left text-foreground text-sm truncate', emphasis ? 'font-semibold' : 'font-medium')}>
+        {label}
+      </span>
+      {/* One fixed column for the sentence, so every row's bar and value line up and the
+          share keeps the rankColor scale -- a bare "71%" beside a bar says nothing. */}
+      {/* Dropped entirely, not left blank: a term filter withholds every percentile, and
+          the reserved column left each row as a label and a number with a void between. */}
+      {showRank && (
+      <span className="hidden sm:block text-[11px] text-muted-foreground w-52 text-right shrink-0 whitespace-nowrap">
+        {percentile != null && (
+          <>
+            Ranks higher than{' '}
+            <span className={cn('text-[13px] font-bold tabular-nums', rankColor(percentile))}>
+              {rankShare(percentile) as number}%
+            </span>{' '}
+            of courses
+          </>
+        )}
+      </span>
+      )}
+      {score != null ? (
+        <div className="w-24 h-1.5 bg-secondary/60 rounded-full overflow-hidden shrink-0">
+          <div className={cn('h-full rounded-full', barFill(score))} style={{ width: `${(score / 5) * 100}%` }} />
+        </div>
+      ) : (
+        <div className="w-24 shrink-0" aria-hidden />
+      )}
+      <span className="w-24 shrink-0 flex justify-end">
+        {valueLabel
+          ? <span className="text-sm font-bold text-foreground tabular-nums">{valueLabel}</span>
+          : score != null && <ScoreBadge score={score} size={emphasis ? 'md' : 'sm'} />}
+      </span>
+      <span className="w-4 shrink-0 flex items-center justify-center">
+        {expandable && (isOpen
+          ? <ChevronUp size={14} className="text-muted-foreground" />
+          : <ChevronDown size={14} className="text-muted-foreground" />)}
+      </span>
+    </>
+  )
+
+  return (
+    <div className={cn(
+      'border-b border-border/30 last:border-0',
+      emphasis && 'bg-secondary/10 border-b-border/50',
+    )}>
+      {expandable ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={isOpen}
+          className="w-full flex items-center gap-4 px-4 py-2.5 hover:bg-secondary/20 transition-colors"
+        >
+          {row}
+        </button>
+      ) : (
+        <div className={cn('w-full flex items-center gap-4 px-4', emphasis ? 'py-3' : 'py-2.5')}>{row}</div>
+      )}
+    </div>
+  )
+}
+
 
 /** Shared sign-in prompt for the Stanford-only evaluation data. */
 export function EvalLoginGate({ title = 'Course reviews are Stanford-only' }: { title?: string }) {
@@ -723,10 +945,20 @@ interface CourseEvaluationsProps {
   quality?: number | null
   qualityPct?: number | null
   ratingBreakdown?: Course['ratingBreakdown'] | null
+  /**
+   * Term filter, lifted out so it survives a tab switch. The Charts and Comments tabs
+   * are two separate instances of this component and Radix unmounts the inactive one,
+   * so state held here was lost the moment you moved between them.
+   */
+  termFilter?: string
+  onTermFilterChange?: (term: string) => void
 }
 
-export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, quality, qualityPct, ratingBreakdown }: CourseEvaluationsProps) {
+export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, quality, qualityPct, ratingBreakdown, termFilter, onTermFilterChange }: CourseEvaluationsProps) {
   const fetchBulkEvaluations = useEvaluationStore(state => state.fetchBulkEvaluations)
+  const fetchBulkClassYears = useEvaluationStore(state => state.fetchBulkClassYears)
+  const getMergedClassYears = useEvaluationStore(state => state.getMergedClassYears)
+  const classYearsById = useEvaluationStore(state => state.classYears)
   const getMergedEvaluations = useEvaluationStore(state => state.getMergedEvaluations)
   const loadingCourses = useEvaluationStore(state => state.loadingCourses)
   const errorCourses = useEvaluationStore(state => state.errorCourses)
@@ -734,7 +966,10 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, 
   const user = useAuthStore(state => state.user)
   const authLoading = useAuthStore(state => state.isLoading)
   const canViewEvals = Boolean(user) || isDevEvalsUnlocked()
-  const [activeTermFilter, setActiveTermFilter] = useState<string>('all')
+  // Controlled when the parent supplies a filter; self-managed otherwise.
+  const [ownTermFilter, setOwnTermFilter] = useState<string>('all')
+  const activeTermFilter = termFilter ?? ownTermFilter
+  const setActiveTermFilter = onTermFilterChange ?? setOwnTermFilter
   const [activeTab, setActiveTab] = useState<EvalTab>(forcedTab || 'overview')
   const [expandedInstructor, setExpandedInstructor] = useState<string | null>(null)
   const [expandedQuestion, setExpandedQuestion] = useState<QuestionCategory | null>(null)
@@ -745,14 +980,28 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, 
     }
   }, [forcedTab])
 
-  const isLoading = courseIds.some(id => !!loadingCourses[id])
+  // Until the class-year answer is known, `hasClassYears` reads false, Hours takes the
+  // full width, and the card then arrives and squeezes it back to half -- a visible jump
+  // on the 46% of courses that have data. The class-year request is the faster of the
+  // two (142ms against 240-360ms for evaluations), so waiting for it costs nothing
+  // measurable and removes the shift entirely.
+  const classYearsPending = courseIds.some(id => !(id in classYearsById))
+  const isLoading = courseIds.some(id => !!loadingCourses[id]) || classYearsPending
   const hasError = courseIds.some(id => !!errorCourses[id])
   const evaluations = useMemo(() => getMergedEvaluations(courseIds), [getMergedEvaluations, courseIds, evaluationsById])
 
   const courseIdsKey = courseIds.join(',')
   useEffect(() => {
-    if (canViewEvals && courseIds.length > 0) fetchBulkEvaluations(courseIds)
-  }, [courseIdsKey, fetchBulkEvaluations, canViewEvals])
+    if (canViewEvals && courseIds.length > 0) {
+      fetchBulkEvaluations(courseIds)
+      fetchBulkClassYears(courseIds)
+    }
+  }, [courseIdsKey, fetchBulkEvaluations, fetchBulkClassYears, canViewEvals])
+
+  const classYears = useMemo(
+    () => getMergedClassYears(courseIds),
+    [getMergedClassYears, courseIds, classYearsById]
+  )
 
   useEffect(() => {
     if (!authLoading && !canViewEvals) track('eval_gate_viewed', { subject, code })
@@ -956,6 +1205,7 @@ export function CourseEvaluations({ courseIds, subject, code, forcedTab, isNew, 
             quality={activeTermFilter === 'all' ? quality : null}
             qualityPct={activeTermFilter === 'all' ? qualityPct : null}
             breakdown={activeTermFilter === 'all' ? ratingBreakdown : null}
+            classYears={activeTermFilter === 'all' ? classYears : null}
           />
         )}
 

@@ -49,6 +49,22 @@ export async function GET(request: Request) {
       hasCookieHeader: Boolean(request.headers.get('cookie')),
       userAgent: request.headers.get('user-agent'),
     })
+    // Two things exchange this code. `createBrowserClient` from @supabase/ssr has
+    // detectSessionInUrl on by default, so the browser consumes any `?code=` it lands
+    // on, and the client fallback in auth-provider.tsx also forwards that code here.
+    // Whichever loses the race gets a spent code -- which is why production showed
+    // "Could not complete sign-in" to users who were, in fact, signed in.
+    //
+    // A failed exchange plus a live session is not a failure worth a toast. Only report
+    // one when the user really has no session.
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      console.warn('Code exchange lost the race but the session is live; redirecting clean.', {
+        code: error.code,
+      })
+      return NextResponse.redirect(`${origin}${safeNext}`)
+    }
+
     const reason = error.code ? `&auth_error_code=${encodeURIComponent(error.code)}` : ''
     return NextResponse.redirect(`${origin}/?auth_error=exchange_failed${reason}`)
   }

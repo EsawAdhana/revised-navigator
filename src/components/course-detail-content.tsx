@@ -250,6 +250,9 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
     const gerLabel = gers.length > 0 ? gers.map(abbreviateGer).join(', ') : '—'
 
     const [previewSection, setPreviewSection] = useState<Section | null>(null);
+    // Shared by the Charts and Comments tabs so picking a term in one keeps it in the other.
+    const [evalTermFilter, setEvalTermFilter] = useState<string>('all');
+
 
     const handleSelectSection = (sectionId: number, section?: Section, selectedUnitsOverride?: number) => {
         if (selectedIdsForTerm(activeTerm).includes(sectionId)) {
@@ -415,6 +418,8 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                 code={course.code}
                                 forcedTab="overview"
                                 isNew={isNewCourse}
+                                termFilter={evalTermFilter}
+                                onTermFilterChange={setEvalTermFilter}
                                 quality={rating.quality ?? null}
                                 qualityPct={rating.qualityPct ?? null}
                                 ratingBreakdown={rating.ratingBreakdown ?? null}
@@ -429,6 +434,8 @@ export function CourseDetailContent({ course }: CourseDetailContentProps) {
                                 code={course.code}
                                 forcedTab="comments"
                                 isNew={isNewCourse}
+                                termFilter={evalTermFilter}
+                                onTermFilterChange={setEvalTermFilter}
                             />
                         </TabsContent>
                     </Tabs>

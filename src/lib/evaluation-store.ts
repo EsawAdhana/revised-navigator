@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CourseEvaluation } from '@/types/course'
+import type { ClassYearBreakdown, CourseEvaluation } from '@/types/course'
 
 /** Normalizes an instructor name for de-dup: case-insensitive and order-independent
  *  so "Dan Jurafsky" and "Jurafsky, Dan" collapse to the same key. */
@@ -19,6 +19,7 @@ const EVAL_CACHE_TTL = 1000 * 60 * 30 // 30 min
 // Course IDs with an in-flight bulk fetch — dedupes concurrent/overlapping callers
 // (e.g. the detail page plus its two CourseEvaluations children mounting together).
 const bulkInFlight = new Set<string>()
+const classYearsInFlight = new Set<string>()
 
 function readEvalCache(): Record<string, CourseEvaluation[]> | null {
   try {
@@ -42,10 +43,20 @@ function writeEvalCache(data: Record<string, CourseEvaluation[]>) {
 
 type EvaluationStore = {
   evaluations: Record<string, CourseEvaluation[]>
+  /**
+   * Carta class-level breakdowns, keyed by course ID. A `null` value means the fetch
+   * came back with nothing for that course -- Carta covers 85% of our catalog and
+   * suppresses anything under ~15 students -- and is what stops it being re-requested
+   * on every mount.
+   */
+  classYears: Record<string, ClassYearBreakdown | null>
   loadingCourses: Record<string, boolean>
   errorCourses: Record<string, boolean>
   isBulkLoading: boolean
   fetchBulkEvaluations: (courseIds: string[]) => Promise<void>
+  fetchBulkClassYears: (courseIds: string[]) => Promise<void>
+  /** Class-year counts summed across a cross-list group, or null if none of them have any. */
+  getMergedClassYears: (courseIds: string[]) => ClassYearBreakdown | null
   getEvaluations: (courseId: string) => CourseEvaluation[]
   /** Merged evaluations from all course IDs (e.g. cross-listed CS 24, LINGUIST 35). Deduplicated by term+instructor. */
   getMergedEvaluations: (courseIds: string[]) => CourseEvaluation[]
@@ -58,6 +69,7 @@ type EvaluationStore = {
 
 export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
   evaluations: {},
+  classYears: {},
   loadingCourses: {},
   errorCourses: {},
   isBulkLoading: false,
@@ -156,6 +168,68 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
     }
   },
 
+  fetchBulkClassYears: async (courseIds) => {
+    const { classYears } = get()
+    const toFetch = courseIds.filter(id => !(id in classYears) && !classYearsInFlight.has(id))
+    if (toFetch.length === 0) return
+    for (const id of toFetch) classYearsInFlight.add(id)
+
+    try {
+      const res = await fetch('/api/class-years', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseIds: toFetch })
+      })
+      // 401 is the logged-out case, not a failure: record "no data" so the chart
+      // simply does not render, the same way the evaluation fetch does.
+      const raw: unknown = res.ok ? await res.json() : {}
+      const fetched: Record<string, ClassYearBreakdown | null> = {}
+      for (const id of toFetch) fetched[id] = null
+      if (raw && typeof raw === 'object') {
+        for (const [courseId, value] of Object.entries(raw as Record<string, unknown>)) {
+          const row = value as ClassYearBreakdown | null
+          fetched[courseId] = row && typeof row.total === 'number' && row.total > 0 ? row : null
+        }
+      }
+      set(state => ({ ...state, classYears: { ...state.classYears, ...fetched } }))
+    } catch (err) {
+      console.error('Failed to load class-year breakdowns:', err)
+      set(state => {
+        const updated = { ...state.classYears }
+        for (const id of toFetch) if (!(id in updated)) updated[id] = null
+        return { ...state, classYears: updated }
+      })
+    } finally {
+      for (const id of toFetch) classYearsInFlight.delete(id)
+    }
+  },
+
+  getMergedClassYears: (courseIds) => {
+    const { classYears } = get()
+    // Carta reports the whole cross-listed class under EVERY one of its codes, so the
+    // rows for AA 228 and CS 238 are byte-identical 971-student copies of each other.
+    // Summing them showed 1,942. De-dupe on the distribution itself, then add what is
+    // left: paired listings like AFRICAAM 47 / AFRICAAM 147 really are different
+    // populations (30 and 49 students), and those still have to add up.
+    const seen = new Set<string>()
+    const levels: Record<string, number> = {}
+    let total = 0
+    let found = false
+    for (const id of courseIds) {
+      const row = classYears[id]
+      if (!row) continue
+      const signature = `${row.total}|${JSON.stringify(row.levels)}`
+      if (seen.has(signature)) continue
+      seen.add(signature)
+      found = true
+      for (const [level, count] of Object.entries(row.levels || {})) {
+        levels[level] = (levels[level] || 0) + count
+      }
+      total += row.total
+    }
+    return found ? { levels, total } : null
+  },
+
   getEvaluations: (courseId) => {
     const { evaluations } = get()
     return evaluations[courseId] || []
@@ -199,6 +273,6 @@ export const useEvaluationStore = create<EvaluationStore>((set, get) => ({
 
   clearAll: () => {
     try { sessionStorage.removeItem(EVAL_CACHE_KEY) } catch { /* ignore */ }
-    set({ evaluations: {}, loadingCourses: {}, errorCourses: {}, isBulkLoading: false })
+    set({ evaluations: {}, classYears: {}, loadingCourses: {}, errorCourses: {}, isBulkLoading: false })
   }
 }))
