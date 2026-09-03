@@ -180,14 +180,51 @@ export async function hydrateLocalCart(): Promise<void> {
 async function pushSchedule(userId: string): Promise<void> {
   try {
     const schedule = toScheduleItems()
+    const signature = cartSignature()
     const { error } = await supabase
       .from('user_schedules')
       .upsert({ user_id: userId, schedule }, { onConflict: 'user_id' })
     if (error) {
       console.error('Failed to push schedule:', error)
+    } else {
+      _lastSyncedSignature = signature
     }
   } catch (err) {
     console.error('pushSchedule error:', err)
+  }
+}
+
+/**
+ * Records that this device has completed a pull for a given user, surviving
+ * reloads. It is what separates "my local cart is a stale cache" from "my local
+ * cart is a schedule I built before signing in" — two states that are otherwise
+ * identical, which is why a removal made on another device used to be unioned
+ * straight back in on the next pull.
+ */
+const SYNCED_DEVICE_KEY = 'navigator-schedule-synced-user'
+
+function readSyncedDevice(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(SYNCED_DEVICE_KEY) ?? null
+  } catch {
+    return null
+  }
+}
+
+function markSyncedDevice(userId: string) {
+  try {
+    globalThis.localStorage?.setItem(SYNCED_DEVICE_KEY, userId)
+  } catch {
+    // Private mode / storage disabled. Losing the marker only costs us a merge
+    // on the next load, which is the old, safe-but-resurrecting behaviour.
+  }
+}
+
+function clearSyncedDevice() {
+  try {
+    globalThis.localStorage?.removeItem(SYNCED_DEVICE_KEY)
+  } catch {
+    // ignore
   }
 }
 
@@ -211,8 +248,8 @@ let _lastPulledUserId: string | null = null
  *  - Sets `_pullActive` to suppress `debouncedPush` during the pull to
  *    prevent pull's own `setState` from triggering a redundant push.
  */
-export async function pullSchedule(userId: string): Promise<void> {
-  if (_lastPulledUserId === userId) return
+export async function pullSchedule(userId: string, opts?: { force?: boolean }): Promise<void> {
+  if (!opts?.force && _lastPulledUserId === userId) return
   if (pullInFlight) return pullInFlight
   pullInFlight = _pullSchedule(userId).finally(() => { pullInFlight = null })
   return pullInFlight
@@ -224,6 +261,8 @@ export function resetSyncState() {
   lastItemCount = -1
   _localHydrated = false
   _pushSuspended = false
+  _lastSyncedSignature = null
+  clearSyncedDevice()
 }
 
 /**
@@ -282,8 +321,33 @@ async function _pullSchedule(userId: string): Promise<void> {
       ? ((Array.isArray(data.schedule) ? data.schedule : []) as ScheduleItem[])
       : []
     const localItems = toScheduleItems()
+    const deviceHasSynced = readSyncedDevice() === userId
+    // An edit this device made that never reached the server (offline, failed
+    // push). It is real work, not a cache, so the row must not overwrite it.
+    // Null signature means a fresh load with nothing to compare, and the marker
+    // already tells us the cart is a cache.
+    const hasUnsyncedEdits = _lastSyncedSignature !== null && cartSignature() !== _lastSyncedSignature
 
-    if (localItems.length > 0) {
+    // This device has pulled as this user before, so its local cart is a cache
+    // of the saved row rather than unseen work. The row wins outright — the
+    // union below would re-add anything removed on another device, because a
+    // removal is indistinguishable from a course this device never saw.
+    // Requires `data`: a missing row is ambiguous (fresh project, RLS, manual
+    // delete) and local may be the only copy left, so that falls through — as
+    // does a local edit that never made it to the server.
+    if (data && deviceHasSynced && !hasUnsyncedEdits) {
+      await waitForCourses()
+      const hydrated = hydrateItems(serverItems)
+      // Set even when empty: emptying the schedule elsewhere has to stick.
+      // Entries the catalog could not resolve are held by `hydrateItems` and
+      // re-added on the next push, so this does not erase them.
+      useCartStore.setState({ items: hydrated })
+      if (serverItems.length > 0) {
+        const syncedIds = new Set(serverItems.map(s => s.id))
+        useCourseStore.getState().fetchCourseDetails([...syncedIds])
+        reHydrateOnEnrichment(syncedIds)
+      }
+    } else if (localItems.length > 0) {
       // Local cart has items (e.g. built anonymously before logging in) — merge
       // so nothing the user built is lost. Union by course id; local wins on
       // conflicts. Then push the merged result to the server.
@@ -321,13 +385,21 @@ async function _pullSchedule(userId: string): Promise<void> {
     console.error('pullSchedule error:', err)
   } finally {
     _pullActive = false
-    if (success) _lastPulledUserId = userId
+    if (success) {
+      _lastPulledUserId = userId
+      markSyncedDevice(userId)
+      _lastSyncedSignature = cartSignature()
+    }
   }
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let lastItemCount = -1
 let _pushSuspended = false
+/** Cart signature at this device's last agreement with the server (successful
+ * push, or a pull it adopted). Lets us skip a push that would only re-assert a
+ * stale cache — the write that used to resurrect a course removed elsewhere. */
+let _lastSyncedSignature: string | null = null
 
 export function debouncedPush(userId: string) {
   if (_pullActive || _pushSuspended) return
@@ -359,4 +431,19 @@ export function cancelDebouncedPush() {
 export async function flushAndPush(userId: string): Promise<void> {
   cancelDebouncedPush()
   await pushSchedule(userId)
+}
+
+/**
+ * Backgrounding or unloading this device. Pushes only when the local cart has
+ * actually diverged from what this device last synced.
+ *
+ * An unconditional push here is what made a removal on another device come
+ * back: this device sends its whole list, and a list it merely cached before
+ * the removal still contains the course. A pending debounce still flushes, and
+ * so does an edit whose immediate push may not have landed yet, so nothing the
+ * user did is dropped.
+ */
+export async function flushPendingPush(userId: string): Promise<void> {
+  if (!debounceTimer && cartSignature() === _lastSyncedSignature) return
+  await flushAndPush(userId)
 }
