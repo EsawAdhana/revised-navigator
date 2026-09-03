@@ -65,9 +65,10 @@ export function CourseList() {
 
   const searchQuery = searchParams.get('q') ?? '';
   const hasSearchQuery = searchQuery.trim().length > 0;
-  const hideProfessors = searchParams.get('hideProfessors') === 'true';
-  const instructorMatches = useInstructorSearch(hideProfessors ? '' : searchQuery);
-  const FILTER_PARAM_KEYS = ['q', 'depts', 'terms', 'formats', 'levels', 'gers', 'schools', 'exclude', 'unitMin', 'unitMax', 'timeMin', 'timeMax', 'hideConflicts', 'hideUnavailable', 'hideProfessors'];
+  // Only fires when the query is someone's actual name, so there is nothing to
+  // toggle off: "math" returns classes, "mathews" returns the person too.
+  const instructorMatches = useInstructorSearch(searchQuery);
+  const FILTER_PARAM_KEYS = ['q', 'depts', 'terms', 'formats', 'levels', 'gers', 'schools', 'exclude', 'unitMin', 'unitMax', 'timeMin', 'timeMax', 'hideConflicts', 'hideUnavailable'];
   const hasAnyFilter = FILTER_PARAM_KEYS.some(k => searchParams.has(k));
 
   const prefetchCourseDetail = useCallback((courseId: string) => {

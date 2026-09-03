@@ -24,7 +24,6 @@ export function useResetFilters() {
     hideConflicts: parseAsBoolean.withDefault(true),
     hideUnavailable: parseAsBoolean.withDefault(true),
     hideStudyAbroad: parseAsBoolean.withDefault(true),
-    hideProfessors: parseAsBoolean.withDefault(false),
     newOnly: parseAsBoolean.withDefault(false),
   })
 
@@ -45,7 +44,6 @@ export function useResetFilters() {
       hideConflicts: null,
       hideUnavailable: null,
       hideStudyAbroad: null,
-      hideProfessors: null,
       newOnly: null,
     })
   }, [setFilters])

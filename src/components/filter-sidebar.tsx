@@ -89,9 +89,6 @@ export function FilterSidebar() {
     // Closed/waitlisted and study abroad (BOSP) courses are hidden by default.
     const [hideUnavailable, setHideUnavailable] = useQueryState('hideUnavailable', parseAsBoolean.withDefault(true));
     const [hideStudyAbroad, setHideStudyAbroad] = useQueryState('hideStudyAbroad', parseAsBoolean.withDefault(true));
-    // Purely a results-list toggle: instructor matches aren't courses, so this
-    // never feeds the course filter pipeline or the facet counts.
-    const [hideProfessors, setHideProfessors] = useQueryState('hideProfessors', parseAsBoolean.withDefault(false));
     const [newOnly, setNewOnly] = useQueryState('newOnly', parseAsBoolean.withDefault(false));
     const [excludedWords, setExcludedWords] = useQueryState('exclude', parseAsArrayOf(parseAsString).withDefault([]));
 
@@ -386,27 +383,6 @@ export function FilterSidebar() {
                                 </TooltipTrigger>
                                 <TooltipContent side="top" align="start" className="max-w-[240px]">
                                     Hide Bing Overseas Studies Program (BOSP) courses taught abroad.
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    </div>
-                    <div className="flex items-center gap-2 min-h-8">
-                        <input
-                            type="checkbox"
-                            id="hideProfessors"
-                            checked={hideProfessors}
-                            onChange={(e) => setHideProfessors(e.target.checked)}
-                            className="h-4 w-4 shrink-0 rounded border-input text-primary accent-primary outline-none"
-                        />
-                        <TooltipProvider delayDuration={300}>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <label htmlFor="hideProfessors" className="text-sm text-foreground/80 font-medium cursor-pointer flex items-center gap-1.5">
-                                        Hide professors
-                                    </label>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" align="start" className="max-w-[240px]">
-                                    Leave matching instructors out of search results and show only classes.
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>

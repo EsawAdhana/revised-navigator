@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
     buildInstructorDirectory,
     parseInstructorDump,
-    searchInstructors,
+    findInstructorsByExactName,
     type InstructorDirectory,
     type InstructorDump,
     type InstructorEntry,
@@ -38,7 +38,7 @@ export function useInstructorSearch(query: string): InstructorEntry[] {
     }, [shouldLoad, directory]);
 
     return useMemo(
-        () => (directory ? searchInstructors(directory, trimmed) : []),
+        () => (directory ? findInstructorsByExactName(directory, trimmed) : []),
         [directory, trimmed]
     );
 }

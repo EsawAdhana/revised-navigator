@@ -33,6 +33,16 @@ function slugPart(text: string): string {
   return fold(text).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
+/** Name split into comparable tokens: "Núñez-Martínez, José" -> ["nunez","martinez","jose"]. */
+function nameTokens(text: string): string[] {
+  return fold(text).replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean)
+}
+
+/** Order-insensitive key, so "clark susan" and "susan clark" compare equal. */
+function nameKey(tokens: string[]): string {
+  return [...tokens].sort().join(' ')
+}
+
 export function parseInstructorName(raw: string): ParsedInstructorName {
   const name = decodeHtmlEntities(raw || '').replace(/\s+/g, ' ').trim()
   if (name.includes(',')) {
@@ -205,39 +215,38 @@ export function resolveInstructorSlug(dir: InstructorDirectory, slug: string): I
 }
 
 /**
- * Ranks instructors against a free-text query. Matches on surname prefix first,
- * then any name token, then substring, so "clark" beats "clarkson" and typing a
- * full "susan clark" still lands.
+ * Instructors whose name the query *is*, not merely starts with: the surname on
+ * its own ("mathews"), or the full name in any spelling order ("susan clark",
+ * "clark, susan").
+ *
+ * This used to rank prefix and substring matches as well, which meant every
+ * department query dragged people along — "math" returned Mathews and Mathur —
+ * and nobody types "matthew" hoping to land on Mathews. A first name alone
+ * isn't a lookup either ("maria" is dozens of people), so it doesn't match.
  */
-export function searchInstructors(
+export function findInstructorsByExactName(
   dir: InstructorDirectory,
   query: string,
   limit = 6
 ): InstructorEntry[] {
-  const q = fold(query).trim().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ')
+  const q = nameKey(nameTokens(query))
   if (q.length < 2) return []
-  const terms = q.split(' ')
 
-  const scored: { entry: InstructorEntry; score: number }[] = []
+  const matches: InstructorEntry[] = []
   for (const entry of dir.entries) {
     // "Sakovsky, M." is the same person as "Sakovsky, Maria" — list them once,
     // under the full name, exactly as resolveInstructorSlug would redirect.
     if (!entry.named && dir.namedByInitialSlug.has(entry.initialSlug)) continue
 
-    const last = fold(parseInstructorName(entry.sortName).last)
-    const full = fold(entry.name)
-    let score = 0
+    const { last, first } = parseInstructorName(entry.sortName)
+    const lastTokens = nameTokens(last)
+    if (lastTokens.length === 0) continue
 
-    if (terms.length > 1 && full.includes(q)) score = 5
-    else if (last === q) score = 4
-    else if (last.startsWith(q)) score = 3
-    else if (full.split(' ').some(token => token.startsWith(q))) score = 2
-    else if (terms.every(term => full.includes(term))) score = 1
-
-    if (score > 0) scored.push({ entry, score })
+    if (q === nameKey(lastTokens) || q === nameKey([...lastTokens, ...nameTokens(first)])) {
+      matches.push(entry)
+    }
   }
 
-  scored.sort((a, b) =>
-    b.score - a.score || a.entry.sortName.localeCompare(b.entry.sortName))
-  return scored.slice(0, limit).map(s => s.entry)
+  matches.sort((a, b) => a.sortName.localeCompare(b.sortName))
+  return matches.slice(0, limit)
 }
