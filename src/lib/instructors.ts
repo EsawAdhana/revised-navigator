@@ -216,13 +216,16 @@ export function resolveInstructorSlug(dir: InstructorDirectory, slug: string): I
 
 /**
  * Instructors whose name the query *is*, not merely starts with: the surname on
- * its own ("mathews"), or the full name in any spelling order ("susan clark",
- * "clark, susan").
+ * its own ("mathews"), the first name on its own ("matthew"), or both in any
+ * spelling order ("susan clark", "clark, susan").
  *
  * This used to rank prefix and substring matches as well, which meant every
- * department query dragged people along — "math" returned Mathews and Mathur —
- * and nobody types "matthew" hoping to land on Mathews. A first name alone
- * isn't a lookup either ("maria" is dozens of people), so it doesn't match.
+ * department query dragged people along — "math" returned Mathews and Mathur.
+ * Matching whole tokens keeps that out: "math" is still nobody, while "mathew"
+ * is Mathew Kiang and not every Mathews in the catalog.
+ *
+ * Surname matches sort ahead of first-name-only ones, so a popular first name
+ * can't push the person you actually searched for past `limit`.
  */
 export function findInstructorsByExactName(
   dir: InstructorDirectory,
@@ -232,7 +235,8 @@ export function findInstructorsByExactName(
   const q = nameKey(nameTokens(query))
   if (q.length < 2) return []
 
-  const matches: InstructorEntry[] = []
+  const bySurname: InstructorEntry[] = []
+  const byFirstName: InstructorEntry[] = []
   for (const entry of dir.entries) {
     // "Sakovsky, M." is the same person as "Sakovsky, Maria" — list them once,
     // under the full name, exactly as resolveInstructorSlug would redirect.
@@ -241,12 +245,19 @@ export function findInstructorsByExactName(
     const { last, first } = parseInstructorName(entry.sortName)
     const lastTokens = nameTokens(last)
     if (lastTokens.length === 0) continue
+    const firstTokens = nameTokens(first)
 
-    if (q === nameKey(lastTokens) || q === nameKey([...lastTokens, ...nameTokens(first)])) {
-      matches.push(entry)
+    if (q === nameKey(lastTokens) || q === nameKey([...lastTokens, ...firstTokens])) {
+      bySurname.push(entry)
+    } else if (firstTokens.length > 0 && q === nameKey(firstTokens)) {
+      // A bare initial is never a lookup; "j" can't reach the 2-char floor above.
+      byFirstName.push(entry)
     }
   }
 
-  matches.sort((a, b) => a.sortName.localeCompare(b.sortName))
-  return matches.slice(0, limit)
+  const bySortName = (a: InstructorEntry, b: InstructorEntry) =>
+    a.sortName.localeCompare(b.sortName)
+  bySurname.sort(bySortName)
+  byFirstName.sort(bySortName)
+  return [...bySurname, ...byFirstName].slice(0, limit)
 }
